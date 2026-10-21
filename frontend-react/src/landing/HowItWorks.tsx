@@ -84,11 +84,15 @@ function PathDiagram() {
       </div>
       <div className="mt-3 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.7fr)_auto_minmax(0,1fr)]">
         <div className="lg:col-start-3">
-          {/* From the gateway above it; when the boxes stack the provider sits in between, so no arrow. */}
+          {/* From the gateway above it. When the boxes stack, the provider sits in between, so a
+              phone says in words where the deep audit starts instead of drawing an arrow. */}
           <div className="flex justify-center py-1 text-fg-subtle max-lg:hidden" aria-hidden="true">
             <ArrowDown className="size-4" />
           </div>
-          <div className="rounded-lg border border-dashed border-border-strong px-4 py-3 text-sm max-lg:mt-3">
+          <p className="mt-4 mb-1.5 text-sm text-fg-muted lg:hidden" data-deep-audit-from>
+            From the gateway, after the reply:
+          </p>
+          <div className="rounded-lg border border-dashed border-border-strong px-4 py-3 text-sm">
             <span className="font-semibold text-fg">{copy.tiers.deep_audit}</span>
             <span className="text-fg-muted"> · in the background, for flagged and sampled answers: claim by claim, into your dashboard</span>
           </div>

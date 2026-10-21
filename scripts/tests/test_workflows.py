@@ -164,7 +164,8 @@ class PagesWorkflowTest(unittest.TestCase):
     def test_dataset_and_base_path(self) -> None:
         # D110: recorded on a tag (and check_recording --require-recorded), auto elsewhere.
         self.assertIn(
-            "      PAGES_DATASET: ${{ startsWith(github.ref, 'refs/tags/v') && 'recorded' || 'auto' }}\n",
+            "      PAGES_DATASET: ${{ startsWith(github.ref, 'refs/tags/v') && "
+            "(vars.PAGES_TAG_DATASET == 'simulated' && 'mock' || 'recorded') || 'auto' }}\n",
             self.build,
         )
         self.assertIn("      PAGES_BASE_PATH: /TrustAgent/\n", self.build)
@@ -176,6 +177,40 @@ class PagesWorkflowTest(unittest.TestCase):
         )
         check = RELEASE_MK.split("\npages-recording-check:", 1)[1].split("\n\n", 1)[0]
         self.assertIn("$(if $(filter recorded,$(PAGES_DATASET)), --require-recorded)", check)
+
+    def test_a_tag_ships_the_recorded_tape_unless_mode_r_says_simulated(self) -> None:
+        # D200 mode R: the repository variable PAGES_TAG_DATASET defaults to recorded. The
+        # expression is evaluated here for each case: GitHub gives an unset variable as ''.
+        line = re.search(r"(?m)^      PAGES_DATASET: \$\{\{ (.+) \}\}$", self.build)
+        self.assertIsNotNone(line)
+        expr = line.group(1)
+        self.assertNotIn("secrets.", expr)
+
+        # GitHub compares strings ignoring case, so the variable is lowered against the
+        # expression's lower-case literal.
+        self.assertIn("vars.PAGES_TAG_DATASET == 'simulated'", expr)
+
+        def evaluate(ref: str, variable: str) -> str:
+            py = (
+                expr.replace(
+                    "startsWith(github.ref, 'refs/tags/v')", repr(ref.startswith("refs/tags/v"))
+                )
+                .replace("vars.PAGES_TAG_DATASET", repr(variable.lower()))
+                .replace("&&", " and ")
+                .replace("||", " or ")
+            )
+            self.assertRegex(py, r"^[\w\s'()=]+$", "only literals and operators are left")
+            return eval(py, {"__builtins__": {}}, {})  # noqa: S307 - literals only, checked above
+
+        tag, main, pr = "refs/tags/v2.0.0", "refs/heads/main", "refs/pull/7/merge"
+        self.assertEqual(evaluate(tag, ""), "recorded", "the default: a tag ships the recording")
+        self.assertEqual(evaluate(tag, "recorded"), "recorded")
+        self.assertEqual(evaluate(tag, "Simulated "), "recorded", "a typo fails closed")
+        self.assertEqual(evaluate(tag, "simulated"), "mock", "mode R ships the simulated tape")
+        self.assertEqual(evaluate(tag, "Simulated"), "mock", "GitHub ignores case")
+        for ref in (main, pr):
+            for variable in ("", "simulated"):
+                self.assertEqual(evaluate(ref, variable), "auto")
 
     def test_hardening(self) -> None:
         uses = [line for line in self.text.splitlines() if re.match(r"^\s*(- )?uses:", line)]
@@ -298,6 +333,25 @@ class EveryWorkflowTest(unittest.TestCase):
             self.assertNotIn("paths", on, name)
             self.assertNotIn("branches-ignore", on, name)
 
+    def test_the_ruleset_doc_lists_the_required_checks(self) -> None:
+        # docs/launch/ruleset.md is what the owner types into the ruleset (D215): every required
+        # job that can fail the run, and nothing else. An informational job (continue-on-error)
+        # stays out: its failure would block a merge it is not meant to block.
+        doc = (ROOT / "docs" / "launch" / "ruleset.md").read_text(encoding="utf-8")
+        block = re.search(r"(?ms)^```text\n(.*?)^```", doc)
+        self.assertIsNotNone(block)
+        listed = [line for line in block.group(1).splitlines() if line.strip()]
+        expected = []
+        for name, checks in REQUIRED_JOBS.items():
+            found = jobs(read(name))
+            for job_id, title in checks.items():
+                if re.search(r"(?m)^    continue-on-error: true", found[job_id]):
+                    self.assertNotIn(title, listed, f"{title} is informational")
+                    continue
+                expected.append(title)
+        self.assertEqual(listed, expected)
+        self.assertEqual(len(listed), len(set(listed)))
+
     def test_privileged_workflows_cache_nothing(self) -> None:
         # A run that publishes or reads a paid key must not restore a cache another run wrote
         # (zizmor cache-poisoning). release-images.yml caches only off a tag (its own class).
@@ -368,6 +422,42 @@ class ReleaseImagesWorkflowTest(unittest.TestCase):
         dispatch = on.split("\n  workflow_dispatch:\n", 1)[1]
         self.assertIn("      push:\n", dispatch)
         self.assertIn("        type: boolean\n        default: false", dispatch)
+
+    def test_the_pull_request_filters_cover_every_image_input(self) -> None:
+        # A release PR that changes how an image builds (its Dockerfile, its .dockerignore or a
+        # lockfile it installs from) runs the build-only image job; a filter that misses a file
+        # would let the tag build be the first build of that change.
+        on = on_block(self.text)
+        prs = on.split("\n  pull_request:\n", 1)[1].split("\n  workflow_dispatch:", 1)[0]
+        patterns = [p.strip("'") for p in re.findall(r"(?m)^      - (\S+)$", prs)]
+
+        def matched(path: str) -> bool:
+            for pattern in patterns:
+                if pattern.startswith("**/"):
+                    if path.rsplit("/", 1)[-1] == pattern[3:]:
+                        return True
+                elif path == pattern:
+                    return True
+            return False
+
+        dockerfiles = re.findall(r"(?m)^\s+dockerfile: (\S+)$", self.images)
+        self.assertEqual(len(dockerfiles), 3)
+        for dockerfile in dockerfiles:
+            self.assertTrue((ROOT / dockerfile).is_file(), dockerfile)
+            ignore = f"{dockerfile}.dockerignore"
+            self.assertTrue((ROOT / ignore).is_file(), ignore)
+            for path in (dockerfile, ignore):
+                self.assertTrue(matched(path), f"{path} is outside the pull_request paths")
+        tracked = [p.relative_to(ROOT).as_posix() for p in ROOT.glob("*/Dockerfile")]
+        self.assertEqual(sorted(tracked), sorted(dockerfiles), "an image without a matrix entry")
+        for lock in (
+            "backend-go/go.sum",
+            "backend-python/poetry.lock",
+            "frontend-react/package-lock.json",
+        ):
+            self.assertTrue((ROOT / lock).is_file(), lock)
+            self.assertTrue(matched(lock), lock)
+        self.assertTrue(matched(".github/workflows/release-images.yml"))
 
     def test_push_is_guarded_by_repository_event_and_ref(self) -> None:
         push = self.plan.split("          PUSH: >-\n", 1)[1].split("\n        run:", 1)[0]
@@ -506,6 +596,40 @@ class ReleaseImagesWorkflowTest(unittest.TestCase):
         self.assertLess(body.index("docker logout ghcr.io"), body.index("docker pull"))
         self.assertIn("for svc in proxy engine dashboard", body)
         self.assertIn("for platform in linux/amd64 linux/arm64", body)
+
+
+class EvalWorkflowTest(unittest.TestCase):
+    """eval.yml: the free HaluEval run with a local judge, started by hand only."""
+
+    def setUp(self) -> None:
+        self.text = read("eval.yml")
+        self.jobs = jobs(self.text)
+
+    def test_runs_only_when_started_by_hand(self) -> None:
+        on = on_block(self.text)
+        self.assertTrue(on.startswith("  workflow_dispatch:\n"), on)
+        for trigger in ("schedule", "push", "pull_request", "workflow_run", "cron"):
+            self.assertNotIn(trigger, code(on))
+        self.assertEqual(re.findall(r"(?m)^  (\w+):", on), ["workflow_dispatch"])
+
+    def test_the_job_keeps_its_check_name(self) -> None:
+        # The check is named by its job id; renaming it would orphan its history.
+        self.assertEqual(list(self.jobs), ["benchmark"])
+        self.assertEqual(job_name(self.jobs["benchmark"]), "")
+
+    def test_the_summary_labels_its_figures(self) -> None:
+        summary = [
+            s for s in steps(self.jobs["benchmark"]) if s.startswith("name: Publish summary")
+        ]
+        self.assertEqual(len(summary), 1)
+        self.assertIn("Label: measured in this run only", summary[0])
+        self.assertIn("not a published TrustAgent figure", summary[0])
+        self.assertIn("contracts/claims/measured.json", summary[0])
+
+    def test_no_badge_points_at_it(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("workflows/eval.yml", readme)
+        self.assertNotIn("actions/workflows/eval.yml/badge.svg", readme)
 
 
 class EvalLiveWorkflowTest(unittest.TestCase):

@@ -2,7 +2,7 @@
 
 **Verdict.** The canonical spec cannot be delivered in the order it describes. The first working end-to-end result would arrive at the P3 gate, after about 100 engineer-days. Several gates depend on work scheduled for later phases. The four parallel streams share files and are not independent. The mock strategy lets failures pass quietly. And none of the Docker-dependent gates can run on the owner's machine today.
 
-Everything below was checked against the working tree. Paths are relative to `/home/timkushmar/projects/TrustAgent`.
+Everything below was checked against the working tree. Paths are relative to `~/projects/TrustAgent`.
 
 ---
 

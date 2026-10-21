@@ -41,10 +41,27 @@ export interface ClaimView {
   sourceUrl: string | null;
   asOf: string | null;
   caveat: string | null;
+  /**
+   * A published measured figure's 95% interval with n per class (D212), in the words of the
+   * README's measured block; null when the run gives none (or the claim is not measured).
+   */
+  interval?: string | null;
+}
+
+interface MeasuredInterval {
+  lo?: unknown;
+  hi?: unknown;
+  method?: unknown;
+  resamples?: unknown;
+  n_pos?: unknown;
+  n_neg?: unknown;
 }
 
 const entries = new Map((claimsDoc.claims as ClaimEntry[]).map((c) => [c.id, c]));
 const measuredValues = measuredDoc.values as Record<string, { value: number | null }>;
+const measuredRun = measuredDoc.status === 'measured' && measuredDoc.mock === false;
+const measuredIntervals = (measuredDoc as { intervals?: Record<string, MeasuredInterval> }).intervals ?? {};
+const INTERVAL_METHODS: Record<string, string> = { wilson: 'Wilson', bootstrap: 'bootstrap' };
 
 export const LABEL_TEXT: Record<ClaimLabel, string> = copy.value_labels;
 
@@ -52,6 +69,16 @@ function formatValue(value: number, unit: string): string {
   if (unit === 'fraction') return `${Math.round(value * 1000) / 10}%`;
   if (unit === 'usd_per_1k') return value >= 1 ? value.toFixed(2) : value.toFixed(3);
   return String(Math.round(value * 100) / 100);
+}
+
+/** The interval words of scripts/check-claims.mjs (measuredNote), so the page and the README agree. */
+export function intervalText(iv: MeasuredInterval | undefined, unit: string): string | null {
+  if (!iv || typeof iv.lo !== 'number' || typeof iv.hi !== 'number') return null;
+  const method = typeof iv.method === 'string' ? (INTERVAL_METHODS[iv.method] ?? iv.method) : '';
+  const how = iv.method === 'bootstrap' && typeof iv.resamples === 'number' ? `${method}, ${iv.resamples} resamples` : method;
+  let text = `95% interval ${formatValue(iv.lo, unit)} to ${formatValue(iv.hi, unit)}${how ? ` (${how})` : ''}`;
+  if (Number.isInteger(iv.n_pos) && Number.isInteger(iv.n_neg)) text += `; ${String(iv.n_pos)} answers with a hallucination and ${String(iv.n_neg)} without`;
+  return text;
 }
 
 export function claim(id: string): ClaimView {
@@ -77,15 +104,22 @@ export function claim(id: string): ClaimView {
     sourceUrl: c.source_url,
     asOf: c.as_of,
     caveat: c.caveat,
+    interval: hasValue && label === 'measured' && measuredRun && c.measured_ref ? intervalText(measuredIntervals[c.measured_ref], c.unit) : null,
   };
+}
+
+/**
+ * A claim the page shows only while the contract has it (a figure whose source is being
+ * re-checked may be withdrawn): null when the id is gone, never a number without a source.
+ */
+export function optionalClaim(id: string): ClaimView | null {
+  return entries.has(id) ? claim(id) : null;
 }
 
 /** The claims written for the landing page, in contract order (the footer's source list). */
 export function landingClaims(): ClaimView[] {
   return (claimsDoc.claims as ClaimEntry[]).filter((c) => c.surfaces.includes('landing')).map((c) => claim(c.id));
 }
-
-export const CLAIMS_AS_OF: string = claimsDoc.as_of;
 
 /** The anchor of a claim's entry in the footer's source list. */
 export function sourceAnchor(id: string): string {

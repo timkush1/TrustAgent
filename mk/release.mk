@@ -21,10 +21,15 @@ version-bump: ## Set a new version everywhere: make version-bump V=2.0.0 (DRY_RU
 check-version: ## Check that every version mirror agrees with VERSION (RELEASE_TAG=v2.0.0 also checks a release tag)
 	$(PYTHON) scripts/check_version.py $(if $(RELEASE_TAG),--tag $(RELEASE_TAG))
 
+# release-notes prints Markdown on stdout only (make release-notes TAG=v2.0.0 | make clip). It reads
+# each image's digest anonymously with docker buildx imagetools inspect, or canned output from
+# RELEASE_NOTES_INSPECT (a JSON file, as scripts/tests/fixtures/inspect.json; the R-4 rehearsal).
 TAG ?=
+RELEASE_NOTES_INSPECT ?=
 
-release-notes: ## Release notes for a tag: make release-notes TAG=v2.0.0 (CHANGELOG section, image digests, verify commands, measured labels; P6 S-1)
-	@echo "release-notes: not implemented (P6 S-1)"; exit 2
+release-notes: ## Release notes for a tag: make release-notes TAG=v2.0.0 (CHANGELOG section, image digests, verify commands, measured labels; refuses a missing digest)
+	@if [ -z "$(TAG)" ]; then echo "release-notes: set TAG, e.g. make release-notes TAG=v2.0.0" >&2; exit 2; fi
+	@$(PYTHON) scripts/release_notes.py --tag $(TAG) $(if $(RELEASE_NOTES_INSPECT),--inspect $(RELEASE_NOTES_INSPECT))
 
 # ---------- GitHub Pages site (D124, D110, D137) ----------
 # `make pages-build` runs, in the same order, the steps of the build job of
@@ -119,6 +124,22 @@ gitleaks-install: ## Download the pinned gitleaks release into tmp/tools, checke
 	tar -xzf "$$work/gitleaks.tgz" -C "$$work" gitleaks; \
 	install -m 0755 "$$work/gitleaks" "$(GITLEAKS)"; \
 	echo "✅ gitleaks $(GITLEAKS_VERSION) ($$os-$$arch, SHA-256 checked) in $(GITLEAKS)"
+
+gitleaks-history: gitleaks-install ## gitleaks over the whole git history with the repository's rules (as CI's security job)
+	$(GITLEAKS) git --config .gitleaks.toml --redact --no-banner --exit-code 1 .
+
+# The public-repo hygiene grep (D216): no home-directory paths, orchestration paths or personal
+# email addresses in tracked files outside docs/archive. Each pattern ends in a one-letter class,
+# so this file does not match itself.
+HYGIENE_PATTERN := /home/timkushma[r]|\.cache/trustagent-or[c]h|timandga[l]|mail\.tau\.ac\.i[l]
+
+hygiene-check: ## No local paths or personal emails in tracked files (docs/archive aside; D216)
+	@hits="$$(git grep -n -E '$(HYGIENE_PATTERN)' -- ':!docs/archive' || true)"; \
+	if [ -n "$$hits" ]; then printf '%s\n' "$$hits" | head -20; \
+		echo "hygiene-check: local paths or personal emails in tracked files (D216)" >&2; exit 1; fi; \
+	echo "✅ hygiene: no local paths or personal emails in tracked files"
+
+check: hygiene-check
 
 # ---------- Demo recording (D123, D207-D210) ----------
 # scripts/record_demo.py records the public demo with the real fast check and judge (the owner's
@@ -290,8 +311,12 @@ endif
 
 ##@ Workflows
 
+# actionlint is built with the repository's own Go toolchain (backend-go/go.mod), so an older local
+# go does not fetch whichever release is newest just to build a linter.
+ACTIONLINT_GOTOOLCHAIN ?= $(shell sed -n 's/^toolchain //p' backend-go/go.mod)
+
 lint-workflows: workflow-lint-install ## Lint .github/: actionlint (with shellcheck) and zizmor (high-severity findings fail), all pinned
-	go run github.com/rhysd/actionlint/cmd/actionlint@v$(ACTIONLINT_VERSION) -shellcheck=$(WORKFLOW_LINT_BIN)/shellcheck
+	GOTOOLCHAIN=$(ACTIONLINT_GOTOOLCHAIN)+auto go run github.com/rhysd/actionlint/cmd/actionlint@v$(ACTIONLINT_VERSION) -shellcheck=$(WORKFLOW_LINT_BIN)/shellcheck
 	$(WORKFLOW_LINT_BIN)/zizmor --offline --min-severity high --format plain .
 	@echo "✅ Workflows: actionlint $(ACTIONLINT_VERSION) and zizmor $(ZIZMOR_VERSION) found nothing to fix"
 

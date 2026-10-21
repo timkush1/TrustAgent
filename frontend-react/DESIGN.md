@@ -389,8 +389,11 @@ committed generated file, never from the whole scenario pack.
   stay 400/500/600.
 - **Every number** is a claim from `contracts/claims/value-claims.v1.json`, rendered by
   `ClaimValue` with its `LabelChip` (Measured, Estimate, Third-party, Vendor, Simulated; dashed
-  border for Simulated). The chip links to the claim's entry in the footer's "Where every number on
-  this page comes from". A claim with a caveat shows the caveat next to its chip. A `measured`
+  border for Simulated). One label system across the site and the app: the chip carries the same
+  word and the same icon as the dashboard's `EvidenceBadge` (`LABEL_ICONS` in `src/landing/ui.tsx`
+  mirrors `valueLabelView`, and a test holds them equal). It differs only in what a click does: the
+  landing chip links to the claim's entry in the footer's "Where every number on this page comes
+  from", where the app's opens a popover. A claim with a caveat shows the caveat next to its chip. A `measured`
   claim reads `contracts/claims/measured.json` and says "not yet measured" until a benchmark run
   publishes it; it never borrows an estimate. Contract copy with `{claim:id}` placeholders goes
   through `splitClaims`. Proxy overhead is never placed next to the fast check's latency.

@@ -44,15 +44,33 @@ test-launch-tools: ## Unit tests of the capture tooling (make_hero_gif.py, launc
 	cd "$(LAUNCH_WEB)" && npx playwright test --list --project=launch
 
 # ---------- Launch post and video (D210, D213; seams the SHIP and VEND streams fill in) ----------
+# scripts/linkedin_post.py fills the template in docs/launch/linkedin-post.md and exits 1 on any
+# missing value; scripts/clip.py pipes through iconv -f UTF-8 -t UTF-16LE into clip.exe (plain
+# clip.exe garbles × and dashes) and prints to stdout where there is no clip.exe.
 CLIP ?=
 FILE ?=
+ROLES ?=
+RESTRICTED ?=
 PAGES_ONLY ?=
 
-linkedin-post: ## Print the LinkedIn post as plain text from measured.json, the recorded featured trace and the claims (CLIP=1 copies it; P6 S-9)
-	@echo "linkedin-post: not implemented (P6 S-9)"; exit 2
+linkedin-post: ## Print the LinkedIn post as plain text from measured.json, the recorded featured trace and the claims (CLIP=1 copies it, ROLES=1 adds the roles line, RESTRICTED=1 the mode-R post)
+	@$(PYTHON) "$(LAUNCH_ROOT)/scripts/linkedin_post.py" $(if $(CLIP),--clip) $(if $(ROLES),--roles) $(if $(RESTRICTED),--restricted)
 
-clip: ## Copy a file to the Windows clipboard as UTF-16LE (make clip FILE=...; stdout without clip.exe; P6 S-9)
-	@echo "clip: not implemented (P6 S-9)"; exit 2
+clip: ## Copy a file to the Windows clipboard as UTF-16LE: make clip FILE=... (stdout where there is no clip.exe)
+	@if [ -z "$(FILE)" ]; then echo "clip: set FILE, e.g. make clip FILE=tmp/release-notes.md" >&2; exit 2; fi
+	@$(PYTHON) "$(LAUNCH_ROOT)/scripts/clip.py" "$(FILE)"
+
+test-linkedin-post: ## Unit tests of make linkedin-post and make clip (no clipboard, no network)
+	cd "$(LAUNCH_ROOT)" && $(PYTHON) -m unittest scripts/tests/test_linkedin_post.py
+
+# The owner's comparison review (G5) and the reverify claims (D113, D212): every source page is
+# read again with a plain GET (no key) and each cell is printed with the sentence that supports it.
+# The fetch log and the proposed contract edits go to tmp/compare-review/ (FETCH=0 re-prints them
+# from the pages saved there); contracts/ is never edited by it.
+FETCH ?= 1
+
+compare-review: ## Re-read every comparison source and reverify claim; print the G5 table with each source's own words (FETCH=0: from the saved pages)
+	@$(PYTHON) "$(LAUNCH_ROOT)/scripts/compare_review.py" $(if $(filter 0,$(FETCH)),,--fetch)
 
 launch-video: ## The 60-second launch video (D210): the static beats from the recorded Pages build, then ffmpeg joins them with the stack beats and burned-in captions into tmp/launch/video-{16x9,4x5}.mp4 (PAGES_ONLY=1: the H-6 45 s take; VIDEO_ALLOW_MOCK=1: a rehearsal in tmp/launch/rehearsal/)
 	$(PYTHON) "$(LAUNCH_ROOT)/scripts/launch_video.py" static

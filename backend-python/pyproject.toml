@@ -1,8 +1,9 @@
 [tool.poetry]
 name = "truthtable"
 version = "1.0.0"
-description = "TruthTable AI Audit Engine - Hallucination Detection Service"
-authors = ["Tim Kushmaro <timk@mail.tau.ac.il>"]
+description = "TrustAgent deep-audit engine: claim-level hallucination checks for the TrustAgent gateway"
+authors = ["{{OWNER_LEGAL_NAME}}"]
+license = "MIT"
 readme = "README.md"
 packages = [{include = "truthtable", from = "src"}]
 # The generated gRPC stubs are gitignored (make proto), so Poetry would leave

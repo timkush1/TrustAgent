@@ -27,9 +27,27 @@ const navLinks = [
   { href: '#self-host', label: 'Run it' },
 ];
 
+const WIDE_HEADER = '(min-width: 1024px)';
+
+/** True at 1024 px and up, where the section links sit in the header's one row. */
+function useWideHeader(): boolean {
+  const [wide, setWide] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia(WIDE_HEADER).matches);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const query = window.matchMedia(WIDE_HEADER);
+    const update = () => setWide(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return wide;
+}
+
 /**
- * The section links. Below 1024 px they are a second header row that scrolls sideways; while more
- * links lie past the right edge, a chevron there says so and scrolls them into view.
+ * The section links. Below 1024 px they are a second header row that scrolls sideways; while the
+ * last link is not fully in view, a chevron at the right edge says so and scrolls them along. The
+ * chevron is for the pointer: a keyboard reaches every link by Tab, which scrolls each into view,
+ * so the chevron stays out of the Tab order.
  */
 function SectionNav() {
   const ref = useRef<HTMLElement>(null);
@@ -37,7 +55,11 @@ function SectionNav() {
   useEffect(() => {
     const nav = ref.current;
     if (!nav) return;
-    const update = () => setMore(nav.scrollWidth - nav.clientWidth - nav.scrollLeft > 4);
+    const update = () => {
+      const last = nav.lastElementChild as HTMLElement | null;
+      const end = last ? last.offsetLeft + last.offsetWidth : nav.scrollWidth;
+      setMore(end - (nav.scrollLeft + nav.clientWidth) > 4);
+    };
     update();
     nav.addEventListener('scroll', update, { passive: true });
     window.addEventListener('resize', update);
@@ -47,7 +69,7 @@ function SectionNav() {
     };
   }, []);
   return (
-    <div className="relative max-lg:order-last max-lg:-mx-2 max-lg:w-[calc(100%+1rem)]">
+    <div className="relative max-lg:-mx-2 max-lg:w-[calc(100%+1rem)]">
       <nav ref={ref} aria-label="Sections" className="flex items-center gap-0.5 max-lg:overflow-x-auto max-lg:pb-2 max-lg:[scrollbar-width:none]">
         {navLinks.map((l) => (
           <a key={l.href} href={l.href} className={`${buttonClass.ghost} shrink-0 whitespace-nowrap`}>
@@ -60,6 +82,7 @@ function SectionNav() {
           type="button"
           onClick={() => ref.current?.scrollBy({ left: ref.current.clientWidth / 2, behavior: 'smooth' })}
           aria-label="Show more section links"
+          tabIndex={-1}
           data-nav-more
           className="absolute top-0 right-0 inline-flex h-9 w-9 items-center justify-center border-l border-border bg-bg text-fg-muted hover:text-fg lg:hidden"
         >
@@ -71,25 +94,40 @@ function SectionNav() {
 }
 
 function Header() {
+  const wide = useWideHeader();
+  const actions = (
+    <div className="ml-auto flex h-16 items-center gap-1" data-header-actions>
+      <ThemeButton />
+      <a href={REPO_URL} className={`${buttonClass.ghost} w-9 px-0`} aria-label="TrustAgent on GitHub" title="TrustAgent on GitHub">
+        <GitHubMark className="size-4" />
+      </a>
+      <a href={DEMO_HREF} className="ml-2 inline-flex h-9 items-center gap-1.5 rounded-md bg-fg px-3.5 text-sm font-medium text-fg-inverse transition-opacity hover:opacity-90 max-sm:px-3">
+        Try the demo
+        <ArrowRight aria-hidden="true" className="size-4 max-sm:hidden" />
+      </a>
+    </div>
+  );
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-bg/90 backdrop-blur-sm">
-      {/* One nav: inline on wide screens, a second row that scrolls sideways below 1024 px. */}
+      {/* One nav: inline on wide screens, a second row that scrolls sideways below 1024 px. The
+          DOM follows what the eye sees, so Tab does too: logo, links, actions on a wide screen;
+          logo, actions, then the row of links below 1024 px. */}
       <div className={`${container} flex flex-wrap items-center gap-x-6`}>
         <a href="#top" className="flex h-16 items-center gap-2 text-base font-semibold text-fg">
           <Logo className="size-5" />
           TrustAgent
         </a>
-        <SectionNav />
-        <div className="ml-auto flex h-16 items-center gap-1">
-          <ThemeButton />
-          <a href={REPO_URL} className={`${buttonClass.ghost} w-9 px-0`} aria-label="TrustAgent on GitHub" title="TrustAgent on GitHub">
-            <GitHubMark className="size-4" />
-          </a>
-          <a href={DEMO_HREF} className="ml-2 inline-flex h-9 items-center gap-1.5 rounded-md bg-fg px-3.5 text-sm font-medium text-fg-inverse transition-opacity hover:opacity-90 max-sm:px-3">
-            Try the demo
-            <ArrowRight aria-hidden="true" className="size-4 max-sm:hidden" />
-          </a>
-        </div>
+        {wide ? (
+          <>
+            <SectionNav />
+            {actions}
+          </>
+        ) : (
+          <>
+            {actions}
+            <SectionNav />
+          </>
+        )}
       </div>
     </header>
   );

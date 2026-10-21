@@ -27,7 +27,7 @@ ok  	github.com/truthtable/backend-go/internal/worker	0.156s
 8:41:24 PM [vite] warning: `optimizeDeps.esbuildOptions` option was specified by "vite:react-babel" plugin. This option is deprecated, please use `optimizeDeps.rolldownOptions` instead.
 Both esbuild and oxc options were set. oxc options will be used and esbuild options will be ignored. The following esbuild options were set: `{ jsx: 'automatic', jsxImportSource: undefined }`
 
- RUN  v4.1.8 /home/timkushmar/projects/TrustAgent/frontend-react
+ RUN  v4.1.8 ~/projects/TrustAgent/frontend-react
 
 
  Test Files  4 passed (4)

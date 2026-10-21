@@ -1,94 +1,86 @@
-# LinkedIn launch post (draft)
+# LinkedIn launch post
 
-Post this only when the [launch checklist](launch-checklist.md) is complete. The figures are
-placeholders on purpose: each `{measured:KEY}` names a value in
-`contracts/claims/measured.json`, and is filled only from the *Values to paste* table below, which
-`make claims-write` regenerates from that file. Until a measured run is published, the table says
-"not yet measured" and this post is not ready.
+The post goes out only after the [launch checklist](launch-checklist.md) is complete (Gate C), and
+nobody types its figures. `make linkedin-post` prints it as plain text, filled from the measured
+run (`contracts/claims/measured.json`), the recorded tape's featured trace and the claims contract,
+and exits 1 when any value is missing, so a gap or a guessed number never reaches the clipboard.
 
-When you paste a value, keep its label: write it as "(measured)" after the figure, and give the
-run date once at the end of that paragraph. No other number goes into the post.
+```bash
+make linkedin-post                   # print the post
+make linkedin-post CLIP=1            # copy it to the Windows clipboard from WSL (UTF-16LE)
+make linkedin-post ROLES=1 CLIP=1    # with the "open to roles" line
+make linkedin-post RESTRICTED=1      # the mode-R post: no fast-check figures (see below)
+```
+
+Edit the words in the templates below; `scripts/linkedin_post.py` lists the placeholders. The
+opening survives LinkedIn's "…see more" cut on its own: a real catch from the recorded tape and
+the three measured figures, in two sentences.
 
 ## The post
 
-> I rebuilt TrustAgent, my open-source hallucination gateway, around one idea: don't pay an LLM
-> to judge every answer.
->
-> Your app points its OpenAI or Anthropic SDK at a Go gateway. Every answer is checked against
-> the documents the app already sent the model, by Jev, a small decision model that returns
-> probabilities instead of text. One call answers every check at once: is it grounded, does it
-> contradict the source, did it leak personal data, did it promise something it shouldn't. Each
-> route's policy then observes, flags, blocks or falls back, and only the risky answers go on to a
-> claim-by-claim LLM audit.
->
-> What I measured on RAGTruth-QA: the fast check costs {measured:fast_check_usd_per_1k} per 1,000
-> answers, answers in {measured:gate_latency_ms_p50} at the median
-> ({measured:gate_latency_ms_p95} at p95), and agrees with the human labels on
-> {measured:ragtruth_qa_agreement} of answers. {run date}
->
-> The finding that changed the design: without source documents, the classifier's groundedness
-> scores invert. Haqq's public test of Jev on legal citations found it ranked fabricated citations
-> above honest ones when it had no sources (link in the first comment). So TrustAgent never
-> guesses: with nothing to check against, the answer is marked "not checked".
->
-> The part I enjoyed building most: you describe a new check in plain English, an LLM drafts it
-> once, and Jev runs it on every request for a fraction of a cent. You test it on samples,
-> calibrate it with a few labels, and watch it in shadow before it touches a user.
->
-> Every number in the product carries a label (measured, estimate, vendor, third-party or
-> simulated), and CI fails if the README drifts from them.
->
-> Try it in your browser, no sign-up: https://timkush1.github.io/TrustAgent/
-> Code (MIT): https://github.com/timkush1/TrustAgent
->
-> #LLM #AIEngineering #OpenSource #Golang #RAG
+```text
+My support bot promised “{featured.claim}”. The policy said “{featured.evidence}”. TrustAgent caught it in {measured:gate_latency_ms_p50} for {measured:fast_check_usd_per_1k}/1,000 answers, {measured:same_checks_cost_ratio}× cheaper than an LLM judge doing the same checks [measured].
 
-## Values to paste
+TrustAgent is my open-source hallucination gateway. Your app points its OpenAI or Anthropic SDK at a Go gateway, and every answer is checked against the documents the app already sent the model, by Jev, a small decision model that returns probabilities instead of text. One call answers every check at once: is it grounded, does it contradict the source, did it leak personal data, did it promise something it shouldn't. Each route's policy then observes, flags, blocks or falls back, and only the risky answers go on to a claim-by-claim LLM audit.
 
-Which row fills which placeholder:
+{agreement}
 
-| Placeholder | Row |
-|---|---|
-| `{measured:fast_check_usd_per_1k}` | Our measured fast-check cost |
-| `{measured:gate_latency_ms_p50}` | Our p50 fast-check latency |
-| `{measured:gate_latency_ms_p95}` | Our fast-check latency, p95 |
-| `{measured:ragtruth_qa_agreement}` | Our RAGTruth-QA agreement |
-| `{run date}` | The run named under the table |
+The finding that changed the design: without source documents, a classifier's groundedness scores invert. Haqq's public test of Jev on legal citations found it ranked fabricated citations above honest ones when it had no sources (link in the first comment). So TrustAgent never guesses: with nothing to check against, the answer is marked "not checked".
 
-<!-- measured:start -->
-<!-- Generated by `node scripts/check-claims.mjs --write` from contracts/claims/measured.json; do not edit by hand. -->
+You can also describe a new check in plain English: an LLM drafts it once, and Jev runs it on every request. You test it on samples, calibrate it with a few labels, and watch it in shadow before it touches a user.
 
-| What we measure | Our result | Note |
-|---|---|---|
-| Our measured fast-check cost | <!-- claim:fast_check_cost_per_1k_measured --> not yet measured [measured] | |
-| Our p50 fast-check latency | <!-- claim:gate_latency_p50_measured --> not yet measured [measured] | |
-| Our fast-check latency, p95 | <!-- claim:gate_latency_p95_measured --> not yet measured [measured] | |
-| Our RAGTruth-QA agreement | <!-- claim:ragtruth_qa_agreement_measured --> not yet measured [measured] | At default thresholds: compare it with Arize's accuracy at a 0.5 threshold, not its tuned-threshold figure. RAGTruth is public, so the model may have seen it in training. |
-| Measured cost ratio: LLM same checks vs fast check | <!-- claim:same_checks_ratio_measured --> not yet measured [measured] | |
-| Our measured full LLM audit cost | <!-- claim:llm_full_audit_cost_per_1k_measured --> not yet measured [measured] | |
-| Our RAGTruth-QA accuracy | <!-- claim:ragtruth_qa_accuracy_measured --> not yet measured [measured] | The like-for-like figure for Arize's accuracy at a 0.5 threshold. RAGTruth is public, so the model may have seen it in training. |
-| Our groundedness calibration error after calibration (ECE) | <!-- claim:groundedness_ece_after_measured --> not yet measured [measured] | Held out on RAGTruth-QA test; fitted on train. RAGTruth is public, so the model may have seen it in training. |
+Every number in the product carries a label (measured, estimate, vendor, third-party or simulated), and CI fails if the README drifts from them. The figures above were measured on {run.date} with {snapshot}.
 
-The gateway's own overhead, measured separately by a load test against simulated vendors:
+Built with Go, Python (LangGraph), React and TypeScript, Postgres, gRPC and Docker.
+{roles}I'm open to backend and AI-platform engineering roles, and my messages are open.
 
-| What we measure | Our result | Note |
-|---|---|---|
-| Proxy overhead, p50 | <!-- claim:proxy_overhead_p50_measured --> not yet measured [measured] | Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); not adopted yet: the latest laptop load run is in GATEWAY.md (Load test) |
-| Proxy overhead, p95 | <!-- claim:proxy_overhead_p95_measured --> not yet measured [measured] | Gateway's own time with simulated vendors (mock-upstream answers at once); excludes the fast check (~0.2 s [third-party]); not adopted yet: the latest laptop load run is in GATEWAY.md (Load test) |
+Try it in your browser: https://timkush1.github.io/TrustAgent/ (the replay needs nothing; live mode uses your own OpenRouter key)
+Code (MIT): https://github.com/timkush1/TrustAgent
 
-No benchmark run is published yet, so every row says "not yet measured". The other figures here are labelled estimates, vendor prices or third-party results, not our measurements.
-<!-- measured:end -->
+#LLM #AIEngineering #OpenSource #Golang #RAG
+```
+
+`{agreement}` becomes one paragraph only when every part of it is measured: our RAGTruth-QA
+accuracy and balanced accuracy, each with its confidence interval and the number of answers per
+class, at the default thresholds, beside Arize's accuracy at the same 0.5 threshold (never beside
+Arize's tuned-threshold figure). If any part is missing, the command leaves the paragraph out and
+says so; the agreement then lives in the README only (D212).
+
+## The post, mode R
+
+Used only if the terms check ends in mode R (no fast-check figures may be published; see
+[terms-check.md](terms-check.md)). It names no Jev figure and no recorded answer: the public demo
+then replays the simulated tape, and live mode uses the visitor's own key.
+
+```text
+Support bots promise things their own documents don't say. I built TrustAgent, an open-source hallucination gateway, to catch that before the answer reaches the user.
+
+Your app points its OpenAI or Anthropic SDK at a Go gateway. Every answer is checked against the documents the app already sent the model: deterministic checks first, then one call to a small decision model that answers every check at once. Each route's policy then observes, flags, blocks or falls back, and only the risky answers go on to a claim-by-claim LLM audit. With nothing to check against, the answer is marked "not checked" instead of guessed.
+
+You can also describe a new check in plain English: an LLM drafts it once, and the gateway runs it on every request. You test it on samples, calibrate it with a few labels, and watch it in shadow before it touches a user.
+
+Every number in the product carries a label (measured, estimate, vendor, third-party or simulated), and CI fails if the README drifts from them.
+
+Built with Go, Python (LangGraph), React and TypeScript, Postgres, gRPC and Docker.
+{roles}I'm open to backend and AI-platform engineering roles, and my messages are open.
+
+Try it in your browser: https://timkush1.github.io/TrustAgent/ (the demo replays simulated traffic; live mode uses your own OpenRouter key)
+Code (MIT): https://github.com/timkush1/TrustAgent
+
+#LLM #AIEngineering #OpenSource #Golang #RAG
+```
 
 ## Notes for posting
 
-- **Attribution.** The inversion finding is a published third-party test, not our measurement:
-  Haqq, "Jev for legal AI hallucination detection"
-  (https://www.haqq.ai/blog/jev-legal-ai-hallucination-detection). The post names Haqq and puts
-  the link in the first comment. Do not add its figures: they are not in the claims contract.
-- **The link card** comes from the demo URL's `og:image`, the [social card](og-spec.md). Check it
-  in LinkedIn's post inspector before posting.
-- **First comment:** the Haqq link above (the post promises it), then optionally the 60-second
-  video from [demo-script.md](demo-script.md) and a line inviting people to run `make demo` with
-  zero keys.
-- **If a value is missing** (a run that did not cover it), cut that clause rather than estimate
-  it.
+- **When.** After Gate C, at the time the owner picks. In mode A, TypeSafe has had the results
+  for 3 days (the courtesy note) and may be tagged only if they said yes.
+- **The video is the post's media**: attach the 60-second launch video (`make launch-video`) to
+  the post itself, not to a comment.
+- **First comment**: the Haqq link the post promises,
+  https://www.haqq.ai/blog/jev-legal-ai-hallucination-detection. The inversion finding is their
+  published test, not our measurement; its figures are not in the claims contract, so none go in.
+- **The link card** comes from the site's `og:image`, the [social card](og-spec.md). LinkedIn
+  caches a link card for about a week, so check the URL in LinkedIn's Post Inspector before the
+  first post that links it.
+- **A figure looks wrong?** Fix its source (the measured run, the tape or the claims contract) and
+  run the command again. Never edit a number in the printed text.

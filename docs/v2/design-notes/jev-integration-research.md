@@ -719,7 +719,7 @@ Following CLAUDE.md: add this as Phase 8 in `docs/PLAN.md`, change the proto via
   - Pass it into both services in `docker-compose.yml`.
   - Never put it in the React app [ortut].
 
-**Repo files read (all under `/home/timkushmar/projects/TrustAgent`):**
+**Repo files read (all under `~/projects/TrustAgent`):**
 - `backend-go/internal/proxy/handler.go`
 - `backend-go/internal/config/config.go`
 - `backend-go/internal/worker/pool.go`

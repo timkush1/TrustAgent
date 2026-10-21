@@ -7,10 +7,47 @@ Jev decision check on every answer, per-route policies, pluggable evidence (no
 RAG by default), Evaluator Studio, and a redesigned dashboard. The full
 specification is [docs/v2/SPEC.md](docs/v2/SPEC.md); progress is tracked by
 phase (P0 → P7) in [docs/PLAN.md](docs/PLAN.md), and the reasons behind the big
-choices are ADR-005 to ADR-010 in [docs/DECISIONS.md](docs/DECISIONS.md).
+choices are ADR-005 to ADR-010 in [docs/DECISIONS.md](docs/DECISIONS.md). This
+section sums the release up; the work as it landed, phase by phase, is under
+*Build log by phase* at its end.
+
+### Highlights
+- **A gateway in the request path.** Point an OpenAI or Anthropic SDK at the
+  proxy. Every answer gets the Tier-0 detectors (deterministic Go checks inside a
+  2 ms budget) and one **Fast check (Jev)** call that asks all of the route's
+  checks at once; the route's policy then observes, flags, blocks or falls back.
+  OpenAI chat and completions and Anthropic Messages, JSON and SSE
+  ([docs/GATEWAY.md](docs/GATEWAY.md)).
+- **Evidence from the request; no RAG by default.** Groundedness is checked
+  against what the request already carries: system-prompt documents, user
+  context, tool results and the `trustagent.context` extension. With no evidence
+  the result is *not assessed* and Jev is never asked. Qdrant and embeddings are
+  the optional `knowledge` profile.
+- **Deep audit, asynchronously.** The LangGraph engine splits an answer into
+  claims, checks each against the evidence with a judge and scores the answer.
+  CONTRADICTED (the evidence disproves it) stays distinct from UNSUPPORTED
+  (nothing addresses it) end to end, and results stream to the dashboard over
+  WebSocket v2.
+- **Policies, checks and Evaluator Studio.** Versioned per-route policies with a
+  free impact preview and rollback, 11 built-in checks, and a Studio that drafts,
+  tests and calibrates your own. A route blocks only with a calibration for the
+  current Jev snapshot; until then it flags and says why.
+- **Keys, costs and access in the dashboard.** Connect OpenRouter (PKCE) or paste
+  a key; keys are sealed with AES-256-GCM. Scoped app and admin keys, sessions, a
+  cost ledger, daily budgets, and a Savings page that sets the gateway beside an
+  LLM judge doing the same checks.
+- **Try it without installing anything.** A static site with a landing page, a
+  replay of the demo tape, Evaluator Studio and a Playground that runs Jev in your
+  browser with your own OpenRouter key. A zero-key `make demo` runs the whole
+  stack on mocks, labelled Simulated.
+- **Honest numbers.** Every figure on a page carries its label (measured,
+  estimate, vendor, third-party or simulated); `make check-claims` holds the
+  README and docs to `contracts/claims/`, and mock output is never shown as
+  measured.
 
 ### Upgrading from 1.x: every breaking change at a glance
-Details follow in the per-phase sections and under *Migration notes*.
+Details are under *Build log by phase* (*Breaking changes (P3)* and
+*Breaking changes (P4)*); the steps to take follow this list.
 - **Metric names.** The engine exports `trustagent_engine_*` and the gateway
   `trustagent_gateway_*`; every Grafana query filters by `job` (table under
   *Breaking changes (P3)*).
@@ -49,7 +86,182 @@ Details follow in the per-phase sections and under *Migration notes*.
   engine locally: no knowledge image is published.
 - **No downgrade after migration 0002.** Back up the database before upgrading.
 
-### Breaking changes (P4)
+**Steps when you upgrade:**
+- **Before saving keys in the dashboard,** back up the `trustagent-secrets`
+  volume or set `TRUTHTABLE_SECRET_KEY` in `.env`: saved keys decrypt only with
+  the master key they were sealed with, and a Postgres backup alone means
+  entering them again ([docs/SECURITY.md](docs/SECURITY.md#master-key)).
+- **Migrations 0003 to 0006** apply at proxy start and, like 0002, have no
+  downgrade. Upgrade the proxy and the engine together.
+- **Production origins:** the default `TRUTHTABLE_ALLOWED_ORIGINS` includes
+  `http://localhost:5173` for the Vite dev server; set the variable explicitly
+  in production.
+- **Several proxy replicas** need sticky sessions for Connect OpenRouter (its
+  nonce lives in one process for 10 minutes), and each enforces the budgets on
+  its own between 60 s resyncs.
+- **Metrics:** replace the 1.0 names in dashboards and alerts using the table
+  under *Breaking changes (P3)*, and add a `job` filter to every query
+  (`config/grafana/dashboards/trustagent.json` shows the pattern). The
+  provisioned Grafana datasource now has the uid `prometheus`.
+- **Before turning on block or fallback,** read the block-readiness checklist
+  on the Policies page: a route without a measured calibration for the current
+  Jev snapshot, or a passthrough stream, acts as flag until fixed.
+- A v1 `.env` may still set `LLM_MODEL` (for example `claude-haiku-4-5`). Under
+  `LLM_PROVIDER=auto` it goes to whichever judge auto picks; clear it or set
+  `LLM_PROVIDER` explicitly.
+- Dashboard writes (saving a policy, Playground runs) need an admin: claim the
+  `SETUP: open …` link the proxy prints at first start, or sign in at
+  `/app/setup` with a key from `TRUTHTABLE_ADMIN_KEYS`. Keep
+  `TRUTHTABLE_DATA_DIR` on a persistent volume (compose does), or sessions end
+  at every restart.
+
+### Added
+- **The gated `/v1` handler**: OpenAI chat and completions and Anthropic Messages,
+  JSON and SSE; passthrough streams send the decision as an SSE comment and HTTP
+  trailers, `streaming: buffer` routes can block and fall back on streams,
+  fallback answers are gated again before they are sent, and
+  `GET /v1/trustagent/decisions/:trace_id` long-polls a decision.
+- **Fast check (Jev) backends**: `openrouter-decisions`, `openrouter-systemone`,
+  `typesafe` and `compatible` next to `mock` and `off`, chosen automatically; with
+  retries that honour Retry-After, hedging, a breaker that counts vendor faults
+  only, a rate limiter, a daily spend cap, snapshot tracking and keep-warm.
+  `make jev-check` checks a key and endpoint with one probe.
+- **Policies and evaluators**: versioned per-route policies (file or dashboard,
+  rollback, hot reload across replicas, a free impact preview on stored answers),
+  11 built-in checks, a calibration store (isotonic or Platt fits with Wilson
+  bounds) and block readiness per route.
+- **Evaluator Studio**: draft a check with AI, test it on samples, label answers,
+  calibrate, and a paid dry run with an estimate and a confirmation; also on the
+  static site through your browser key.
+- **Deep-audit engine 2.0**: `Evaluate`, `GetEngineInfo`, `RetrieveContext`,
+  `ApplyRuntimeConfig` and `DraftEvaluator` over gRPC; judge auto-resolution
+  (`LLM_PROVIDER=auto`) with no silent fallback; UTF-16 claim spans; UNKNOWN and
+  NOT_CHECKED verdicts; scoring v2; one cost record per judge call.
+- **The dashboard, rebuilt**: Overview, Traffic and trace detail (claims marked in
+  the answer, the exact Jev request in the glass box), Policies, Evaluators,
+  Studio, Savings, Playground, Settings (keys, models, budgets, prices), Access
+  and Knowledge; light and dark themes, phone widths, and the empty, loading,
+  error, degraded, demo and read-only states on every page.
+- **Keys and settings at runtime**: Connect OpenRouter and Paste a key, a check of
+  each key with its provider before use, runtime settings pushed to the engine
+  without a restart, and the "Try it without a key" simulated mode.
+- **Costs**: a cost ledger of every decision and judge call, daily budgets that
+  reserve before a call, and `GET /api/roi/*` and `GET /api/pricing`.
+- **`contracts/`**: the cross-language source of truth (JSON Schemas, the
+  configuration-key registry, pricing, labelled value claims, UI copy, evaluator
+  templates, rules and golden vectors), with a TypeScript decision core that
+  passes the same golden vectors as the Go reference.
+- **The public site**: a landing page with a cost calculator and a sourced,
+  dated comparison table, the replayed demo, Studio and the live Playground in
+  the browser (`pages.yml`).
+- **Release tooling**: `make version-bump` and `make check-version`, multi-arch
+  GHCR images with SBOMs and build provenance (`release-images.yml`), a
+  pull-based quick start, `make release-notes TAG=…` (the CHANGELOG section,
+  every image digest and the commands that verify it, each measured figure
+  with its label; it refuses a missing digest, and notes made from canned
+  inspect output say so at the top) and `make record-demo` (a dry run unless
+  `CONFIRM=1`).
+- **Launch tooling**: `make linkedin-post` prints the launch post from the measured run and the
+  recorded tape and exits 1 on any missing value; the launch checks, the release notes and the
+  post count a tape as recorded only when the hosts it names are vendor hosts, never
+  mock-upstream; `make clip FILE=…` copies text to the Windows
+  clipboard from WSL without garbling it; `make compare-review` re-reads every comparison source
+  and prints each cell beside its source's own words; `make hygiene-check` (in `make check`) and
+  `make gitleaks-history` keep local paths, personal emails and keys out of the repository.
+- **Measurement tools**: `make gate-eval`, `make calibrate`, `make bench-lite`
+  and `make bench-publish` (each paid run is a dry run with an estimate unless
+  `CONFIRM=1`, and publishing refuses mock output), the Tier-0 benchmarks and k6
+  gateway-overhead runs.
+- **Developer experience**: `make check` runs every CI gate, `make doctor`
+  diagnoses a running stack, `make configure WITH_SECRETS=1` asks for keys at
+  hidden prompts, the onboarding and e2e stacks run every vendor on
+  mock-upstream, and `make docs-links` checks every relative link.
+- **Community files**: [CONTRIBUTING.md](CONTRIBUTING.md),
+  [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), issue forms and a pull request
+  template; security reports go through GitHub's private vulnerability reporting
+  ([docs/SECURITY.md](docs/SECURITY.md#reporting)).
+
+### Changed
+- **Scoring v2** (ADR-001): per-claim verdict distributions, a trust score that is
+  absent (never 0) when it cannot be computed, and `judge_unavailable` when
+  UNKNOWN reaches half the checked claims.
+- **The knowledge add-on is optional** (`poetry install --extras knowledge`,
+  `TRUTHTABLE_KNOWLEDGE_ENABLED=true`); the default engine imports without torch.
+- **Configuration** is read through the key registry (`.env`, then the process
+  environment), validated with typo hints, and documented in the generated
+  [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+- **CI** is split into `ci-go`, `ci-python`, `ci-web`, `ci-docker`,
+  `ci-contracts` and `ci-e2e` (job names unchanged for branch protection), and
+  every action is pinned to a commit SHA.
+- **The HaluEval evaluation workflow (`eval.yml`) runs only when started by
+  hand**: it no longer runs weekly, its actions are pinned to commit SHAs, and its
+  badge left the README, because its live-model figures carried no label.
+- **Pages on a release tag** ships the recorded tape; the repository variable
+  `PAGES_TAG_DATASET` = `simulated` ships the simulated one instead, for a release that may not
+  publish recorded model output.
+- **Toolchains**: Go 1.25, Vite 8, TypeScript 6, React 19.3; the Makefile is
+  split into `mk/*.mk` fragments.
+- `SubmitAudit` and `GetAuditResult` are deprecated in favour of `Evaluate`.
+
+### Fixed
+- **The gateway read its own key from `Authorization`** (B1), the header SDKs fill
+  with the upstream key; it reads `X-TrustAgent-Key` first.
+- **Test answers on every request** (M7): `test_response` works only in test mode.
+- **Every audit was counted twice in Prometheus** (M11): the two services now
+  export separate metric names.
+- **Duplicate ids corrupted audit history** (B4): ids are server-generated
+  UUIDv7.
+- **Tier-0 on long documents** was quadratic; 32k tokens of evidence now take
+  about 0.4 ms on the dev laptop (measured; GATEWAY.md's Tier-0 table).
+- **A key or credit pause read as a fault pause**, so Settings → Test could not
+  lift it; the pause keeps its cause.
+- Many smaller fixes to wording, phone layouts and the simulated demo's Savings
+  figures are listed under *Build log by phase*.
+
+### Security
+- **Access control**: scopes ingest, read, content and admin; scoped API keys and
+  signed dashboard sessions with CSRF protection and sliding expiry; single-use
+  WebSocket tickets; a one-time setup link instead of a default admin key; an
+  append-only admin audit log that refuses UPDATE, DELETE and TRUNCATE.
+- **Keys at rest and in flight**: dashboard keys are sealed with AES-256-GCM under
+  the master key, bound to their name, provider and allowed origins; every
+  outbound call checks the destination origin; link-local and cloud-metadata
+  addresses are refused at dial time, after DNS.
+- **Redaction** of every received or decrypted key in Go logs and errors, gRPC and
+  WebSocket status details, relayed upstream error bodies and the engine's logs.
+- **Safer defaults**: ports bind to `127.0.0.1`, `/v1` needs an app key, test
+  mode is off, CORS allows exactly the request headers the gateway reads, and the
+  engine refuses a non-loopback bind without its internal token.
+- **Supply chain**: workflows pinned to commit SHAs and linted (actionlint,
+  zizmor), gitleaks over the whole history, gosec, bandit and npm audit in CI, and
+  images with SBOMs and build provenance attestations.
+
+### Known limits
+- **The fast check needs a decision-model key** (OpenRouter or TypeSafe). Without
+  one the gateway runs the Tier-0 detectors only; `make demo` uses a mock,
+  labelled Simulated.
+- **No evidence, no groundedness verdict.** A request that carries no documents,
+  context or tool results gets *not assessed* for groundedness, by design.
+- **Blocking needs a calibration** for the current Jev snapshot. Until a route has
+  one, and whenever the snapshot changes, block and fallback act as flag and say
+  why (`calibration_missing`, `uncalibrated_snapshot`).
+- **Passthrough streams cannot be blocked**: they are flagged in the stream's
+  terminal event; use `streaming: buffer` on a route that must block streams.
+  `n > 1` gates choice 0 only, and tool-call-only answers are not enforced.
+- **The deep audit needs a judge.** With `LLM_FALLBACK=none` (the default) an
+  audit fails with `judge_unavailable` while the judge is down; nothing is
+  swapped in silently.
+- **Several proxy replicas** need sticky sessions for Connect OpenRouter, and each
+  replica enforces the daily budgets on its own between 60 s resyncs.
+- **Figures from others**: the comparison table and the vendor and third-party
+  figures are as of the date beside each one; measured figures are only those
+  listed with this release's measured run.
+
+### Build log by phase
+
+The work as it landed, phase by phase; the sections above sum it up.
+
+#### Breaking changes (P4)
 - **CORS allows exactly the SPEC request headers (D43).** A cross-origin browser
   may send `Content-Type`, `If-Match`, `X-TrustAgent-Key`, `X-TrustAgent-CSRF`,
   `X-TrustAgent-Route`, `X-TrustAgent-Mode` and `X-Request-ID`; `Authorization`
@@ -84,7 +296,7 @@ Details follow in the per-phase sections and under *Migration notes*.
   before this phase answers `UNIMPLEMENTED`: the gateway logs one warning and
   retries, but the dashboard judge and Studio drafts need both upgraded.
 
-### Breaking changes (P3)
+#### Breaking changes (P3)
 - **Metric renames (M11).** Both services exported the same `trustagent_*`
   names, so Prometheus counted every audit twice. The engine's metrics are now
   `trustagent_engine_*` and the gateway's `trustagent_gateway_*`, and every
@@ -129,7 +341,7 @@ Details follow in the per-phase sections and under *Migration notes*.
   selected scenario is skipped because of its phase unless `--allow-skip` is
   given, so a check can no longer pass without testing anything.
 
-### Added (so far)
+#### Added (P0 to P3: contracts, walking skeleton, gateway)
 - **v2 specification and design notes** (`docs/v2/`), plus recorded baseline
   test results.
 - **`contracts/`** — the cross-language source of truth: JSON Schemas (2020-12),
@@ -265,7 +477,7 @@ Details follow in the per-phase sections and under *Migration notes*.
   [docs/EVALUATORS.md](docs/EVALUATORS.md); the README and
   [docs/DEMO.md](docs/DEMO.md) describe 2.0.
 
-### Added (P4: security, credentials, Studio, ROI)
+#### Added (P4: security, credentials, Studio, ROI)
 - **Keys in the dashboard.** **Connect OpenRouter** (self-hosted PKCE: the
   verifier and the key never reach the browser) and **Paste a key** for
   OpenRouter, TypeSafe, Anthropic, OpenAI, a compatible gateway and the
@@ -397,7 +609,7 @@ Details follow in the per-phase sections and under *Migration notes*.
   `mock_judge` (Simulated, and out of the measured figures); Benchmarks renders
   in the static build; a cross-origin dashboard's live stream uses a WS ticket.
 
-### Added (P5: static site, landing, release tooling)
+#### Added (P5: static site, landing, release tooling)
 - **Try it live in your browser.** The static site's Playground gains a `#live`
   section below the replayed examples: the three showcase scenarios (a grounded
   answer, the refund contradiction, a PII leak) or your own text, checked by Jev
@@ -461,7 +673,7 @@ Details follow in the per-phase sections and under *Migration notes*.
   themes), as the Playwright `launch` project. The card and the hero refuse a
   simulated tape; the screenshots carry its Simulated label.
 
-### Changed
+#### Changed (P0 to P5)
 - **Security (P4 integration):** link-local and cloud-metadata addresses are
   refused at dial time, after DNS, by the upstream proxy, the decision-model
   client and key checks, and the OpenRouter key exchange; inject mode masks the
@@ -511,7 +723,7 @@ Details follow in the per-phase sections and under *Migration notes*.
 - Knowledge-base endpoints answer 409 `knowledge_disabled` while the add-on is
   off; `POST /api/kb/documents` (admin) is the upload's v2 path.
 
-### Fixed
+#### Fixed (P0 to P5)
 - **The landing's comparison credited one vendor's docs to a whole row**: the
   observability row named Langfuse, Arize and Datadog while every cell cited
   Langfuse, and silent docs read "Varies". Each cell now names the product whose
@@ -606,51 +818,12 @@ Details follow in the per-phase sections and under *Migration notes*.
   non-unique `client_request_id`, and a repeated id can no longer append claims
   to an existing audit.
 
-### Migration notes
-- **Before saving keys in the dashboard,** back up the `trustagent-secrets`
-  volume or set `TRUTHTABLE_SECRET_KEY` in `.env`: saved keys decrypt only with
-  the master key they were sealed with, and a Postgres backup alone means
-  entering them again ([docs/SECURITY.md](docs/SECURITY.md#master-key)).
-- **Migrations 0005 and 0006** apply at proxy start and, like 0002-0004, have no
-  downgrade. Upgrade the proxy and the engine together.
-- **Production origins:** the default `TRUTHTABLE_ALLOWED_ORIGINS` includes
-  `http://localhost:5173` for the Vite dev server; set the variable explicitly
-  in production.
-- **Cross-origin browser clients** that sent `Authorization` or `X-API-Key` send
-  `X-TrustAgent-Key` instead (CORS above).
-- **Several proxy replicas** need sticky sessions for Connect OpenRouter (its
-  nonce lives in one process for 10 minutes), and each enforces the budgets on
-  its own between 60 s resyncs.
-- **Metrics:** replace the 1.0 names in dashboards and alerts using the table
-  under *Breaking changes (P3)*, and add a `job` filter to every query
-  (`config/grafana/dashboards/trustagent.json` shows the pattern). The
-  provisioned Grafana datasource now has the uid `prometheus`.
-- **WebSocket clients** connect with `GET /ws?protocol=2` and read the v2
-  envelope (docs/v2/SPEC.md §2.5).
-- **Before turning on block or fallback,** read the block-readiness checklist
-  on the Policies page: a route without a measured calibration for the current
-  Jev snapshot, or a passthrough stream, acts as flag until fixed.
-- **No downgrade after migration 0002**: v1 binaries cannot scan the nullable
-  score columns 0002 introduces. Back up the database before upgrading.
-- Compose services no longer set `container_name`; use
-  `docker compose exec <service> …` instead of `docker exec truthtable-<service> …`.
-- Migrations 0003 and 0004 apply automatically at proxy start; like 0002, they
-  have no downgrade.
-- A v1 `.env` may still set `LLM_MODEL` (for example `claude-haiku-4-5`). Under
-  `LLM_PROVIDER=auto` it goes to whichever judge auto picks; clear it or set
-  `LLM_PROVIDER` explicitly.
-- Dashboard writes (saving a policy, Playground runs) need an admin: claim the
-  `SETUP: open …` link the proxy prints at first start, or sign in at
-  `/app/setup` with a key from `TRUTHTABLE_ADMIN_KEYS`. Keep
-  `TRUTHTABLE_DATA_DIR` on a persistent volume (compose does), or sessions end
-  at every restart.
-
-## Post-1.0 hardening and audit-quality pass (released in 2.0.0)
+#### Post-1.0 hardening and audit-quality pass
 
 Foundation work after 1.0 that made the system demo-ready and accurate before the
 2.0 work began; it was never released on its own (see [docs/PLAN.md](docs/PLAN.md)).
 
-### Changed
+##### Changed
 - **Audit judge now defaults to Anthropic Claude Haiku** (`claude-haiku-4-5`)
   with automatic fallback to local Ollama (`llama3.2:1b`) when no
   `ANTHROPIC_API_KEY` is set — great quality with a key, free out of the box.
@@ -658,7 +831,7 @@ Foundation work after 1.0 that made the system demo-ready and accurate before th
   instead of sequentially; default gRPC timeout raised to 120s for slow judges.
 - **Unified Prometheus namespace** to `trustagent_*` across both services.
 
-### Added
+##### Added
 - **CONTRADICTED verdict is live end-to-end** (proto → Python enum/prompt/scorer
   → Go maps → dashboard badge), distinct from UNSUPPORTED; deterministic scorer
   tests lock it in.
@@ -666,7 +839,7 @@ Foundation work after 1.0 that made the system demo-ready and accurate before th
   scripts; `docs/CI-CD.md`; `docs/README.md` docs index; single-connection
   `WebSocketProvider`; auth-aware `api/client.ts`; real `/health`-driven status.
 
-### Fixed
+##### Fixed
 - **Duplicate WebSocket connections** (App + AuditFeed both connected) → one shared connection.
 - Dashboard live feed broke under proxy auth (WS never sent `?api_key=`).
 - Fabricated `relevancy_score` (a duplicate of faithfulness) removed.
