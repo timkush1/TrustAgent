@@ -602,7 +602,7 @@ services:
   # ========== Profile: redis ==========
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     profiles: [redis]
     ports:
       - "${BIND_ADDR:-127.0.0.1}:6379:6379"
