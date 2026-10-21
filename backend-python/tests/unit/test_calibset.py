@@ -387,6 +387,31 @@ def test_calib_pass_through_a_stand_in_host_is_simulated(
     assert "make calibrate would refuse to write" in out and "next (free)" not in out
 
 
+def test_calib_pass_risks_that_name_no_host_are_simulated(
+    tmp_path: Path, source_dir: Path, gate: FakeGateEval, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # D203 fails closed: a gate-eval build without endpoint_host cannot show a vendor answered.
+    gate.default(**gate_line(endpoint_host=None))
+    _with_fake_config(gate)
+
+    assert calibset.main(_pass_args(tmp_path, source_dir, gate)) == 0
+
+    out = capsys.readouterr().out
+    assert _result(out)["label"] == "simulated"
+    assert "make calibrate would refuse to write" in out and "next (free)" not in out
+
+
+def test_summarize_pass_counts_simulated_and_unhosted_lines(tmp_path: Path) -> None:
+    path = tmp_path / "gate.jsonl"
+    vendor = {**gate_line(), "id": "a", "labels": {}}
+    unhosted = {**gate_line(endpoint_host=None), "id": "b", "labels": {}}
+    flagged = {**gate_line(), "id": "c", "labels": {}, "simulated": True}
+
+    for lines, simulated in (([vendor], False), ([vendor, unhosted], True), ([flagged], True)):
+        path.write_text("".join(json.dumps(line) + "\n" for line in lines))
+        assert calibset.summarize_pass(path).simulated is simulated, lines
+
+
 def test_calib_pass_dry_run_spends_nothing(
     tmp_path: Path, source_dir: Path, gate: FakeGateEval, capsys: pytest.CaptureFixture[str]
 ) -> None:

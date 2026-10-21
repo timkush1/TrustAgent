@@ -270,6 +270,9 @@ class PassSummary:
     hosts: Set[str] = field(default_factory=set)
     backends: Set[str] = field(default_factory=set)
     connections: Set[str] = field(default_factory=set)
+    # Evaluated lines that say they are simulated, or that name no host while not mock (D203).
+    simulated_lines: int = 0
+    unhosted: int = 0
     # Per evaluator: assessed lines with a label, and how many of them should fire.
     assessed: Dict[str, int] = field(default_factory=dict)
     positives: Dict[str, int] = field(default_factory=dict)
@@ -280,8 +283,16 @@ class PassSummary:
 
     @property
     def simulated(self) -> bool:
-        """Mock, or a stand-in host (D203): such risks never make a measured calibration."""
-        return "mock" in self.backends or bool(self.hosts - set(vendor_hosts()))
+        """
+        Mock, a stand-in host, or a host nobody named (D203 fails closed):
+        such risks never make a measured calibration.
+        """
+        return (
+            "mock" in self.backends
+            or self.simulated_lines > 0
+            or self.unhosted > 0
+            or bool(self.hosts - set(vendor_hosts()))
+        )
 
 
 def summarize_pass(path: Path, evaluators: Sequence[str] = EVALUATORS) -> PassSummary:
@@ -304,8 +315,12 @@ def summarize_pass(path: Path, evaluators: Sequence[str] = EVALUATORS) -> PassSu
             summary.snapshots.add(str(usage["snapshot"]))
         if usage.get("backend"):
             summary.backends.add(str(usage["backend"]))
+        if line.get("simulated") is True:
+            summary.simulated_lines += 1
         if line.get("endpoint_host"):
             summary.hosts.add(str(line["endpoint_host"]))
+        elif usage.get("backend") != "mock":
+            summary.unhosted += 1
         if line.get("connection"):
             summary.connections.add(str(line["connection"]))
         evaluators_out = decision.get("evaluators") or {}
@@ -470,7 +485,8 @@ def run_pass(args: argparse.Namespace) -> int:
         print(stderr[-2000:], file=sys.stderr, flush=True)
     summary = summarize_pass(gate_out)
     code = {0: EXIT_OK, 3: EXIT_OVER_BUDGET}.get(process.returncode, EXIT_FAILED)
-    label = "simulated" if summary.simulated else "measured"
+    # Nothing evaluated measured nothing: no label rather than "measured".
+    label = None if summary.evaluated == 0 else "simulated" if summary.simulated else "measured"
     document = {
         "schema": RESULT_SCHEMA,
         "run_id": run_id,
