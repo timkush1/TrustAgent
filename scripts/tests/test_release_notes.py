@@ -11,6 +11,7 @@ import contextlib
 import copy
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -296,6 +297,26 @@ class RepositoryTest(unittest.TestCase):
         data = json.loads(FIXTURE.read_text(encoding="utf-8"))
         for service in rn.SERVICES:
             rn.read_image(service, service, data[service])
+
+    def test_the_licence_and_the_package_metadata_agree(self) -> None:
+        # One licence (MIT) and one holder across LICENSE, package.json and pyproject.toml: the
+        # placeholder until the owner names it (S1), then that one name everywhere (D216).
+        licence = (ROOT / "LICENSE").read_text(encoding="utf-8")
+        self.assertTrue(licence.startswith("MIT License\n"))
+        holder = re.search(r"(?m)^Copyright \(c\) \d{4} (.+)$", licence)
+        self.assertIsNotNone(holder)
+        name = holder.group(1).strip()
+        pkg = json.loads((ROOT / "frontend-react" / "package.json").read_text(encoding="utf-8"))
+        lock = json.loads((ROOT / "frontend-react" / "package-lock.json").read_text(encoding="utf-8"))
+        self.assertEqual(pkg.get("license"), "MIT")
+        self.assertEqual(lock["packages"][""].get("license"), "MIT")
+        self.assertEqual(pkg.get("author"), name)
+        pyproject = (ROOT / "backend-python" / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('license = "MIT"', pyproject)
+        authors = re.search(r'(?m)^authors = \["([^"<]+?)(?: <[^>]+>)?"\]$', pyproject)
+        self.assertIsNotNone(authors)
+        self.assertEqual(authors.group(1), name)
+        self.assertNotIn("@", pyproject.split("[tool.poetry.dependencies]")[0], "no email in the metadata")
 
     def test_the_real_changelog_has_a_section_for_version(self) -> None:
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
