@@ -1,8 +1,12 @@
 module github.com/truthtable/backend-go
 
-go 1.27.0
+go 1.26.0
 
-toolchain go1.27.3
+// Not go1.27 yet: Go 1.27 writes export data (unified IR V5) that only golang.org/x/tools
+// v0.50.0 and later can read, and gosec, the blocking gate in security.yml, is built on an older
+// x/tools in every release so far (v2.29.0 included), so it would type-check nothing. Move to
+// Go 1.27 once a gosec release reads it.
+toolchain go1.26.10
 
 require (
 	github.com/gin-gonic/gin v1.9.1

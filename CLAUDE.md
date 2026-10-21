@@ -29,7 +29,7 @@ streams to a React dashboard over WebSocket v2.
 
 | Path | What |
 |---|---|
-| `backend-go/` | Go 1.27 gateway (gin): `internal/{gate,decision,jev,evidence,policy,llmapi,upstream,authz,store,websocket,worker,grpc,metrics}`, `cmd/{proxy,trafficgen,mock-upstream,export-replay,gate-eval,calibrate,jevcheck,vectorgen}` |
+| `backend-go/` | Go 1.26 gateway (gin): `internal/{gate,decision,jev,evidence,policy,llmapi,upstream,authz,store,websocket,worker,grpc,metrics}`, `cmd/{proxy,trafficgen,mock-upstream,export-replay,gate-eval,calibrate,jevcheck,vectorgen}` |
 | `backend-python/` | Python 3.11 audit engine (Poetry): LangGraph graph, providers, scoring, KB (optional), gRPC server (`Evaluate`) |
 | `frontend-react/` | React 19.3 + TypeScript 6 + Vite 8 + TanStack Router/Query + Tailwind 4 dashboard; house rules in `frontend-react/DESIGN.md` |
 | `contracts/` | Cross-language source of truth: JSON Schemas, config-key registry (`config/keys.v1.json`), evaluator templates, question sets, rules, demo scenarios, UI copy/glossary, pricing, value claims, golden vectors |
