@@ -106,11 +106,6 @@ function PublishedFigures() {
   // against the source before launch, and withdrawn if the page no longer publishes them).
   const orAcc = optionalClaim('openrouter_faithfulness_accuracy');
   const orMs = optionalClaim('openrouter_faithfulness_median_ms');
-  const measured = [claim('fast_check_cost_per_1k_measured'), claim('gate_latency_p50_measured'), claim('ragtruth_qa_agreement_measured')];
-  // The only place on the page that names what is not measured yet: the hero shows our figure only
-  // once it is published.
-  const published = measured.filter((c) => c.hasValue);
-  const pending = measured.filter((c) => !c.hasValue);
   return (
     <ul>
       <Figure title="Jev price" chip={jevIn}>
@@ -125,26 +120,50 @@ function PublishedFigures() {
           {num(orAcc)} accuracy, {num(orMs)} on its own test set (not the fast check’s P50 above).
         </Figure>
       ) : null}
-      <li className="border-t border-border pt-4" data-measured>
-        <p className="text-sm font-semibold text-fg">Our measurements</p>
-        {published.length > 0 ? (
-          <ul className="mt-1.5 space-y-1 text-fg-muted">
-            {published.map((c) => (
-              <li key={c.id} className="flex flex-wrap items-baseline gap-x-2" data-chip-scope>
+      <OurMeasurements />
+    </ul>
+  );
+}
+
+/**
+ * Our own figures. The only place on the page that names what is not measured yet: the hero shows
+ * our figure only once it is published. Each published figure keeps its caveat beside its chip
+ * and, from the run, its 95% interval with n per class (D212); the agreement's caveat says which
+ * third-party figure it is read against (Arize's accuracy at 0.5, above).
+ */
+export function OurMeasurements({
+  measured = [claim('fast_check_cost_per_1k_measured'), claim('gate_latency_p50_measured'), claim('ragtruth_qa_agreement_measured')],
+}: { measured?: ClaimView[] } = {}) {
+  const published = measured.filter((c) => c.hasValue);
+  const pending = measured.filter((c) => !c.hasValue);
+  return (
+    <li className="border-t border-border pt-4" data-measured>
+      <p className="text-sm font-semibold text-fg">Our measurements</p>
+      {published.length > 0 ? (
+        <ul className="mt-1.5 space-y-1.5 text-fg-muted">
+          {published.map((c) => (
+            <li key={c.id} data-chip-scope data-caveat-scope>
+              <span className="flex flex-wrap items-baseline gap-x-2">
                 <span>{c.text}:</span>
                 <ClaimValue claim={c} />
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {pending.length > 0 ? (
-          <p className="mt-1.5 text-fg-muted">
-            {published.length > 0 ? 'Still to publish' : 'Not published yet'}: {listWords(pending.map((c) => lowerFirst(c.text)))}.
-          </p>
-        ) : null}
-        <p className="mt-1.5 text-xs text-fg-subtle">Published only from a committed benchmark run, never from the demo.</p>
-      </li>
-    </ul>
+              </span>
+              {c.interval ? (
+                <p className="text-xs text-fg-subtle" data-interval-for={c.id}>
+                  {c.interval}.
+                </p>
+              ) : null}
+              <ClaimCaveat claim={c} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {pending.length > 0 ? (
+        <p className="mt-1.5 text-fg-muted">
+          {published.length > 0 ? 'Still to publish' : 'Not published yet'}: {listWords(pending.map((c) => lowerFirst(c.text)))}.
+        </p>
+      ) : null}
+      <p className="mt-1.5 text-xs text-fg-subtle">Published only from a committed benchmark run, never from the demo.</p>
+    </li>
   );
 }
 

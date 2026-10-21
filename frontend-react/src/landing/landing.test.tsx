@@ -21,7 +21,8 @@ import { committedManifest, scenarioTrace } from '@/test/recording';
 import { digest } from 'virtual:trustagent/tape-digest';
 import claimsDoc from '@contracts/claims/value-claims.v1.json';
 import { priceCall } from '@/lib/decision/cost';
-import { claim, LABEL_TEXT, landingClaims, optionalClaim, splitClaims, type ClaimView } from './claims';
+import { OurMeasurements } from './Affordable';
+import { claim, intervalText, LABEL_TEXT, landingClaims, optionalClaim, splitClaims, type ClaimView } from './claims';
 import { commonReadDate, compareRows } from './compareData';
 import { command as landingCommand, copy as landingCopy, DEMO_HREF, REFUND } from './content';
 import { auditShareWords, defaultCalculatorInputs, formatMultiple, judgeOptions, modelName, monthlyCost, PRICE_TABLE, referenceJudge, type CalculatorInputs } from './costModel';
@@ -759,6 +760,43 @@ describe('run it yourself', () => {
       region.dispatchEvent(new Event('scroll'));
     });
     expect(hint()).toBeNull();
+  });
+});
+
+describe('our measurements', () => {
+  it('shows a published figure with its chip, its interval with n per class and its caveat (D212)', () => {
+    const agreement: ClaimView = {
+      ...claim('ragtruth_qa_agreement_measured'),
+      display: '81.3%',
+      hasValue: true,
+      value: 0.8125,
+      interval: intervalText({ lo: 0.75, hi: 0.86, method: 'bootstrap', resamples: 2000, n_pos: 40, n_neg: 160 }, 'fraction'),
+    };
+    render(
+      <ul>
+        <OurMeasurements measured={[claim('fast_check_cost_per_1k_measured'), agreement]} />
+      </ul>,
+    );
+    const block = document.querySelector('[data-measured]') as HTMLElement;
+    const chip = block.querySelector('[data-value-label="measured"]') as HTMLElement;
+    expect(chip).toHaveAttribute('href', '#source-ragtruth_qa_agreement_measured');
+    const scope = chip.closest('[data-caveat-scope]') as HTMLElement;
+    expect(scope).toHaveTextContent(/Our RAGTruth-QA agreement:\s*81\.3%/);
+    // The caveat says it is read at default thresholds against Arize's accuracy at 0.5.
+    expect(scope.querySelector('[data-caveat-for="ragtruth_qa_agreement_measured"]')).toHaveTextContent(agreement.caveat ?? '');
+    expect(agreement.caveat).toMatch(/default thresholds/);
+    const interval = scope.querySelector('[data-interval-for="ragtruth_qa_agreement_measured"]') as HTMLElement;
+    expect(interval).toHaveTextContent('95% interval 75% to 86% (bootstrap, 2000 resamples); 40 answers with a hallucination and 160 without.');
+    // Its figures sit in the chip's scope, as every figure on the page does.
+    expect(interval.closest('[data-chip-scope]')?.querySelector('[data-value-label]')).not.toBeNull();
+    expect(block).toHaveTextContent('Still to publish: our measured fast-check cost.');
+  });
+
+  it('words an interval as the README does, and gives none before a run', () => {
+    expect(intervalText({ lo: 0.7, hi: 0.8, method: 'wilson' }, 'fraction')).toBe('95% interval 70% to 80% (Wilson)');
+    expect(intervalText({ hi: 0.8, method: 'wilson' }, 'fraction')).toBeNull();
+    expect(intervalText(undefined, 'fraction')).toBeNull();
+    expect(claim('ragtruth_qa_agreement_measured').interval).toBeNull();
   });
 });
 
