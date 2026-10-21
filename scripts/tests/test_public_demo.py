@@ -28,7 +28,6 @@ class CheckUrlTest(unittest.TestCase):
         for value, expected in (
             (URL, ("public", URL)),
             ("https://demo.trustagent.dev", ("public", "https://demo.trustagent.dev")),
-            (f"  {URL}  ", ("public", URL)),
             ("http://localhost:28443", ("local", "http://localhost:28443")),
         ):
             self.assertEqual(public_demo.check_url(value), expected, value)
@@ -38,6 +37,8 @@ class CheckUrlTest(unittest.TestCase):
             None: "is not set",
             "": "is not set",
             "   ": "is not set",
+            f" {URL}": "remove the spaces",
+            f"{URL}\n": "remove the spaces",
             "http://demo.trustagent.dev": "not an https address",
             "ftp://demo.trustagent.dev": "not an https address",
             "demo.trustagent.dev": "not an https address",
@@ -59,7 +60,8 @@ class CheckUrlTest(unittest.TestCase):
             "https://intranet": "not a public name",
             "https://demo.local": "not a public name",
             "https://demo.internal": "not a public name",
-            "https://Demo.TrustAgent.dev": "lowercase",
+            "https://Demo.TrustAgent.dev": "exactly as https://demo.trustagent.dev",
+            "HTTPS://demo.trustagent.dev": "exactly as https://demo.trustagent.dev",
             "https://-demo.trustagent.dev": "not a valid host name",
             "https://demo_1.trustagent.dev": "not a valid host name",
             "https://demo..trustagent.dev": "not a valid host name",

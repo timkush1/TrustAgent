@@ -89,7 +89,9 @@ def check_url(value: Optional[str]) -> Tuple[str, str]:
             f"`python3 scripts/public_demo.py set-url --sslip <the VM's IPv4 address>` "
             f"({EXAMPLE_URL}); see {DOCS}."
         )
-    url = value.strip()
+    url = value
+    if url != url.strip():
+        raise UrlError(f"{KEY}={url!r}: remove the spaces around the address.")
     if url == LOCAL_URL:
         return "local", url
     if url.rstrip("/") == LOCAL_URL:
@@ -121,10 +123,11 @@ def check_url(value: Optional[str]) -> Tuple[str, str]:
             f"{KEY}={url}: use the bare origin https://<host>, with no path, query or trailing "
             "slash (Caddy would serve only that path)."
         )
-    host = parts.netloc
-    if host != host.lower():
-        raise UrlError(f"{KEY}={url}: write the host name in lowercase.")
-    return "public", f"https://{check_host(host, url)}"
+    origin = f"https://{check_host(parts.netloc.lower(), url)}"
+    if url != origin:
+        # Caddy, the proxy and the browser's Origin header must all see the same string.
+        raise UrlError(f"{KEY}={url}: write it in lowercase, exactly as {origin}.")
+    return "public", origin
 
 
 def check_host(host: str, url: str) -> str:
