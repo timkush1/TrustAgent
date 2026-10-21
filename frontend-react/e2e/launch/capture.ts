@@ -17,7 +17,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 /** The repository root (frontend-react/e2e/launch → ../../..). */
 export const REPO_ROOT = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
@@ -48,19 +48,47 @@ export interface Tape {
   /** The manifest's own label ("Simulated (mock checks + mock judge): not model output", ...). */
   label: string;
   traces: number;
+  /**
+   * The trace every launch surface shows (D209): `manifest.featured`, picked by rule when the tape
+   * was recorded. null on the simulated tape, whose scripted choice the replay makes itself.
+   */
+  featured: string | null;
+}
+
+/**
+ * The featured trace id of a manifest (D209). A recorded tape must name one that it lists (make
+ * record-demo writes it); the simulated tape may name none.
+ */
+export function featuredOf(manifest: { kind?: unknown; featured?: unknown; traces?: unknown }): string | null {
+  const ids = new Set(Array.isArray(manifest.traces) ? manifest.traces.map((t) => (t as { trace_id?: unknown }).trace_id) : []);
+  const pick = (manifest.featured as { trace_id?: unknown } | undefined)?.trace_id;
+  if (typeof pick === 'string' && ids.has(pick)) return pick;
+  if (manifest.kind === 'recorded') {
+    throw new Error(
+      'demo/manifest.json is a recorded tape without its featured trace (manifest.featured, D209): ' +
+        'every launch surface shows that trace; make record-demo writes it (ACCEPT=1 FEATURED=<trace id> names the owner\'s pick).',
+    );
+  }
+  return null;
 }
 
 /** The tape the built site ships (`demo/manifest.json`), read the way the replay reads it. */
 export async function shippedTape(page: Page): Promise<Tape> {
   const res = await page.request.get('demo/manifest.json');
   if (!res.ok()) throw new Error(`the static build serves no demo/manifest.json (HTTP ${res.status()})`);
-  const manifest = (await res.json()) as { kind?: unknown; label?: unknown; traces?: unknown };
+  const manifest = (await res.json()) as { kind?: unknown; label?: unknown; traces?: unknown; featured?: unknown };
   if (manifest.kind !== 'mock' && manifest.kind !== 'recorded') {
     throw new Error(`demo/manifest.json has an unknown kind: ${JSON.stringify(manifest.kind)}`);
   }
   if (typeof manifest.label !== 'string' || manifest.label.trim() === '') throw new Error('demo/manifest.json has no label');
   if (!Array.isArray(manifest.traces) || manifest.traces.length === 0) throw new Error('demo/manifest.json has no traces');
-  return { kind: manifest.kind, label: manifest.label, traces: manifest.traces.length };
+  return { kind: manifest.kind, label: manifest.label, traces: manifest.traces.length, featured: featuredOf(manifest) };
+}
+
+/** The page shows the tape's featured trace (D209): on a recorded tape, the one the manifest names. */
+export async function expectFeaturedTrace(page: Page, tape: Tape): Promise<void> {
+  if (tape.featured === null) return;
+  await expect(page, 'the featured trace is the manifest\'s (D209)').toHaveURL(new RegExp(`/app/traffic/${tape.featured}/?$`));
 }
 
 /** Whether a scratch capture of the simulated tape was asked for (`OG_ALLOW_MOCK=1`, ...). */

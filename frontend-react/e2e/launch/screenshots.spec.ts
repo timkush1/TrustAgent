@@ -20,6 +20,7 @@ import { blockUnmockedExternal, requireStaticSite } from '../static/site';
 import {
   captureContext,
   duplicatedQuestions,
+  expectFeaturedTrace,
   pngSize,
   presetPreferences,
   REPO_ROOT,
@@ -53,7 +54,7 @@ interface Shot {
   /** The file name stem: docs/images/v2/<name>-<theme>.png. */
   name: string;
   /** Opens the page and waits until it shows what the picture is for. */
-  open(page: Page): Promise<void>;
+  open(page: Page, tape: Tape): Promise<void>;
 }
 
 /** The replay has played every request of the tape: the top bar then reads the same on every run. */
@@ -70,11 +71,15 @@ async function scrollBelowBanner(target: Locator): Promise<void> {
   });
 }
 
-/** Opens the featured trace (the Trace item of the main nav) and waits for its contradicted words. */
-async function openFeaturedTrace(page: Page): Promise<void> {
+/**
+ * Opens the featured trace (the Trace item of the main nav; D209: the trace manifest.featured names
+ * on a recorded tape) and waits for its contradicted words.
+ */
+async function openFeaturedTrace(page: Page, tape: Tape): Promise<void> {
   await page.goto('app/traffic/');
   await replayFinished(page);
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Trace' }).click();
+  await expectFeaturedTrace(page, tape);
   await expect(page.getByRole('region', { name: 'Answer' }).locator('mark[data-v="contradicted"]').first()).toBeVisible({
     timeout: 30_000,
   });
@@ -91,8 +96,8 @@ const SHOTS: readonly Shot[] = [
   },
   {
     name: 'trace',
-    async open(page) {
-      await openFeaturedTrace(page);
+    async open(page, tape) {
+      await openFeaturedTrace(page, tape);
       await page.getByRole('heading', { name: 'Details' }).click();
       await page.getByText(COPY.trace.show_jev_request, { exact: true }).click();
       await expect(page.getByTestId('jev-request').getByText(/what it was asked$/).first()).toBeVisible({ timeout: 30_000 });
@@ -156,7 +161,7 @@ test.describe('dashboard screenshots', () => {
           const tape = await shippedTape(page);
           await presetPreferences(page, theme);
 
-          await shot.open(page);
+          await shot.open(page, tape);
           await expectTapeLabel(page, tape);
           await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 
@@ -185,7 +190,7 @@ test.describe('dashboard screenshots', () => {
         const tape = await shippedTape(page);
         await presetPreferences(page, theme);
 
-        await openFeaturedTrace(page);
+        await openFeaturedTrace(page, tape);
         await expectTapeLabel(page, tape);
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
         // From the answer down, just under the sticky top bar and the Simulated banner: the
