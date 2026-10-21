@@ -113,22 +113,52 @@ same examples: the gateway's fast check itself (`gate`, through the Go
 `gate-eval` tool), an LLM asked the same questions (`llm_same_checks`), a full
 claim-level LLM audit, and the fast check escalating to the audit (cascade).
 Every paid run has a hard cost cap, checks everything that could fail before the
-first paid call, and is resumable; mock output is labelled simulated and can
-never be published.
+first paid call, and is resumable; mock output, and output from any host that
+is not the vendor's (for example a local stand-in behind
+`TRUTHTABLE_OPENROUTER_BASE_URL`), is labelled simulated and can never be
+published.
+
+Every paid target is a **dry run unless `CONFIRM=1`**: it prints the plan (n,
+the systems, the price-table estimate, the cap, the resume key and what its
+ledger has spent, the hosts, and with a key the snapshot) and spends nothing.
+Each paid step lowers its cap to what the OpenRouter key has left minus $0.10
+(the free `GET /api/v1/key`) and ends with one `TRUSTAGENT_P6_RESULT {json}`
+line that never contains the key.
 
 ```
-make gate-eval        # build backend-go/bin/gate-eval (the fast check over a JSONL file)
-make bench-lite       # RAGTruth-QA: 200 gate + same-checks, 50 full audits; hard cap $5
-make bench-publish    # the latest measured run -> docs/benchmarks/ and contracts/claims/measured.json
+make gate-eval        # build backend-go/bin/gate-eval (the fast check over a JSONL file); prints its sha256
+make bench-smoke      # 20 RAGTruth-QA answers, full audit 3; cap $0.30 (plan only without CONFIRM=1)
+make bench-lite       # RAGTruth-QA: 200 gate + same-checks, 50 full audits; cap $5 over every session
+make bench-lite CONFIRM=1 BENCH_ARGS="--retry-failed"   # continue after the stop rule (exit 3)
+make calib-pass       # a natural sample of 800 RAGTruth-QA train answers through one warm gate-eval; cap $0.30
+make calibrate EVALUATOR=groundedness@1 IN=<calib-pass gate.jsonl> LABEL_SOURCE=public_dataset DATASET=ragtruth:qa-train@<sha>
+make calib-holdout RUN=<abs run.json>             # ECE and Brier before and after, on the bench's held-out test sample
+make bench-publish RUN=<abs run.json> [HOLDOUT=<holdout-groundedness.json>] [CHECK_ONLY=1]
 make eval-live        # RAGTruth-QA 400 + LLM-AggreFact 600; caps $40 + $20 (owner key)
-make calibrate EVALUATOR=groundedness@1 IN=<gate-eval output with labels> LABEL_SOURCE=public_dataset
+make p6-ledger        # read-only: every step's spend against its cap and the key's usage
 ```
+
+A bench run stops after 5 consecutive failures of one system (exit 3) and
+prints the failure kind with its fix; the examples it never reached are not
+cached, so the same command with `BENCH_ARGS="--retry-failed"` continues under
+the same ledger. The gate runs first and alone, one answer at a time on a warm
+connection, so its latency leaves out connection setup; the run records the
+gate-eval binary's sha256 (a resume with another build is refused), the
+built-in policy, the machine's memory and load, and whether tracked files were
+dirty when it started.
 
 `make calibrate` fits the fast check's calibration (isotonic, or Platt below
 500 labels, with Wilson bounds for `critical_at`) from labelled risks; without
-`WRITE=1` it only prints the summary. Numbers from these runs replace the
-estimates on the landing page and in the dashboard only through
-`bench-publish`.
+`WRITE=1` it only prints the summary. It is fitted on the RAGTruth-QA train
+split (`calib-pass`) and measured on the bench's test sample
+(`calib-holdout`), so the published "ECE after calibration" is held out, never
+in-sample. Numbers from these runs replace the estimates on the landing page
+and in the dashboard only through `bench-publish`, which needs one named run
+(`RUN=`) and lists every refusal at once: mock output or a non-vendor host, a
+tree that was dirty at the start, more than 5% failures or fewer than 95%
+scored, more than one decision-model snapshot, an unknown cost source, or
+dataset text in the per-example records. `CHECK_ONLY=1` writes the would-be
+files into `tmp/bench-check/` only.
 
 ## Honest limitations
 
@@ -154,7 +184,11 @@ estimates on the landing page and in the dashboard only through
 | `backend-python/evals/baselines/golden_v1.json` | Committed regression baseline |
 | `backend-python/src/truthtable/providers/mock.py` | Fixture-replay provider |
 | `.github/workflows/eval.yml` | Tier-2 scheduled benchmark |
-| `backend-python/evals/bench.py` | Tier-3 harness: `run` and `publish` (bench-lite, eval-live) |
+| `backend-python/evals/bench.py` | Tier-3 harness: `run`, `export-labels` and `publish` (bench-lite, bench-smoke, eval-live) |
+| `backend-python/evals/report.py` | Run documents, the publish rules and the measured.json fold |
+| `backend-python/evals/calibset.py` | The calibration set, `calib-pass` and `calib-holdout` |
+| `backend-python/evals/vendor_key.py` | The key's spend and limit (free `GET /api/v1/key`), the effective cap, the result line |
+| `backend-python/evals/p6_ledger.py` | `make p6-ledger`: the spend of every paid step against its cap |
 | `backend-python/evals/judges.py` | The systems compared (gate, LLM same checks, full audit, cascade) |
 | `backend-go/cmd/gate-eval` | The fast check over a JSONL file, with a hard cost cap |
 | `backend-go/cmd/calibrate` | Calibration fitting (`trustagent.calibration/v1` files) |
