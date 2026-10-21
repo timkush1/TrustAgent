@@ -22,12 +22,16 @@ from truthtable.config import repo_root
 from truthtable.contracts import contract_path
 from truthtable.providers.base import CompletionRequest, LLMProvider
 
-from bench_fakes import FakeGateEval, ScriptedJudge, example, gate_line
+from bench_fakes import FakeGateEval, ScriptedJudge, example, gate_line, isolate_vendor_env
 
 
 @pytest.fixture(autouse=True)
 def clean_tree(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The runs here start on a clean tree (the dirty flag is tested on its own)."""
+    """
+    The runs here start on a clean tree (the dirty flag is tested on its own),
+    with no key, base URL or dotenv from the checkout, and no network.
+    """
+    isolate_vendor_env(monkeypatch)
     monkeypatch.setattr(planning, "tree_dirty", lambda root=None: False)
 
 

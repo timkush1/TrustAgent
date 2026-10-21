@@ -15,8 +15,11 @@ import json
 import stat
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+import pytest
+
+from evals import bench, calibset, p6_ledger
 from evals.examples import LEVEL_RESPONSE, BenchExample
 from truthtable.providers.base import (
     CompletionRequest,
@@ -24,6 +27,43 @@ from truthtable.providers.base import (
     LLMProvider,
     normalized_usage,
 )
+
+# What would let a test reach a vendor: the keys, the base URLs and the dotenv files that carry
+# them (a checkout's .env holds the owner's real key during P6b, D202).
+VENDOR_ENV = (
+    "OPENROUTER_API_KEY",
+    "TYPESAFE_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "TRUTHTABLE_JEV_API_KEY",
+    "TRUTHTABLE_JEV_BACKEND",
+    "TRUTHTABLE_JEV_BASE_URL",
+    "TRUTHTABLE_OPENROUTER_BASE_URL",
+    "TRUTHTABLE_POLICY_FILE",
+)
+
+
+def _offline(url: str, headers: Mapping[str, str], timeout_s: float) -> Tuple[int, bytes]:
+    raise AssertionError(f"a unit test reached for the network ({url}): pass a fake fetch")
+
+
+def _offline_fetch() -> Any:
+    return _offline
+
+
+def isolate_vendor_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Keep a test off the vendor whatever checkout it runs in: no key or base URL
+    from the process, no dotenv file (TRUTHTABLE_ENV_FILE set but empty), and a
+    key read that fails the test unless the test passes its own fake fetch.
+    Tests that need a key set a fake one after this runs.
+    """
+    monkeypatch.setenv("TRUTHTABLE_ENV_FILE", "")
+    for name in VENDOR_ENV:
+        monkeypatch.delenv(name, raising=False)
+    for module in (bench, calibset, p6_ledger):
+        monkeypatch.setattr(module, "_key_fetch", _offline_fetch)
+
 
 FAKE_GATE_EVAL = """#!{python}
 import json

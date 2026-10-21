@@ -15,6 +15,15 @@ from evals import vendor_key
 from evals.examples import BenchExample
 from truthtable.providers.pricing import PriceTable
 
+from bench_fakes import isolate_vendor_env
+
+
+@pytest.fixture(autouse=True)
+def no_vendor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No key, base URL or dotenv from the checkout, and no network."""
+    isolate_vendor_env(monkeypatch)
+
+
 TABLE = PriceTable.from_document(
     {
         "version": "1",

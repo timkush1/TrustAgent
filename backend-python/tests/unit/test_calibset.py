@@ -20,8 +20,15 @@ from evals import plan as planning
 from evals.examples import evaluator_labels, read_jsonl
 from truthtable.config import repo_root
 
-from bench_fakes import FakeGateEval, gate_line
+from bench_fakes import FakeGateEval, gate_line, isolate_vendor_env
 from bench_runs import write_p6_run
+
+
+@pytest.fixture(autouse=True)
+def no_vendor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No key, base URL or dotenv from the checkout, and no network."""
+    isolate_vendor_env(monkeypatch)
+
 
 REVISION = "c103204b9ce28d6bbad859304bf30de72b8ed8fe"
 FAKE_KEY = "sk-or-v1-e2e-p6calibkey0000"

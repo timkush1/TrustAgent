@@ -13,7 +13,15 @@ import pytest
 from evals import p6_ledger, vendor_key
 from evals import plan as planning
 
+from bench_fakes import isolate_vendor_env
+
 FAKE_KEY = "sk-or-v1-e2e-p6keyhelper000"
+
+
+@pytest.fixture(autouse=True)
+def no_vendor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No key, base URL or dotenv from the checkout, and no network."""
+    isolate_vendor_env(monkeypatch)
 
 
 def _fetch(
