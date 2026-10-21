@@ -11,7 +11,6 @@ import { nextThemePreference, setThemePreference, useThemePreference, type Theme
 import { sourceAnchor, type ClaimView } from './claims';
 import { buttonClass, container } from './styles';
 
-/** Where a number comes from: an achromatic chip that links to its entry under "Sources". */
 /**
  * The icon beside each value label: the same five as the dashboard's EvidenceBadge
  * (src/domain/controlPresentation.ts), so the site and the app show one label system.
@@ -24,6 +23,7 @@ export const LABEL_ICONS: Record<ClaimView['label'], LucideIcon> = {
   simulated: FlaskConical,
 };
 
+/** Where a number comes from: an achromatic chip that links to its entry under "Sources". */
 export function LabelChip({ claim, className }: { claim: Pick<ClaimView, 'id' | 'label' | 'labelText'>; className?: string }) {
   const Icon = LABEL_ICONS[claim.label];
   return (
@@ -83,11 +83,6 @@ export function Section({ id, eyebrow, title, lead, children, className }: { id:
   );
 }
 
-/**
- * Code that must keep its lines (a wrapped YAML or shell line reads as broken): it never wraps, and
- * on a narrow screen it scrolls sideways inside a named, focusable region (DESIGN.md: wide content
- * scrolls inside a named, focusable region, never the page).
- */
 /** True while the element's content runs past its right edge and is not scrolled to the end. */
 function useMoreToTheRight(ref: RefObject<HTMLElement | null>): boolean {
   const [more, setMore] = useState(false);
@@ -108,9 +103,11 @@ function useMoreToTheRight(ref: RefObject<HTMLElement | null>): boolean {
 }
 
 /**
- * A line of code that keeps its line and scrolls sideways inside a named, focusable region. When
- * the line runs past the edge, a short text hint under it says so (a cut-off command must never
- * look complete), and goes away once the reader has scrolled to the end.
+ * Code that must keep its lines (a wrapped YAML or shell line reads as broken): it never wraps, and
+ * on a narrow screen it scrolls sideways inside a named, focusable region (DESIGN.md: wide content
+ * scrolls inside a named, focusable region, never the page). When the line runs past the edge, a
+ * short text hint under it says so (a cut-off command must never look complete), and goes away
+ * once the reader has scrolled to the end.
  */
 export function CodeScroll({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);

@@ -80,7 +80,6 @@ export function claim(id: string): ClaimView {
   };
 }
 
-/** The claims written for the landing page, in contract order (the footer's source list). */
 /**
  * A claim the page shows only while the contract has it (a figure whose source is being
  * re-checked may be withdrawn): null when the id is gone, never a number without a source.
@@ -89,6 +88,7 @@ export function optionalClaim(id: string): ClaimView | null {
   return entries.has(id) ? claim(id) : null;
 }
 
+/** The claims written for the landing page, in contract order (the footer's source list). */
 export function landingClaims(): ClaimView[] {
   return (claimsDoc.claims as ClaimEntry[]).filter((c) => c.surfaces.includes('landing')).map((c) => claim(c.id));
 }

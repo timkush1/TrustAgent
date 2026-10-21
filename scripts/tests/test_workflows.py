@@ -186,12 +186,16 @@ class PagesWorkflowTest(unittest.TestCase):
         expr = line.group(1)
         self.assertNotIn("secrets.", expr)
 
+        # GitHub compares strings ignoring case, so the variable is lowered against the
+        # expression's lower-case literal.
+        self.assertIn("vars.PAGES_TAG_DATASET == 'simulated'", expr)
+
         def evaluate(ref: str, variable: str) -> str:
             py = (
                 expr.replace(
                     "startsWith(github.ref, 'refs/tags/v')", repr(ref.startswith("refs/tags/v"))
                 )
-                .replace("vars.PAGES_TAG_DATASET", repr(variable))
+                .replace("vars.PAGES_TAG_DATASET", repr(variable.lower()))
                 .replace("&&", " and ")
                 .replace("||", " or ")
             )
@@ -203,6 +207,7 @@ class PagesWorkflowTest(unittest.TestCase):
         self.assertEqual(evaluate(tag, "recorded"), "recorded")
         self.assertEqual(evaluate(tag, "Simulated "), "recorded", "a typo fails closed")
         self.assertEqual(evaluate(tag, "simulated"), "mock", "mode R ships the simulated tape")
+        self.assertEqual(evaluate(tag, "Simulated"), "mock", "GitHub ignores case")
         for ref in (main, pr):
             for variable in ("", "simulated"):
                 self.assertEqual(evaluate(ref, variable), "auto")
