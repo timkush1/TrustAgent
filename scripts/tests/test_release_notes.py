@@ -378,6 +378,24 @@ class RepositoryTest(unittest.TestCase):
         for service in rn.SERVICES:
             rn.read_image(service, service, data[service])
 
+    def test_the_release_pr_body_links_resolve(self) -> None:
+        # A PR body has no relative links, so docs/launch/release-pr.md links absolutely into the
+        # branch; each must name a file (and heading) that exists in this tree.
+        import check_links
+
+        body = (ROOT / "docs" / "launch" / "release-pr.md").read_text(encoding="utf-8")
+        base = "https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/"
+        targets = re.findall(r"\]\((https://github\.com/timkush1/TrustAgent/blob/[^)\s]+)\)", body)
+        self.assertGreater(len(targets), 5)
+        for url in targets:
+            self.assertTrue(url.startswith(base), url)
+            path, _, anchor = url[len(base) :].partition("#")
+            self.assertTrue((ROOT / path).is_file(), path)
+            if anchor:
+                headings = check_links.anchors((ROOT / path).read_text(encoding="utf-8"))
+                self.assertIn(anchor, headings, url)
+        self.assertNotRegex(body, r"\]\((?!https?://)", "no relative link in a PR body")
+
     def test_the_licence_and_the_package_metadata_agree(self) -> None:
         # One licence (MIT) and one holder across LICENSE, package.json and pyproject.toml: the
         # placeholder until the owner names it (S1), then that one name everywhere (D216).

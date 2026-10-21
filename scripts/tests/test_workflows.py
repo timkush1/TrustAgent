@@ -298,6 +298,25 @@ class EveryWorkflowTest(unittest.TestCase):
             self.assertNotIn("paths", on, name)
             self.assertNotIn("branches-ignore", on, name)
 
+    def test_the_ruleset_doc_lists_the_required_checks(self) -> None:
+        # docs/launch/ruleset.md is what the owner types into the ruleset (D215): every required
+        # job that can fail the run, and nothing else. An informational job (continue-on-error)
+        # stays out: its failure would block a merge it is not meant to block.
+        doc = (ROOT / "docs" / "launch" / "ruleset.md").read_text(encoding="utf-8")
+        block = re.search(r"(?ms)^```text\n(.*?)^```", doc)
+        self.assertIsNotNone(block)
+        listed = [line for line in block.group(1).splitlines() if line.strip()]
+        expected = []
+        for name, checks in REQUIRED_JOBS.items():
+            found = jobs(read(name))
+            for job_id, title in checks.items():
+                if re.search(r"(?m)^    continue-on-error: true", found[job_id]):
+                    self.assertNotIn(title, listed, f"{title} is informational")
+                    continue
+                expected.append(title)
+        self.assertEqual(listed, expected)
+        self.assertEqual(len(listed), len(set(listed)))
+
     def test_privileged_workflows_cache_nothing(self) -> None:
         # A run that publishes or reads a paid key must not restore a cache another run wrote
         # (zizmor cache-poisoning). release-images.yml caches only off a tag (its own class).

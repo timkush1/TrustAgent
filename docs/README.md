@@ -53,11 +53,14 @@ Start with the [project README](../README.md) for the overview and quick start. 
 
 | Doc | What's inside |
 |---|---|
-| [launch/launch-checklist.md](launch/launch-checklist.md) | What must be true before anything is posted, in order, with the command that proves each item |
+| [launch/launch-checklist.md](launch/launch-checklist.md) | What must be true before anything is pushed, released or posted, in the order of the owner's sittings, with the command that proves each item |
+| [launch/terms-check.md](launch/terms-check.md) | Whether Jev figures and outputs may be published (the terms read, the mode chosen) and the benchmark datasets' licences |
+| [launch/release-pr.md](launch/release-pr.md) | The release pull request's body: summary, phases, breaking changes, how to verify, checks |
+| [launch/ruleset.md](launch/ruleset.md) | The `main` ruleset: the minimal rules at the first push, then the exact required check names |
 | [launch/demo-script.md](launch/demo-script.md) | The 60-second demo, beat by beat |
 | [launch/github-metadata.md](launch/github-metadata.md) | Repository description, topics and social preview |
 | [launch/og-spec.md](launch/og-spec.md) | The 1280×640 social card: layout, content, how it is captured (`make og`; `make hero-gif` and `make screenshots` capture the README's hero and pictures) |
-| [launch/linkedin-post.md](launch/linkedin-post.md) | The launch post draft; its figures stay placeholders until `measured.json` has them |
+| [launch/linkedin-post.md](launch/linkedin-post.md) | The launch post's templates (and the mode-R variant); `make linkedin-post` fills them from the measured run and the recorded tape, and exits 1 on any missing value |
 | [launch/interview-talking-points.md](launch/interview-talking-points.md) | Ten engineering stories: decision, alternatives, result, what went wrong |
 
 ## Component deep-dives
