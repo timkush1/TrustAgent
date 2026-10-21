@@ -75,7 +75,10 @@ for line in sys.stdin:
     answer = config["answers"].get(item["id"], config.get("default"))
     if answer is None:
         continue
-    sys.stdout.write(json.dumps(dict(id=item["id"], line=number, **answer)) + "\\n")
+    # Passed through to the output line, as cmd/gate-eval does.
+    passed = {{key: item[key] for key in ("labels", "label_hallucinated", "label_source", "domain",
+                                          "meta") if key in item}}
+    sys.stdout.write(json.dumps(dict(id=item["id"], line=number, **answer, **passed)) + "\\n")
 if config.get("exit_after"):
     sys.exit(config["exit_after"])
 """
