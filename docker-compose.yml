@@ -564,7 +564,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:10.2.0
+    image: grafana/grafana:13.2.4
     profiles: [observability]
     ports:
       - "${BIND_ADDR:-127.0.0.1}:3001:3000"
