@@ -64,9 +64,10 @@ REPLAY_SINCE  ?=
 REPLAY_SOURCE ?= trafficgen
 REPLAY_ARGS   ?=
 
-gate-eval: ## Build backend-go/bin/gate-eval: the fast check over a JSONL file (bench-lite and eval-live run it)
+gate-eval: ## Build backend-go/bin/gate-eval: the fast check over a JSONL file (bench-lite and eval-live run it); prints its sha256
 	cd backend-go && go build -o bin/gate-eval ./cmd/gate-eval
 	@echo "✅ Built backend-go/bin/gate-eval"
+	@$(PYTHON) -c "import hashlib, sys; print('   sha256 ' + hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest() + ' (a bench run records it; a resume with another build is refused)')" backend-go/bin/gate-eval
 
 calibrate: ## Fit a calibration: EVALUATOR=groundedness@1 IN=labels.jsonl [LABEL_SOURCE=human] [DATASET=..] [WRITE=1 writes config/calibration]
 	@test -n "$(EVALUATOR)" || { \
