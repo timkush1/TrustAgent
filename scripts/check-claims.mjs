@@ -407,7 +407,7 @@ function isProxyOverhead(claim, measured) {
 
 export const OVERHEAD_INTRO = "The gateway's own overhead, measured separately by a load test against simulated vendors:";
 
-/** The block before any measured run is published: one sentence, no empty tables (P5C-4). */
+/** The block before any measured run is published: one sentence, no empty tables. */
 export const NOT_MEASURED_TEXT =
   'No benchmark run of our own is published yet, so there are no measured results here: every other figure is ' +
   'labelled as an estimate, a vendor price or a third-party result.';
@@ -464,7 +464,7 @@ function likeForLikeLine(claims) {
 
 /**
  * The lines between <!-- measured:start --> and <!-- measured:end -->, as --write writes them.
- * Before a measured run is published, one sentence (P5C-4). After it, proxy overhead gets a table
+ * Before a measured run is published, one sentence. After it, proxy overhead gets a table
  * of its own after the fast-check results, so it never sits next to the fast check's latency
  * (D118); a value the run did not cover says "not yet measured" without the [measured] chip; an
  * agreement row is followed by the like-for-like third-party figure (D212).
@@ -1388,7 +1388,7 @@ const CASES = [
     expect: [],
   },
   {
-    name: 'an absent value is not tagged [measured] (P5C-4)',
+    name: 'an absent value is not tagged [measured]',
     files: { 'README.md': "Ours: <!-- claim:meas_overhead --> not yet measured [measured]. Gateway's own time with simulated vendors; no run yet" },
     expect: ['empty-measured-chip'],
   },
@@ -1834,7 +1834,7 @@ export function selfTest() {
     }
   }
   const notMeasured = renderMeasuredBlock(FIXTURE_CLAIMS, NOT_MEASURED, () => null);
-  check('generated block (not measured): one sentence, no table and no [measured] chip (P5C-4)',
+  check('generated block (not measured): one sentence, no table and no [measured] chip',
     JSON.stringify(notMeasured.lines) === JSON.stringify([BLOCK_HEADER, '', NOT_MEASURED_TEXT]), JSON.stringify(notMeasured.lines));
   check('generated block (not measured, a load run published): says where it is',
     renderMeasuredBlock(FIXTURE_CLAIMS, NOT_MEASURED, () => null, ['load-1.json']).lines[2] === `${NOT_MEASURED_TEXT} ${LOAD_RUN_PUBLISHED_TEXT}`);

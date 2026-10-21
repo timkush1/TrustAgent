@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Re-read every comparison source and every claim marked ``reverify``, and print the owner's
-review table (P6 S-5, G5; D113, D212; standard library only).
+review table (G5; D113, D212; standard library only).
 
     python3 scripts/compare_review.py --fetch                  # read every source page (public GETs)
     python3 scripts/compare_review.py --cache tmp/compare-review   # re-print from saved pages

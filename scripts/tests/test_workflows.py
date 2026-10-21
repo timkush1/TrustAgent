@@ -179,7 +179,7 @@ class PagesWorkflowTest(unittest.TestCase):
         self.assertIn("$(if $(filter recorded,$(PAGES_DATASET)), --require-recorded)", check)
 
     def test_a_tag_ships_the_recorded_tape_unless_mode_r_says_simulated(self) -> None:
-        # S-10 (D200 mode R): the repository variable PAGES_TAG_DATASET defaults to recorded. The
+        # D200 mode R: the repository variable PAGES_TAG_DATASET defaults to recorded. The
         # expression is evaluated here for each case: GitHub gives an unset variable as ''.
         line = re.search(r"(?m)^      PAGES_DATASET: \$\{\{ (.+) \}\}$", self.build)
         self.assertIsNotNone(line)
@@ -594,7 +594,7 @@ class ReleaseImagesWorkflowTest(unittest.TestCase):
 
 
 class EvalWorkflowTest(unittest.TestCase):
-    """eval.yml: the free HaluEval run with a local judge, started by hand only (S-7)."""
+    """eval.yml: the free HaluEval run with a local judge, started by hand only."""
 
     def setUp(self) -> None:
         self.text = read("eval.yml")

@@ -46,7 +46,7 @@ export function SelfHost() {
             <Command command={command('up')} />
           </div>
           <p className="mt-3 text-sm text-fg-muted">Without make, two commands:</p>
-          {/* One row per command, so neither is cut off or has to scroll at any width (P5C-5). */}
+          {/* One row per command, so neither is cut off or has to scroll at any width. */}
           <div className="mt-1.5 flex flex-col items-start gap-2" data-compose-steps>
             {composeSteps().map((step) => (
               <Command key={step} command={step} />

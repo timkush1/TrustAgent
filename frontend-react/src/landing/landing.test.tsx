@@ -90,7 +90,7 @@ describe('landing page', () => {
       const target = chip.getAttribute('href')?.slice(1) ?? '';
       expect(document.getElementById(target), `chip ${target} points at a source entry`).not.toBeNull();
     }
-    // No Simulated chip: the hero card shows no illustrative time (P5C-2); the card itself says
+    // No Simulated chip: the hero card shows no illustrative time; the card itself says
     // "Example · Simulated". Measured joins once a benchmark run is published.
     expect([...kinds].sort()).toEqual(['estimate', 'third_party', 'vendor']);
   });
@@ -151,7 +151,7 @@ describe('landing page', () => {
     for (const id of ['gate_latency_p50_measured', 'fast_check_cost_per_1k_measured', 'ragtruth_qa_agreement_measured']) {
       expect(claim(id).hasValue).toBe(false);
     }
-    // The hero leads with the third-party latency alone until a run publishes ours (P5C-3).
+    // The hero leads with the third-party latency alone until a run publishes ours.
     const hero = screen.getByRole('heading', { level: 1 }).closest('section') as HTMLElement;
     expect(within(hero).queryByText(/measured by us/i)).toBeNull();
     expect(within(hero).queryByText(/not yet measured/i)).toBeNull();
@@ -177,7 +177,7 @@ describe('landing page', () => {
       const entry = document.getElementById(`source-${c.id}`) as HTMLElement;
       expect(entry, c.id).toHaveTextContent(c.label === 'simulated' ? 'Illustrative, from the demo' : 'Computed in this project');
     }
-    // The header gives the newest read date in the list, not the claims file's last edit (P5C-7).
+    // The header gives the newest read date in the list, not the claims file's last edit.
     const dates = [...document.querySelectorAll('#sources li')].flatMap((li) => [...(li.textContent ?? '').matchAll(/\d{4}-\d{2}-\d{2}/g)].map((m) => m[0]));
     const newest = dates.reduce((a, b) => (b > a ? b : a), '');
     expect(newest).not.toBe('');
@@ -208,7 +208,7 @@ describe('landing page', () => {
       const nav = within(header).getByRole('navigation', { name: 'Sections' });
       return actions.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING ? 'actions, links' : 'links, actions';
     };
-    // Below 1024 px the links are the second row, under the theme, GitHub and Try the demo (P5C-8).
+    // Below 1024 px the links are the second row, under the theme, GitHub and Try the demo.
     const { unmount } = await renderLanding();
     expect(order()).toBe('actions, links');
     unmount();
@@ -239,7 +239,7 @@ describe('landing page', () => {
     const audit = within(figure).getByText(/· in the background, for flagged and sampled answers/);
     expect(audit).toBeInTheDocument();
     // Stacked on a phone, the provider sits between the gateway and the deep audit: a line says
-    // where the deep audit starts, and only below 1024 px (P5C-13).
+    // where the deep audit starts, and only below 1024 px.
     const from = figure.querySelector('[data-deep-audit-from]') as HTMLElement;
     expect(from).toHaveTextContent('From the gateway, after the reply:');
     expect(from).toHaveClass('lg:hidden');
@@ -723,7 +723,7 @@ describe('run it yourself', () => {
     const section = document.getElementById('self-host') as HTMLElement;
     expect(within(section).getByText('make up')).toBeInTheDocument();
     // make up leads; without make, the contract's one line is two short commands, one per row, so
-    // neither is cut off mid-word at any width (P5C-5), and each has its own copy button.
+    // neither is cut off mid-word at any width, and each has its own copy button.
     const steps = [...(section.querySelector('[data-compose-steps]') as HTMLElement).querySelectorAll('code')].map((c) =>
       (c.textContent ?? '').replace(/^\$/, ''),
     );
@@ -792,7 +792,7 @@ describe('hero answer card', () => {
       expect(screen.getByText('Example · Simulated')).toBeInTheDocument();
       const chips = [...container.querySelectorAll('[data-value-label]')].map((c) => c.getAttribute('href'));
       // The cost only: an illustrative time would disagree with the replay's record of the same
-      // request, which the card links to (P5C-2).
+      // request, which the card links to.
       expect(chips).toEqual(['#source-hero_card_cost_usd']);
       expect(container.textContent).not.toMatch(/\d\s?ms\b/);
       expect(container.querySelector('[data-checked-against]')).toHaveTextContent('Checked against: refund-policy.md');

@@ -14,7 +14,7 @@ import { buttonClass, container } from './styles';
 /** Where a number comes from: an achromatic chip that links to its entry under "Sources". */
 /**
  * The icon beside each value label: the same five as the dashboard's EvidenceBadge
- * (src/domain/controlPresentation.ts), so the site and the app show one label system (P5C-10).
+ * (src/domain/controlPresentation.ts), so the site and the app show one label system.
  */
 export const LABEL_ICONS: Record<ClaimView['label'], LucideIcon> = {
   measured: BadgeCheck,

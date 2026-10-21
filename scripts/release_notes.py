@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The GitHub release notes for a tag (P6 S-1; standard library only).
+"""The GitHub release notes for a tag (standard library only).
 
     python3 scripts/release_notes.py --tag v2.0.0                      # inspects the published images
     python3 scripts/release_notes.py --tag v2.0.0 --inspect canned.json  # canned inspect output

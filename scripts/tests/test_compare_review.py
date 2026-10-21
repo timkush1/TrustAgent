@@ -1,4 +1,4 @@
-"""Unit tests for scripts/compare_review.py (S-5): canned pages, no network."""
+"""Unit tests for scripts/compare_review.py : canned pages, no network."""
 
 from __future__ import annotations
 

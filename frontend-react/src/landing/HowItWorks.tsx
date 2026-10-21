@@ -85,7 +85,7 @@ function PathDiagram() {
       <div className="mt-3 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.7fr)_auto_minmax(0,1fr)]">
         <div className="lg:col-start-3">
           {/* From the gateway above it. When the boxes stack, the provider sits in between, so a
-              phone says in words where the deep audit starts instead of drawing an arrow (P5C-13). */}
+              phone says in words where the deep audit starts instead of drawing an arrow. */}
           <div className="flex justify-center py-1 text-fg-subtle max-lg:hidden" aria-hidden="true">
             <ArrowDown className="size-4" />
           </div>

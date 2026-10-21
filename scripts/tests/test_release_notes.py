@@ -1,4 +1,4 @@
-"""Unit tests for scripts/release_notes.py (P6 S-1): the CHANGELOG section, the image digests from
+"""Unit tests for scripts/release_notes.py : the CHANGELOG section, the image digests from
 canned inspect output, the verify commands, the measured labels and every refusal.
 
 No test calls docker or the network: the canned output is scripts/tests/fixtures/inspect.json, and

@@ -22,7 +22,7 @@ Steps, in this order:
    version (``trustagent_version``), and ``make recording-check`` fails while it is stale.
    ``--no-recording`` skips it and says so.
 
-It never commits, tags or pushes; the release steps after it are in docs/v2/SPEC.md §4.2 (P6).
+It never commits, tags or pushes; the release steps after it are in docs/v2/SPEC.md §4.2 (the release phase).
 
 Exit status: 0 bumped (or planned, with --dry-run), 1 refused or a step failed, 2 usage error.
 """
@@ -226,7 +226,7 @@ def main(
             print(f"bump_version: {error}", file=sys.stderr)
         return 1
     print(
-        f"bump_version: ok: version {new}. Review `git diff`, then commit; the release steps are in SPEC §4.2 P6."
+        f"bump_version: ok: version {new}. Review `git diff`, then commit; the release steps are in SPEC §4.2."
     )
     return 0
 
