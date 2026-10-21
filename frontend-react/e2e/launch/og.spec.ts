@@ -61,7 +61,9 @@ test.describe('social card', () => {
     if (tape.kind === 'mock') await expect(simulated).toBeVisible();
     else await expect(simulated).toHaveCount(0);
 
-    // The crop is the featured answer: an outcome, what it was checked against, the marked answer.
+    // The crop is the featured answer (D209: the manifest's pick on a recorded tape): an outcome,
+    // what it was checked against, the marked answer.
+    if (tape.featured !== null) await expect(card).toHaveAttribute('data-trace-id', tape.featured);
     await expect(card.locator('[data-og-crop]')).toBeVisible();
     await expect(card.locator('[data-og-checked]')).toContainText('Checked against');
     await expect(card.locator('[data-og-answer] mark[data-v="contradicted"]').first()).toBeVisible();

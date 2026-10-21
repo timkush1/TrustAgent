@@ -5,7 +5,7 @@
 import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { copy } from '@/domain/presentation';
 import { createFakeApi } from '@/test/apiHandlers';
 import { API, installMswServer, server } from '@/test/msw';
@@ -13,6 +13,7 @@ import { renderLive, stopLive } from '@/test/renderLive';
 import { REFUND_DOC, s0Audit, s0Decision, s0Trace, s0Traces, traceIdOf } from '@/test/scenarios';
 import { trace } from '@/test/fixtures';
 import { warmRoutes } from '@/test/warmRoutes';
+import { CARD_QUERY, CARD_ROW_HEIGHT, ROW_HEIGHT } from './TrafficTable';
 
 installMswServer();
 warmRoutes('/app/traffic');
@@ -67,6 +68,51 @@ describe('Traffic list', () => {
     // Newest first, and the list asked for one page of the default size.
     expect(dataRows().map((r) => r.getAttribute('data-outcome'))).toEqual(['not_checked', 'flagged', 'passed']);
     expect(api.traceQueries[0].get('limit')).toBe('50');
+  });
+
+  it('shows each row as a card on a phone: outcome and time, then the whole reason (P5C-6)', async () => {
+    const phone = vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query: string) =>
+        ({
+          matches: query === CARD_QUERY,
+          media: query,
+          onchange: null,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          addListener: () => {},
+          removeListener: () => {},
+          dispatchEvent: () => false,
+        }) as MediaQueryList,
+    );
+    try {
+      renderLive('/app/traffic', createFakeApi({ traces: s0Traces() }));
+      await waitFor(() => expect(dataRows()).toHaveLength(3));
+      const flagged = rowOf(traceIdOf(REFUND));
+      expect(flagged).toHaveAttribute('data-layout', 'card');
+      expect(flagged.style.height).toBe(`${CARD_ROW_HEIGHT}px`);
+      const cells = within(flagged).getAllByRole('cell');
+      const cellWith = (text: string) => cells.find((c) => within(c).queryByText(text) !== null);
+      // The reason and what it was checked against span the card; route, model, latency and the
+      // deep audit stay on the request's own page.
+      expect(cellWith('Contradicts your documents')?.className).toContain('col-span-2');
+      expect(cellWith(REFUND_DOC)?.className).toContain('col-span-2');
+      expect(cellWith('support-bot')?.className).toContain('hidden');
+      expect(cellWith('Hallucinated')?.className).toContain('hidden');
+      // The header row has no columns to head on a card: screen readers still get it.
+      const header = within(table()).getAllByRole('row')[0];
+      expect(header).toHaveClass('sr-only');
+      expect(within(header).getAllByRole('columnheader')).toHaveLength(8);
+    } finally {
+      phone.mockRestore();
+    }
+  });
+
+  it('shows rows as a table above 640 px', async () => {
+    renderLive('/app/traffic', createFakeApi({ traces: s0Traces() }));
+    await waitFor(() => expect(dataRows()).toHaveLength(3));
+    const flagged = rowOf(traceIdOf(REFUND));
+    expect(flagged).toHaveAttribute('data-layout', 'table');
+    expect(flagged.style.height).toBe(`${ROW_HEIGHT}px`);
   });
 
   it('opens the request when its row is clicked', async () => {

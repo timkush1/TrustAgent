@@ -2,8 +2,9 @@
  * The README hero (D115; SPEC §8.2 erratum: this is e2e/launch/hero.spec.ts): `npm run hero` builds
  * the launch site, then this spec records the first-visit story as a 1200×675 video:
  *
- *   the landing hero → Try the demo → Traffic filling up → the caught answer, "60 days" marked as
- *   contradicted by the refund policy → Show exact Jev request.
+ *   the landing hero → Try the demo → Traffic filling up → the featured answer (D209: the trace
+ *   manifest.featured names on a recorded tape) with its contradicted words marked → Show exact Jev
+ *   request.
  *
  * It writes frontend-react/test-results/launch/hero/hero.webm and hero.json (the tape's kind and
  * label), which scripts/make_hero_gif.py turns into the GIF (at most 8 MB, 1200 px, 12 fps) and an
@@ -15,7 +16,17 @@ import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { blockUnmockedExternal, requireStaticSite } from '../static/site';
-import { captureContext, HERO_DIR, HERO_SIZE, presetPreferences, refuseMock, REPO_ROOT, shippedTape, writeCapture } from './capture';
+import {
+  captureContext,
+  expectFeaturedTrace,
+  HERO_DIR,
+  HERO_SIZE,
+  presetPreferences,
+  refuseMock,
+  REPO_ROOT,
+  shippedTape,
+  writeCapture,
+} from './capture';
 
 const COPY = (
   JSON.parse(readFileSync(fileURLToPath(new URL('../../../contracts/ui/copy.v1.json', import.meta.url)), 'utf8')) as {
@@ -68,6 +79,7 @@ test.describe('hero recording', () => {
       await hold(page, BEAT.traffic);
 
       await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Trace' }).click();
+      await expectFeaturedTrace(page, tape);
       const answer = page.getByRole('region', { name: 'Answer' });
       const mark = answer.locator('mark[data-v="contradicted"]').first();
       await expect(mark).toBeVisible({ timeout: 30_000 });
@@ -90,6 +102,7 @@ test.describe('hero recording', () => {
         kind: tape.kind,
         label: tape.label,
         traces: tape.traces,
+        featured: tape.featured,
         video: relative(HERO_DIR, webm),
         width: HERO_SIZE.width,
         height: HERO_SIZE.height,

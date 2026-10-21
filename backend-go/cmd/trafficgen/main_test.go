@@ -46,6 +46,9 @@ type stubProxy struct {
 	// queued.
 	status      map[string]any
 	neverSettle map[string]bool
+	// forward, when set, sends a request that carries no test_response to an upstream, as the
+	// gateway in test mode does (D208); its error fails the request.
+	forward func(r *http.Request, body []byte) error
 
 	mu          sync.Mutex
 	statusReads int
@@ -94,6 +97,13 @@ func (s *stubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !ok || r.Header.Get("X-TrustAgent-Key") != testKey || apiPaths[sc.APIFormat] != r.URL.Path {
 			http.Error(w, "unknown scenario, key or path", http.StatusBadRequest)
 			return
+		}
+		var sent map[string]json.RawMessage
+		if s.forward != nil && json.Unmarshal(body, &sent) == nil && sent["test_response"] == nil {
+			if err := s.forward(r, body); err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
 		}
 		s.answer(w, sc)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/status":
@@ -788,6 +798,14 @@ func TestUsageErrors(t *testing.T) {
 		{"--admin-key-file", "k"},                                          // only a seeding run reads it
 		{"--seed-knowledge", "--admin-key-file", "/does/not/exist"},        // unreadable key file
 		{"--seed-knowledge", "--admin-key-file", "k", "--scenarios", "s0"}, // no knowledge documents
+		{"--model-prefix", "openai/"},                                      // nothing goes upstream
+		{"--max-tokens", "300"},                                            // nothing goes upstream
+		{"--upstream", "generated", "--model-prefix", "OpenAI"},            // not a vendor prefix
+		{"--upstream", "generated", "--max-tokens", "-1"},
+		{"--upstream", "generated", "--max-tokens", "5000"},
+		{"--report-only"},             // nothing is checked
+		{"--drift-out", "drift.json"}, // nothing is checked
+		{"--record", "--drift-out", "d", "--loop"},
 	} {
 		if code, out := runTG(t, args...); code != exitUsage {
 			t.Errorf("%v: exit %d:\n%s", args, code, out)

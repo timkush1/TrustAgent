@@ -153,9 +153,17 @@ function decisionRow(p: PlayedTrace): GateDecisionRow | null {
   };
 }
 
-/** The first flagged or blocked answer the deep audit found contradicted (the refund example). */
+/**
+ * The trace every launch surface shows (D209): the manifest's `featured`, picked by rule when the
+ * tape was recorded and never chosen here. Only the simulated tape, which names none, falls back to
+ * its scripted choice: the first flagged or blocked answer the deep audit found contradicted (the
+ * refund example). A recorded tape without one features nothing.
+ */
 export function featuredTrace(tape: ReplayTape): string | null {
   const traces = tape.recording.traces;
+  const named = tape.recording.featured?.trace_id;
+  if (named !== undefined && traces.some((t) => t.trace_id === named)) return named;
+  if (tape.recording.kind !== 'mock') return null;
   const caught = traces.filter((t) => t.action === 'flag' || t.action === 'block' || t.action === 'fallback');
   const contradicted = caught.find((t) => t.verdict === 'contradicted' || t.audit.verdict === 'HALLUCINATED');
   return (contradicted ?? caught[0] ?? traces[0])?.trace_id ?? null;

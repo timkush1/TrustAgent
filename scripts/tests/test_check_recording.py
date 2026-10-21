@@ -45,6 +45,7 @@ class CheckRecordingTest(unittest.TestCase):
         # tested in the directory tests below.
         self.dir = self.tmp / "tape"
         shutil.copytree(RECORDING, self.dir)
+        self.candidate = self.featured_candidate()
 
     def tearDown(self) -> None:
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -75,15 +76,36 @@ class CheckRecordingTest(unittest.TestCase):
         found = self.problems(require_recorded)
         self.assertTrue(any(needle in p for p in found), f"no problem mentions {needle!r}: {found}")
 
+    def featured_candidate(self) -> str:
+        """A flagged trace of the tape with a CONTRADICTED claim that has a span."""
+        for t in self.manifest()["traces"]:
+            if t.get("action") not in ("flag", "fallback", "block"):
+                continue
+            path = self.dir / "traces" / f"{t['trace_id']}.json"
+            claims = (json.loads(path.read_text(encoding="utf-8")).get("audit_detail") or {}).get(
+                "claims"
+            ) or []
+            if any(c["status"] == "CONTRADICTED" and c.get("span") for c in claims):
+                return str(t["trace_id"])
+        raise AssertionError("the simulated tape has no flagged contradicted trace")
+
     def as_recorded(self, doc: Dict[str, Any]) -> None:
         doc["kind"] = "recorded"
         doc["label"] = RECORDED_LABEL
-        doc["decision_model"] = {"backend": "openrouter-systemone", "snapshot": "typesafe/jev-1.13"}
+        doc["trustagent_version"] = check_recording.repo_version()
+        doc["decision_model"] = {
+            "backend": "openrouter-systemone",
+            "snapshot": "typesafe/jev-1.13",
+            "host": "openrouter.ai",
+        }
         doc["judge"] = {
             "provider": "anthropic",
             "model": "claude-haiku-4.5",
             "fallback_active": False,
+            "host": "api.anthropic.com",
         }
+        doc["featured"] = {"trace_id": self.candidate, "rule": "contradicted_with_span"}
+        doc["calibration"] = {"snapshot": "typesafe/jev-1.13", "quality": "measured"}
         doc["roi"]["simulated"] = False
 
     # -------------------------------------------------------------------------- tests
@@ -209,6 +231,113 @@ class CheckRecordingTest(unittest.TestCase):
 
         self.edit_manifest(unlabelled)
         self.assert_problem("replayed, not live")
+
+    def test_recorded_needs_vendor_hosts(self) -> None:
+        # D203: a tape recorded through mock-upstream (or a gateway) is not recorded.
+        for path, host in (
+            (("decision_model", "host"), "mock-upstream"),
+            (("judge", "host"), "mock-upstream"),
+            (("decision_model", "host"), "ai-gateway.vercel.sh"),
+        ):
+
+            def change(doc: Dict[str, Any], path: Any = path, host: str = host) -> None:
+                self.as_recorded(doc)
+                doc[path[0]][path[1]] = host
+
+            self.edit_manifest(change)
+            self.assert_problem(f"non_vendor_host: {path[0]}.{path[1]} is {host!r}")
+
+        def unnamed(doc: Dict[str, Any]) -> None:
+            self.as_recorded(doc)
+            del doc["judge"]["host"]
+
+        self.edit_manifest(unnamed)
+        self.assert_problem("non_vendor_host: judge.host is missing")
+
+        def generated(doc: Dict[str, Any], host: Any) -> None:
+            self.as_recorded(doc)
+            doc["traces"][0]["answer_source"] = "generated"
+            for src in ("scripted", "generated"):
+                doc["answer_sources"][src] = sum(
+                    1 for t in doc["traces"] if t.get("answer_source") == src
+                )
+            if host is not None:
+                doc["answer_sources"]["generated_host"] = host
+
+        def first_generated(doc: Dict[str, Any]) -> None:
+            doc["answer_source"] = "generated"
+
+        self.edit_trace(first_generated)
+        self.edit_manifest(lambda d: generated(d, None))
+        self.assert_problem("non_vendor_host: answer_sources.generated_host is missing")
+        self.edit_manifest(lambda d: generated(d, "mock-upstream"))
+        self.assert_problem("answer_sources.generated_host is 'mock-upstream'")
+        self.edit_manifest(lambda d: generated(d, "openrouter.ai"))
+        self.assertEqual(self.problems(require_recorded=True), [])
+
+    def test_a_mock_tape_needs_no_hosts(self) -> None:
+        self.edit_manifest(lambda d: d["decision_model"].update(host="mock-upstream"))
+        self.assertEqual(self.problems(), [])
+
+    def test_the_launch_gate_checks_the_version(self) -> None:
+        def old(doc: Dict[str, Any]) -> None:
+            self.as_recorded(doc)
+            doc["trustagent_version"] = "0.9.0"
+
+        self.edit_manifest(old)
+        # The plain check accepts it; the launch gate needs the release the tape ships with.
+        self.assertEqual(self.problems(), [])
+        self.assert_problem("trustagent_version is '0.9.0', but VERSION is", require_recorded=True)
+
+    def test_the_launch_gate_needs_featured_and_calibration(self) -> None:
+        def bare(doc: Dict[str, Any]) -> None:
+            self.as_recorded(doc)
+            del doc["featured"]
+            del doc["calibration"]
+
+        self.edit_manifest(bare)
+        self.assertEqual(self.problems(), [])
+        self.assert_problem("featured is missing", require_recorded=True)
+        self.assert_problem("calibration is missing", require_recorded=True)
+
+    def test_featured_names_a_flagged_trace_that_meets_its_rule(self) -> None:
+        passed = next(t["trace_id"] for t in self.manifest()["traces"] if t.get("action") == "pass")
+
+        def featured(trace_id: str, rule: str) -> Callable[[Dict[str, Any]], None]:
+            def change(doc: Dict[str, Any]) -> None:
+                self.as_recorded(doc)
+                doc["featured"] = {"trace_id": trace_id, "rule": rule}
+
+            return change
+
+        self.edit_manifest(featured(self.candidate, "contradicted_with_span"))
+        self.assertEqual(self.problems(require_recorded=True), [])
+        self.edit_manifest(featured(passed, "best_flagged"))
+        self.assert_problem("was not flagged, blocked or replaced")
+        self.edit_manifest(featured("01a0e700-0000-7000-8000-00000000ffff", "best_flagged"))
+        self.assert_problem("which the recording does not list")
+        self.edit_manifest(featured(self.candidate, "scripted"))
+        self.assert_problem("rule scripted is the simulated tape's")
+        # A flagged trace without a contradicted span may be the owner's pick, not the rule's.
+        no_span = next(
+            t["trace_id"]
+            for t in self.manifest()["traces"]
+            if t.get("action") in ("flag", "fallback", "block")
+            and not any(
+                c["status"] == "CONTRADICTED" and c.get("span")
+                for c in (
+                    json.loads(
+                        (self.dir / "traces" / f"{t['trace_id']}.json").read_text(encoding="utf-8")
+                    ).get("audit_detail")
+                    or {}
+                ).get("claims")
+                or []
+            )
+        )
+        self.edit_manifest(featured(no_span, "contradicted_with_span"))
+        self.assert_problem("has no CONTRADICTED claim with a span")
+        self.edit_manifest(featured(no_span, "best_flagged"))
+        self.assertEqual(self.problems(require_recorded=True), [])
 
     def test_trace_files_match_the_manifest(self) -> None:
         extra = self.dir / "traces" / "01a0e700-0000-7000-8000-000000000000.json"

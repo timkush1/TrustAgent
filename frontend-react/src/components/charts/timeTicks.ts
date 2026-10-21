@@ -17,11 +17,19 @@ function localMinutes(t: number): number {
  * switches from "18:00" to "23:15" half way. With more buckets than labels, the last bucket gets
  * none: its label would be cut at the chart's right edge. Buckets on no round time (a clock offset
  * by 30 minutes, daily buckets at UTC midnight) get evenly spaced labels from the first instead.
+ *
+ * `filled` marks the buckets that hold a bar. A sparse series (a replay's passes of the tape, a
+ * quiet stretch: at most `max` bars, in at most half the buckets, none at the right edge) labels
+ * its bars instead, so each column says when it happened rather than sitting between round times.
  */
-export function axisTicks(times: readonly string[], max = 6): string[] {
+export function axisTicks(times: readonly string[], max = 6, filled?: readonly boolean[]): string[] {
   const ms = times.map((t) => Date.parse(t));
   // Few bars are wide enough to label each one.
   if (times.length <= max || ms.some(Number.isNaN)) return [...times];
+  if (filled && filled.length === times.length) {
+    const bars = times.filter((_, i) => filled[i]);
+    if (bars.length > 0 && bars.length <= max && bars.length * 2 <= times.length && !filled[times.length - 1]) return bars;
+  }
   const candidates = times.slice(0, -1);
   const bucketMin = Math.max(1, (ms[1] - ms[0]) / 60_000);
   for (const step of TICK_STEPS_MIN) {

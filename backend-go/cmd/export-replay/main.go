@@ -8,9 +8,17 @@
 //
 // The label is never chosen by hand. kind recorded ("Recorded {date} · {snapshot} + {judge} ·
 // {scripted|generated} answers · replayed, not live") needs a real decision backend, a judge that
-// is neither a fallback nor the mock, and an answer_source on every trace; the mock decision
-// backend gives kind mock ("Simulated (mock checks + mock judge): not model output"). Anything else
-// is refused. Every string is sanitized before it is written: credentials (whole PEM private-key
+// is neither a fallback nor the mock, an answer_source on every trace, and vendor hosts (D203):
+// --decision-host, --judge-host and, when any answer was generated, --generated-host must each be
+// openrouter.ai, api.typesafe.ai or api.anthropic.com. The hosts are never guessed from this
+// process's environment, which need not be the recorded stack's (make record-demo reads them from
+// the stack). The mock decision backend gives kind mock ("Simulated (mock checks + mock judge): not
+// model output"). Anything else is refused.
+//
+// The manifest also names its featured trace (D209: the first flag, fallback or block trace with a
+// CONTRADICTED claim that has a span, the refund contradiction scenario first; --featured ID is the
+// owner's pick when none qualifies) and, with --calibration-quality, the calibration the tape was
+// recorded with (D207, D208). Every string is sanitized before it is written: credentials (whole PEM private-key
 // blocks included), emails and hosts are masked in place, keeping UTF-16 offsets valid. Human
 // labels are left out of the trace files.
 //
@@ -82,6 +90,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 	var (
 		out, databaseURL, api, apiKeyFile, since, until, source, route string
 		judgeProvider, judgeModel, gitSHA                              string
+		decisionHost, judgeHost, generatedHost, featured               string
+		calibSnapshot, calibQuality                                    string
 		limit                                                          int
 		force                                                          bool
 	)
@@ -98,8 +108,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 	fl.StringVar(&judgeModel, "judge-model", "", "judge model, when no exported trace has a deep audit")
 	fl.StringVar(&gitSHA, "git-sha", "", "git revision recorded in the manifest (default: git rev-parse HEAD)")
 	fl.BoolVar(&force, "force", false, "replace an existing recording in --out")
+	fl.StringVar(&decisionHost, "decision-host", "", "bare host the fast check called (D203; a recorded tape names a vendor host)")
+	fl.StringVar(&judgeHost, "judge-host", "", "bare host the judge called (D203)")
+	fl.StringVar(&generatedHost, "generated-host", "", "bare host of the upstream that wrote the generated answers (D203, D208)")
+	fl.StringVar(&featured, "featured", "", "trace id of the owner's featured pick when no trace meets the featured rule (D209: rule best_flagged)")
+	fl.StringVar(&calibQuality, "calibration-quality", "", "quality of the calibration the tape was recorded with: measured, provisional or none (ALLOW_UNCALIBRATED)")
+	fl.StringVar(&calibSnapshot, "calibration-snapshot", "", "snapshot of that calibration file (with --calibration-quality measured or provisional)")
 	fl.Usage = func() {
 		fmt.Fprintln(stderr, "usage: export-replay --out DIR [--database-url URL | --api URL --api-key-file FILE] [--since T] [--until T] [--source S] [--route R] [--limit N]")
+		fmt.Fprintln(stderr, "         [--decision-host H --judge-host H [--generated-host H]] [--featured ID] [--calibration-quality Q [--calibration-snapshot S]]")
 		fl.PrintDefaults()
 	}
 	if err := fl.Parse(args); err != nil {
@@ -140,6 +157,27 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 	case judgeProvider != "" || judgeModel != "":
 		return usage("pass both --judge-provider and --judge-model")
 	}
+	hosts := recording.Hosts{Decision: decisionHost, Judge: judgeHost, Generated: generatedHost}
+	for _, h := range []struct{ name, v string }{{"decision-host", decisionHost}, {"judge-host", judgeHost}, {"generated-host", generatedHost}} {
+		if h.v != "" && !recording.BareHost(h.v) {
+			return usage("--%s %q is not a bare, lowercase host name (no scheme, port or path)", h.name, h.v)
+		}
+	}
+	var calib *recording.Calibration
+	switch {
+	case calibQuality == "" && calibSnapshot != "":
+		return usage("--calibration-snapshot needs --calibration-quality")
+	case calibQuality == "":
+	case !slices.Contains(recording.CalibrationQualities, calibQuality):
+		return usage("--calibration-quality must be one of %s", strings.Join(recording.CalibrationQualities, ", "))
+	case calibQuality != "none" && calibSnapshot == "":
+		return usage("--calibration-quality %s needs --calibration-snapshot", calibQuality)
+	default:
+		calib = &recording.Calibration{Quality: calibQuality}
+		if calibSnapshot != "" {
+			calib.Snapshot = &calibSnapshot
+		}
+	}
 	if gitSHA == "" {
 		gitSHA = d.rev()
 	}
@@ -161,9 +199,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 		fmt.Fprintf(stderr, "export-replay: %v\n", err)
 		return exitFailed
 	}
-	rec, err := recording.Build(traces, recording.Options{GitSHA: gitSHA, Version: version.Version, Judge: judge})
+	rec, err := recording.Build(traces, recording.Options{GitSHA: gitSHA, Version: version.Version, Judge: judge,
+		Hosts: hosts, Calibration: calib, Featured: featured})
 	if err != nil {
 		fmt.Fprintf(stderr, "export-replay: %v\n", err)
+		if strings.Contains(err.Error(), "host is unknown") {
+			fmt.Fprintln(stderr, "export-replay: name the hosts the stack called with --decision-host, --judge-host and --generated-host (make record-demo reads them from the stack)")
+		}
 		return exitFailed
 	}
 	san, err := recording.NewSanitizer()
@@ -183,6 +225,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, d deps) i
 	}
 	fmt.Fprintf(stdout, "Wrote a %s recording of %d traces (%d scripted, %d generated answers) to %s\n  Label: %s\n",
 		rec.Kind, rec.Totals.Traces, rec.AnswerSources.Scripted, rec.AnswerSources.Generated, out, rec.Label)
+	if rec.Featured != nil {
+		fmt.Fprintf(stdout, "  Featured: %s (rule %s)\n", rec.Featured.TraceID, rec.Featured.Rule)
+	} else {
+		fmt.Fprintln(stdout, "  Featured: none (no flag, fallback or block trace has a CONTRADICTED claim with a span; review needed)")
+	}
 	if unavailable > 0 {
 		fmt.Fprintf(stdout, "  Note: %d traces have no stored body (expired or not stored); they replay without their texts.\n", unavailable)
 	}

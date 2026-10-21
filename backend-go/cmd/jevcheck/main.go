@@ -5,6 +5,7 @@
 //
 //	jevcheck [-backend id] [-model id] [-base-url url] [-path /v1/systemone] [-timeout 10s] [-json]
 //	jevcheck --gateway http://localhost:8080 --admin-key-file admin.key [-timeout 10s] [-json]
+//	jevcheck --capture DIR [--max-cost-usd 0.01] [--dry-run]     (capture.go, D211)
 //
 // It reads the same environment as the proxy (OPENROUTER_API_KEY, TYPESAFE_API_KEY,
 // TRUTHTABLE_JEV_*, TRUTHTABLE_OPENROUTER_BASE_URL, TRUTHTABLE_DEMO_MODE); flags override it. That
@@ -48,7 +49,11 @@ type options struct {
 	gateway, adminKeyFile         string
 	timeout                       time.Duration
 	json, noKeyCheck              bool
+	capture                       captureOptions
 }
+
+// captureTimeout is the default -timeout of a --capture run (seven calls, one of 30,000 tokens).
+const captureTimeout = 3 * time.Minute
 
 // How the check reached the decision model (report.Via).
 const (
@@ -69,6 +74,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	fs.BoolVar(&o.noKeyCheck, "no-key-check", false, "skip the free OpenRouter key check")
 	fs.StringVar(&o.gateway, "gateway", "", "test the decision model of the gateway at this base URL (its credentials, a dashboard key included)")
 	fs.StringVar(&o.adminKeyFile, "admin-key-file", "", "with -gateway: file holding an admin key of that gateway")
+	fs.StringVar(&o.capture.dir, "capture", "", "capture sanitized vendor fixtures into this directory (D211; OPENROUTER_API_KEY, about $0.002)")
+	fs.Float64Var(&o.capture.maxCostUSD, "max-cost-usd", defaultCaptureCapUSD, "with --capture: the most the capture may spend")
+	fs.BoolVar(&o.capture.dryRun, "dry-run", false, "with --capture: print the plan and its estimate, send nothing")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
@@ -77,6 +85,30 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	}
 	if fs.NArg() > 0 || o.timeout <= 0 {
 		fmt.Fprintln(stderr, "jevcheck: unexpected arguments or a non-positive -timeout")
+		return exitUsage
+	}
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	if o.capture.dir != "" {
+		if o.gateway != "" || o.adminKeyFile != "" || o.backend != "" || o.path != "" || o.baseURL != "" || o.json || o.noKeyCheck {
+			fmt.Fprintln(stderr, "jevcheck: --capture takes only --max-cost-usd, --dry-run and -timeout (it always calls OpenRouter: TRUTHTABLE_OPENROUTER_BASE_URL)")
+			return exitUsage
+		}
+		if !(o.capture.maxCostUSD > 0) || o.capture.maxCostUSD > 1 {
+			fmt.Fprintln(stderr, "jevcheck: --max-cost-usd must be above 0 and at most 1")
+			return exitUsage
+		}
+		o.capture.timeout = o.timeout
+		if !set["timeout"] {
+			o.capture.timeout = captureTimeout
+		}
+		if o.model != "" {
+			getenv = withEnv(getenv, "TRUTHTABLE_JEV_MODEL", o.model)
+		}
+		return runCapture(ctx, o.capture, getenv, time.Now(), nil, stdout, stderr)
+	}
+	if set["max-cost-usd"] || set["dry-run"] {
+		fmt.Fprintln(stderr, "jevcheck: --max-cost-usd and --dry-run go with --capture")
 		return exitUsage
 	}
 	if o.gateway != "" || o.adminKeyFile != "" {
@@ -166,6 +198,16 @@ func runGateway(ctx context.Context, o options, stdout, stderr io.Writer) int {
 	return rep.finish(o.json, stdout)
 }
 
+// withEnv is getenv with key set to value.
+func withEnv(getenv func(string) string, key, value string) func(string) string {
+	return func(k string) string {
+		if k == key {
+			return value
+		}
+		return getenv(k)
+	}
+}
+
 // envHasKey reports whether the environment holds a decision-model credential.
 func envHasKey(getenv func(string) string) bool {
 	for _, k := range []string{"OPENROUTER_API_KEY", "TYPESAFE_API_KEY", "TRUTHTABLE_JEV_API_KEY", "TRUTHTABLE_JEV_API_KEY_FILE"} {
@@ -241,7 +283,7 @@ func (r *report) check(ctx context.Context, client jev.Client, noKeyCheck bool) 
 				return
 			}
 		default:
-			r.Key = ki
+			r.Key = maskKeyInfo(ki)
 		}
 	}
 	resp, err := jev.Probe(ctx, client)
@@ -347,6 +389,22 @@ func (r *report) print(w io.Writer) {
 	fmt.Fprintln(w, "Not ready.")
 }
 
+// MaskedLabel is what every jevcheck output shows for OpenRouter's key label (D211): the label
+// is a truncated form of the key itself, so no part of it is printed, in text or JSON.
+const MaskedLabel = "sk-or-…xxxx"
+
+// maskKeyInfo is a copy of k with its label masked.
+func maskKeyInfo(k *jev.KeyInfo) *jev.KeyInfo {
+	if k == nil {
+		return nil
+	}
+	c := *k
+	if c.Label != "" {
+		c.Label = MaskedLabel
+	}
+	return &c
+}
+
 func statusSuffix(status int) string {
 	if status == 0 {
 		return ""
@@ -357,7 +415,7 @@ func statusSuffix(status int) string {
 func describeKey(k *jev.KeyInfo) string {
 	parts := []string{"valid"}
 	if k.Label != "" {
-		parts = append(parts, "label "+k.Label)
+		parts = append(parts, "label "+MaskedLabel)
 	}
 	parts = append(parts, "usage $"+formatUSD(k.UsageUSD))
 	if k.LimitUSD == nil {

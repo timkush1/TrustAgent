@@ -31,6 +31,20 @@ describe('axisTicks', () => {
     expect(axisTicks(times)).toEqual(times);
   });
 
+  it("labels a sparse series' bars, never the right edge (P5C-14: a replay's passes)", () => {
+    // The simulated tape: four passes, 09:00 to 11:00, in 15-minute buckets, with one empty
+    // bucket of padding after the last pass.
+    const times = series(new Date(2026, 8, 28, 9, 0), 15, 10);
+    const filled = times.map((_, i) => [0, 2, 5, 8].includes(i));
+    expect(axisTicks(times, 6, filled).map(localClock)).toEqual(['09:00', '09:30', '10:15', '11:00']);
+    // A bar at the right edge would have its label cut: round times as before.
+    const edge = times.map((_, i) => [0, 2, 5, 9].includes(i));
+    expect(axisTicks(times, 6, edge)).toEqual(axisTicks(times));
+    // A busy series keeps the round steps.
+    const busy = times.map((_, i) => i % 2 === 0 || i < 8);
+    expect(axisTicks(times, 6, busy)).toEqual(axisTicks(times));
+  });
+
   it('spaces labels evenly when no bucket falls on a round time', () => {
     const times = series(new Date(2026, 9, 9, 10, 7), 60 * 24 * 7, 20);
     const ticks = axisTicks(times);

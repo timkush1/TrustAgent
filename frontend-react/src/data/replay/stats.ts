@@ -151,11 +151,13 @@ export function overviewStats(played: readonly PlayedTrace[], ctx: StatsContext)
   const from = ctx.recording.recorded_at;
   const to = ctx.now;
   // One bucket for the whole recording, chosen from its span, so the chart does not change its
-  // bucket as the tape plays; the points run from the start to the tape position.
+  // bucket as the tape plays; the points run from the start to the tape position, plus one empty
+  // bucket of padding (P5C-14): the last column is never at the chart's cut-off edge, so it gets
+  // its time like every other (the axis labels a sparse tape's columns, axisTicks).
   const bucket = bucketOf(recordingSpan(ctx));
   const step = BUCKET_MS[bucket];
   const start = Math.floor(Date.parse(from) / step) * step;
-  const end = Math.floor(Date.parse(to) / step) * step;
+  const end = Math.floor(Date.parse(to) / step) * step + step;
 
   const series: SeriesPoint[] = [];
   for (let t = start; t <= end; t += step) {

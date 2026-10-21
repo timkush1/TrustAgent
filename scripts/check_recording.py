@@ -11,7 +11,14 @@ TraceDetail). This script refuses a recording that could mislead a reader:
   against api.v1 TraceDetail, every manifest trace against TraceSummary and every event (wrapped in
   its WS v2 envelope) against WsEvent.
 - kind "recorded" needs a decision backend that is neither mock nor off, a judge that is neither a
-  fallback nor the mock, an answer_source on every trace, and the recorded label.
+  fallback nor the mock, an answer_source on every trace, the recorded label, and vendor hosts
+  (D203): decision_model.host, judge.host and, when any answer was generated,
+  answer_sources.generated_host must each be a common.v1 VendorHost (openrouter.ai,
+  api.typesafe.ai, api.anthropic.com). Any other host (mock-upstream, a gateway) or none is
+  refused with the reason non_vendor_host.
+- manifest.featured (D209), when present, names a listed trace the gate flagged, blocked or
+  replaced; rule contradicted_with_span also needs a CONTRADICTED claim with a span in that trace's
+  deep audit, and a recorded tape never uses the simulated tape's rule (scripted).
 - kind "mock" must carry the fixed label "Simulated (mock checks + mock judge): not model output",
   roi.simulated true, and nothing that claims to be measured: no `label: "measured"`, no
   `cost_source` other than simulated, free_local or unknown, no calibration state "measured", no
@@ -32,7 +39,9 @@ TraceDetail). This script refuses a recording that could mislead a reader:
   copy elsewhere is checked by its content alone.
 
 --require-recorded (the release gate: pages.yml on a v* tag, record_demo.py before it swaps a new
-recording in) also refuses a mock recording and a missing directory, and says how to make one.
+recording in) also refuses a mock recording and a missing directory, and says how to make one; and
+a recording without its featured trace or its calibration (D207-D209), or whose
+trustagent_version is not the repository's VERSION (D208: the tape shows the release it ships with).
 
 Exit status: 0 ok, 1 a check failed (with --require-recorded, also no recording at all), 2 usage
 or environment error (for example jsonschema missing: pip install jsonschema).
@@ -73,6 +82,21 @@ RECORD_HINT = (
     "make one with `make record-demo CONFIRM=1` (the owner's OpenRouter key, about $1; "
     "docs/JEV-ACCESS.md): it writes frontend-react/demo-data/recorded/"
 )
+
+# The trace outcomes a featured trace may have (D209): the gate acted on the answer.
+FLAGGED_ACTIONS = ("flag", "fallback", "block")
+
+
+def vendor_hosts() -> tuple[str, ...]:
+    """common.v1 VendorHost (D203): the only hosts a recorded tape may name."""
+    doc = json.loads((SCHEMA_DIR / "common.v1.schema.json").read_text(encoding="utf-8"))
+    return tuple(doc["$defs"]["VendorHost"]["enum"])
+
+
+def repo_version() -> str:
+    """The repository's VERSION (the release a recorded tape ships with)."""
+    return (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+
 
 RESERVED_DOMAINS = ("example.com", "example.net", "example.org")
 RESERVED_TLDS = (".example", ".test", ".invalid", ".localhost")
@@ -235,6 +259,9 @@ def check_manifest_rules(m: dict[str, Any], problems: Problems, require_recorded
             )
         if not RECORDED_LABEL.match(str(m.get("label", ""))):
             problems.add(where, "the recorded label must read 'Recorded … · replayed, not live'")
+        check_hosts(m, problems)
+        if require_recorded:
+            check_release(m, problems)
     elif kind == "mock":
         if m.get("label") != MOCK_LABEL:
             problems.add(where, f"a mock recording must be labelled {MOCK_LABEL!r}")
@@ -277,6 +304,94 @@ def check_manifest_rules(m: dict[str, Any], problems: Problems, require_recorded
         last = t if isinstance(t, int) else last
         if ev.get("trace_id") is not None and ev.get("trace_id") not in known:
             problems.add(where, f"events/{i} names an unknown trace {ev.get('trace_id')}")
+
+
+def check_hosts(m: dict[str, Any], problems: Problems) -> None:
+    """A recorded tape names the vendor hosts its traffic went to (D203)."""
+    where = "manifest.json"
+    vendors = vendor_hosts()
+    sources = m.get("answer_sources") or {}
+    wanted = [
+        ("decision_model.host", (m.get("decision_model") or {}).get("host"), "the fast check"),
+        ("judge.host", (m.get("judge") or {}).get("host"), "the judge"),
+    ]
+    if isinstance(sources.get("generated"), int) and sources["generated"] > 0:
+        wanted.append(
+            (
+                "answer_sources.generated_host",
+                sources.get("generated_host"),
+                "the generated answers",
+            )
+        )
+    for path, host, what in wanted:
+        if not host:
+            problems.add(
+                where,
+                f"non_vendor_host: {path} is missing; a recorded tape names the host {what} called",
+            )
+        elif host not in vendors:
+            problems.add(
+                where,
+                f"non_vendor_host: {path} is {host!r}, not a vendor host ({', '.join(vendors)}): "
+                f"{what} did not come from the vendor, so the tape cannot be labelled recorded",
+            )
+
+
+def check_release(m: dict[str, Any], problems: Problems) -> None:
+    """--require-recorded: the launch tape names its featured trace and calibration (D207-D209)
+    and the release it ships with (D208)."""
+    where = "manifest.json"
+    if not isinstance(m.get("featured"), dict):
+        problems.add(
+            where,
+            "featured is missing: every launch surface shows the featured trace (D209); "
+            "make record-demo picks it, or ACCEPT=1 FEATURED=<trace id> names the owner's pick",
+        )
+    if not isinstance(m.get("calibration"), dict):
+        problems.add(
+            where,
+            "calibration is missing: a recorded tape names the calibration it ran with (D207)",
+        )
+    version = repo_version()
+    if m.get("trustagent_version") != version:
+        problems.add(
+            where,
+            f"trustagent_version is {m.get('trustagent_version')!r}, but VERSION is {version!r}: "
+            "record the tape with the release it ships with (D208)",
+        )
+
+
+def check_featured(
+    directory: Path, m: dict[str, Any], details: dict[str, Any], problems: Problems
+) -> None:
+    """manifest.featured names a flagged trace of the tape that meets its rule (D209)."""
+    featured = m.get("featured")
+    if not isinstance(featured, dict):
+        return
+    where = "manifest.json featured"
+    trace_id = featured.get("trace_id")
+    rule = featured.get("rule")
+    listed = {t.get("trace_id"): t for t in m.get("traces") or [] if isinstance(t, dict)}
+    if trace_id not in listed:
+        problems.add(where, f"names trace {trace_id}, which the recording does not list")
+        return
+    if m.get("kind") == "recorded" and rule == "scripted":
+        problems.add(where, "rule scripted is the simulated tape's; a recorded tape picks by rule")
+    if listed[trace_id].get("action") not in FLAGGED_ACTIONS:
+        problems.add(
+            where,
+            f"trace {trace_id} was not flagged, blocked or replaced "
+            f"(action {listed[trace_id].get('action')!r})",
+        )
+    if rule == "contradicted_with_span":
+        detail = details.get(trace_id)
+        claims = ((detail or {}).get("audit_detail") or {}).get("claims") or []
+        if not any(c.get("status") == "CONTRADICTED" and c.get("span") for c in claims):
+            problems.add(
+                where,
+                f"rule contradicted_with_span, but trace {trace_id} has no CONTRADICTED claim "
+                "with a span",
+            )
 
 
 def check_events(m: dict[str, Any], schemas: Schemas, problems: Problems) -> None:
@@ -362,6 +477,7 @@ def check_dir(directory: Path, require_recorded: bool) -> Problems:
 
     traces_dir = directory / "traces"
     listed = {t.get("trace_id"): t for t in m.get("traces") or [] if isinstance(t, dict)}
+    details: dict[str, Any] = {}
     files = {p.stem: p for p in traces_dir.glob("*.json")} if traces_dir.is_dir() else {}
     for extra in sorted(set(files) - set(listed)):
         problems.add(f"traces/{extra}.json", "is not listed in the manifest")
@@ -374,6 +490,7 @@ def check_dir(directory: Path, require_recorded: bool) -> Problems:
         detail = load_json(path, problems)
         if not isinstance(detail, dict):
             continue
+        details[trace_id] = detail
         for err in schemas.errors(detail, "api.v1.schema.json", "TraceDetail"):
             problems.add(f"{where} (TraceDetail)", err)
         if detail.get("trace_id") != trace_id:
@@ -384,6 +501,7 @@ def check_dir(directory: Path, require_recorded: bool) -> Problems:
             problems.add(where, "published trace files carry no human labels")
         check_honesty(detail, where, kind, problems)
         check_secrets(detail, where, problems)
+    check_featured(directory, m, details, problems)
     return problems
 
 
