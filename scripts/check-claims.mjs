@@ -41,9 +41,10 @@
  *   [third-party-stale]   (warning) a third-party claim's as_of is more than 120 days old
  *   [reverify-open]       (warning) a claim still says what must be re-checked before launch
  *                         (an error with --launch)
- *   [launch-*]            with --launch: the recorded dataset (its version and snapshot), a measured
- *                         run (its failure rate and one snapshot), a reviewed comparison table, the
- *                         og.png card, no open reverify, no licence placeholder (see launchChecks)
+ *   [launch-*]            with --launch: the recorded dataset (its vendor hosts, version and
+ *                         snapshot), a measured run (its failure rate and one snapshot), a reviewed
+ *                         comparison table, the og.png card, no open reverify, no licence
+ *                         placeholder (see launchChecks)
  *
  * Markers, chips and figures inside code (fenced blocks and inline code spans) are not read, so a
  * doc can show the syntax. A display, chip, caveat or link inside an HTML comment does not count
@@ -85,6 +86,8 @@ export const OG_PATHS = ['docs/launch/og.png', 'frontend-react/public/og.png'];
 export const LOAD_RUNS_DIR = 'docs/benchmarks/load';
 export const RESULTS_DIR = 'docs/benchmarks/results';
 export const VERSION_PATH = 'VERSION';
+/** The schema whose VendorHost enum names the hosts a recorded tape may name (D203). */
+export const COMMON_SCHEMA_PATH = 'contracts/schema/common.v1.schema.json';
 export const OG_WIDTH = 1280;
 export const OG_HEIGHT = 640;
 export const OG_MAX_BYTES = 1_000_000;
@@ -898,6 +901,36 @@ export function pngSize(buf) {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
 
+/** The vendor hosts of the contract (common.v1 VendorHost), or null when the schema cannot be read. */
+export function vendorHosts(read) {
+  const raw = read(COMMON_SCHEMA_PATH);
+  if (raw === null) return null;
+  const hosts = parseJson(raw).value?.$defs?.VendorHost?.enum;
+  return Array.isArray(hosts) && hosts.length && hosts.every((h) => typeof h === 'string') ? hosts : null;
+}
+
+/**
+ * D203: a tape is recorded only when the answers came from the vendors. Its kind alone is a word
+ * the recorder wrote; the hosts it names are the evidence. The fast check's and the judge's host
+ * must be vendor hosts, and so must the upstream that wrote any generated answers. A tape that
+ * names no host, or mock-upstream, a proxy or a gateway, is simulated whatever its kind says.
+ */
+export function tapeHostProblems(tape, hosts) {
+  if (!hosts) return [`${COMMON_SCHEMA_PATH} gives no VendorHost list, so the tape's hosts cannot be checked (D203)`];
+  const out = [];
+  const need = (what, host) => {
+    if (typeof host !== 'string' || !hosts.includes(host)) {
+      out.push(`the tape names ${what} host ${host ? `"${host}"` : 'none'}, not a vendor host (${hosts.join(', ')}): ` +
+        'a tape from mock-upstream or a non-vendor host is simulated, never launched as a recording (D203)');
+    }
+  };
+  need('the fast check', tape?.decision_model?.host);
+  need('the judge', tape?.judge?.host);
+  const generated = tape?.answer_sources?.generated;
+  if (typeof generated === 'number' && generated > 0) need('the generated answers\'', tape?.answer_sources?.generated_host);
+  return out;
+}
+
 /** The snapshots a measured.json names: [] when none, one, or both of a split run (D207). */
 function measuredSnapshots(measured) {
   const snap = measured?.snapshot;
@@ -915,8 +948,9 @@ function parseJson(buf) {
 
 /**
  * --launch: nothing goes public on simulated or unreviewed material. Refuses:
- *   - a missing or mock recorded dataset, or one stamped with another version than VERSION, or
- *     recorded on another snapshot than the measured run (D207, D216);
+ *   - a missing or mock recorded dataset, one whose fast-check, judge or generated-answer host is
+ *     not a vendor host (D203), or one stamped with another version than VERSION, or recorded on
+ *     another snapshot than the measured run (D207, D216);
  *   - a not_measured measured.json, a bench run of it that failed more than 5% of its examples or
  *     whose file is missing, no snapshot, or two snapshots without snapshot_split (D204, D207);
  *   - any comparison cell that is unverified or not reviewed by the owner;
@@ -952,6 +986,7 @@ export function launchChecks({ claims = { claims: [] }, measured, compare, read 
       report('launch-version', RECORDED_MANIFEST_PATH,
         `the tape says trustagent_version ${recorded.trustagent_version ?? 'missing'}, VERSION says ${version}: record after the version bump (D216)`);
     }
+    for (const message of tapeHostProblems(recorded, vendorHosts(read))) report('launch-recorded', RECORDED_MANIFEST_PATH, message);
   }
 
   if (!isMeasuredRun(measured)) {
@@ -1249,10 +1284,15 @@ function png(width, height, extra = 0) {
 const RECORDED_TAPE = {
   schema: 'trustagent.recording/v1', kind: 'recorded', trustagent_version: '2.0.0',
   decision_model: { backend: 'openrouter-decisions', snapshot: SNAPSHOT, host: 'openrouter.ai' },
+  judge: { provider: 'openrouter', model: 'anthropic/claude-haiku', fallback_active: false, host: 'openrouter.ai' },
+  answer_sources: { scripted: 10, generated: 2, generated_host: 'openrouter.ai' },
 };
 const RECORDED = Buffer.from(JSON.stringify(RECORDED_TAPE));
+const VENDOR_HOSTS = ['openrouter.ai', 'api.typesafe.ai', 'api.anthropic.com'];
+const COMMON_SCHEMA = JSON.stringify({ $defs: { VendorHost: { enum: VENDOR_HOSTS } } });
 /** Every file a launch-ready repository holds besides the docs (measured: MEASURED). */
 const LAUNCH_READY = {
+  [COMMON_SCHEMA_PATH]: COMMON_SCHEMA,
   'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN),
   'docs/benchmarks/results/bench-1.json': BENCH_RUN(GOOD_QUALITY),
   [RECORDED_MANIFEST_PATH]: RECORDED,
@@ -1669,6 +1709,42 @@ const CASES = [
     expect: ['launch-recorded'],
   },
   {
+    name: 'launch: a tape that says recorded but names mock-upstream, or no host, is not a recording (D203)',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE(REVIEWED_CELL),
+    read: {
+      ...LAUNCH_READY,
+      [RECORDED_MANIFEST_PATH]: JSON.stringify({
+        ...RECORDED_TAPE,
+        decision_model: { ...RECORDED_TAPE.decision_model, host: 'mock-upstream' },
+        judge: { ...RECORDED_TAPE.judge, host: undefined },
+        answer_sources: { scripted: 10, generated: 2, generated_host: 'mock-upstream' },
+      }),
+    },
+    files: {},
+    expect: ['launch-recorded', 'launch-recorded', 'launch-recorded'],
+    variants: [
+      {
+        // Scripted answers only: no generated host is needed; the two model hosts still are.
+        read: {
+          ...LAUNCH_READY,
+          [RECORDED_MANIFEST_PATH]: JSON.stringify({ ...RECORDED_TAPE, answer_sources: { scripted: 12, generated: 0 } }),
+        },
+        expect: [],
+      },
+      {
+        read: {
+          ...LAUNCH_READY,
+          [RECORDED_MANIFEST_PATH]: JSON.stringify({ ...RECORDED_TAPE, judge: { ...RECORDED_TAPE.judge, host: 'api.openai.com' } }),
+        },
+        expect: ['launch-recorded'],
+      },
+      // Without the contract's host list nothing can vouch for the tape.
+      { read: { ...LAUNCH_READY, [COMMON_SCHEMA_PATH]: '{}' }, expect: ['launch-recorded'] },
+    ],
+  },
+  {
     name: 'launch: a mock recording, a cell the owner has not reviewed, a wrong-size og.png',
     launch: true,
     measured: MEASURED,
@@ -1881,6 +1957,10 @@ export function selfTest() {
       pkceWordingHits(['PKCE from the Pages site is verified.'], pkceStatus(half)).length === 1);
   check('png: size from IHDR', JSON.stringify(pngSize(png(1280, 640))) === '{"width":1280,"height":640}' && pngSize(Buffer.from('nope')) === null);
   check('mask: inline code keeps columns', maskCode(['a `<!-- x -->` b'])[0] === `a ${' '.repeat(12)} b`);
+  const realRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const realHosts = vendorHosts((rel) => (existsSync(join(realRoot, rel)) ? readFileSync(join(realRoot, rel)) : null));
+  check('hosts: the contract names the vendor hosts, and mock-upstream is not one',
+    Array.isArray(realHosts) && realHosts.includes('openrouter.ai') && !realHosts.includes('mock-upstream'), JSON.stringify(realHosts));
   check('mask: comments span lines', JSON.stringify(maskComments(['a <!-- x', 'y --> b'])) === JSON.stringify(['a       ', '      b']));
 
   try {
