@@ -479,7 +479,7 @@ services:
   # ========== Profile: knowledge ==========
 
   qdrant:
-    image: qdrant/qdrant:v1.16.3
+    image: qdrant/qdrant:v1.19.2
     profiles: [knowledge]
     ports:
       - "${BIND_ADDR:-127.0.0.1}:6333:6333" # HTTP API
