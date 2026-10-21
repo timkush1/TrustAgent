@@ -393,6 +393,67 @@ class RecordDemoTest(unittest.TestCase):
         ledger.append({"attempt": "a3", "event": "start", "usage_before_usd": 2.5})
         self.assertEqual(ledger.open_attempt(), "a3")
 
+    def test_an_unread_final_reading_is_never_counted_as_nothing(self) -> None:
+        ledger = record_demo.Ledger(self.work / "ledger.jsonl")
+        caps = {"decision_usd": 0.5, "llm_usd": 3.0}
+        # a1 failed and its reading after failed too: nothing known but its start.
+        ledger.append({"attempt": "a1", "event": "start", "usage_before_usd": 1.0, "caps": caps})
+        ledger.append(
+            {
+                "attempt": "a1",
+                "event": "end",
+                "outcome": "failed",
+                "spent_usd": None,
+                "usage_after_usd": None,
+            }
+        )
+        # No reading since: its caps bound it, until the key is read again.
+        self.assertAlmostEqual(ledger.spent(), 3.5)
+        self.assertIn("counted at its caps $3.50", " ".join(ledger.bounds()))
+        # The caller's current reading bounds it: usage since its start.
+        self.assertAlmostEqual(ledger.spent(1.8), 0.8)
+        # A later line's reading wins over the caller's.
+        ledger.append({"attempt": "a2", "event": "start", "usage_before_usd": 1.6, "caps": caps})
+        ledger.append({"attempt": "a2", "event": "measure", "usage_usd": 1.9, "spent_usd": 0.3})
+        self.assertAlmostEqual(ledger.spent(5.0), 0.6 + 0.3)
+        # a2's final reading fails after its review's: it is counted from its start to now, at
+        # least what the review read.
+        ledger.append(
+            {
+                "attempt": "a2",
+                "event": "end",
+                "outcome": "accepted",
+                "spent_usd": 0.3,
+                "usage_after_usd": None,
+            }
+        )
+        self.assertAlmostEqual(ledger.spent(2.1), 0.6 + 0.5)
+        self.assertAlmostEqual(ledger.spent(), 0.6 + 3.5)
+        # A reading below its start (another key) says nothing about it: the caps again.
+        self.assertAlmostEqual(ledger.spent(0.2), 0.6 + 3.5)
+
+    def test_a_failed_reading_after_a_failed_attempt_still_lowers_the_caps(self) -> None:
+        # The attempt fails after the stack started, and the key cannot be read after it.
+        self.runner.trafficgen_codes = [1]
+        self.key.usages = [1.0, 1.0]
+
+        def failing() -> record_demo.KeyState:
+            raise record_demo.KeyReadError("GET /api/v1/key failed (URLError)")
+
+        r = self.recorder()
+        reads = iter([self.key, self.key, failing])
+        r.key_reader = lambda: next(reads)()
+        self.assertEqual(record_demo.main([], r), 1, self.output())
+        end = self.ledger()[-1]
+        self.assertEqual((end["event"], end["spent_usd"]), ("end", None))
+        # The next plan, with the key at 2.20, counts the failed attempt at 1.20, not 0.
+        self.key.usages, self.key.reads = [2.2], 0
+        self.out = io.StringIO()
+        self.assertEqual(self.main(["--dry-run", "--max-total-usd", "1.6"]), 0)
+        self.assertIn("$1.2000 spent over 1 attempt(s)", self.output())
+        self.assertIn("the key's usage since its start (an upper bound)", self.output())
+        self.assertIn("refused: $0.40 is left", self.output())
+
     # -------------------------------------------------------------------------- the plan
 
     def test_the_dry_run_prints_the_plan_and_starts_nothing(self) -> None:
@@ -481,6 +542,36 @@ class RecordDemoTest(unittest.TestCase):
         self.assertEqual(export[export.index("--calibration-quality") + 1], "none")
         self.assertNotIn("--calibration-snapshot", export)
         self.assertIn("uncalibrated", self.output())
+
+    def test_allow_uncalibrated_on_a_calibrated_snapshot_fails(self) -> None:
+        # The relaxed payments-faq policy must not record a tape that says calibrated (D208).
+        self.assertEqual(self.main(["--allow-uncalibrated"]), 1, self.output())
+        self.assertIn(f"the snapshot {SNAPSHOT} has", self.output())
+        self.assertIn("record it again without ALLOW_UNCALIBRATED=1", self.output())
+        self.assertNotIn("exec /trafficgen", self.runner.kinds())
+        self.assertEqual(self.runner.kinds()[-1], "down")
+        self.assertEqual(self.ledger()[-1]["outcome"], "failed")
+
+    def test_no_attempt_starts_in_the_hour_before_midnight_utc(self) -> None:
+        # D208: the daily caps reset at 00:00 UTC; an attempt across it could spend them twice.
+        self.at = datetime(2026, 10, 21, 23, 15, 0, tzinfo=timezone.utc)
+        self.assertEqual(self.main(["--dry-run"]), 0)
+        self.assertIn("Blocked   it is 23:15 UTC", self.output())
+        self.out, self.err = io.StringIO(), io.StringIO()
+        self.assertEqual(self.main(), 2)
+        self.assertIn("refused: it is 23:15 UTC", self.output())
+        self.assertEqual(self.runner.calls, [])
+        self.assertEqual(self.ledger(), [])
+        # After midnight it starts.
+        self.at = datetime(2026, 10, 22, 0, 1, 0, tzinfo=timezone.utc)
+        self.out, self.err = io.StringIO(), io.StringIO()
+        self.assertEqual(self.main(), 0, self.output())
+
+    def test_stack_yml_is_owner_only(self) -> None:
+        attempt = self.record_attempt()
+        for name in ("stack.yml", "admin.key"):
+            mode = (self.work / attempt / name).stat().st_mode & 0o777
+            self.assertEqual(mode, 0o600, name)
 
     def test_uncalibrated_policy_touches_only_payments_faq(self) -> None:
         text = (ROOT / "config" / "policies.yaml").read_text(encoding="utf-8")

@@ -14,9 +14,12 @@ frontend-react/demo-data/recorded/, which the Pages build ships from a release t
 Money (D201, D208). Every attempt is paid from one OpenRouter key, and the source of truth for what
 an attempt spent is the change in that key's usage (the free GET /api/v1/key) from before the
 attempt to after its stack is gone, read after a 30 s settle. tmp/record-demo/ledger.jsonl keeps
-those readings across attempts and survives ``down -v``. What is left is
-``R = min(RECORD_MAX_TOTAL_USD - spent, limit_remaining - 0.10)``; an attempt's daily caps are
-``decision = min(0.50, R)`` and ``llm = min(3, R - decision)``, and it refuses when R < 0.50.
+those readings across attempts and survives ``down -v``; an attempt whose final reading failed
+counts the key's usage from its start to the next reading (an upper bound), else its caps, never
+nothing. What is left is ``R = min(RECORD_MAX_TOTAL_USD - spent, limit_remaining - 0.10)``; an
+attempt's daily caps are ``decision = min(0.50, R)`` and ``llm = min(3, R - decision)``, and it
+refuses when R < 0.50. The caps are daily (they reset at 00:00 UTC), so no attempt starts in the
+last hour before it.
 
 Without CONFIRM=1 (or with --dry-run) it prints the plan and stops: nothing starts and nothing is
 spent (the key's usage is read when a key is set; that call is free). With CONFIRM=1 one attempt:
@@ -25,7 +28,8 @@ spent (the key's usage is read when a key is set; that call is free). With CONFI
    mock or ``off`` in .env, without OPENROUTER_API_KEY (the ledger reads its usage; the generated
    answers come from OpenRouter), when VERSION is not the release (D216, H-8: the bump comes
    first), when an attempt is still open, when no calibration file exists for a real snapshot and
-   ALLOW_UNCALIBRATED is not set (D207), or when R is below $0.50;
+   ALLOW_UNCALIBRATED is not set (D207), when R is below $0.50, or in the last hour before
+   00:00 UTC (the daily caps reset then);
 2. writes tmp/record-demo/<attempt>/stack.yml (this attempt's caps; with ALLOW_UNCALIBRATED the
    payments-faq route's require_calibration: false, D208) and checks the composed stack
    (docker-compose.yml + docker-compose.record.yml + stack.yml, project truthtable-record): the
@@ -37,7 +41,9 @@ spent (the key's usage is read when a key is set; that call is free). With CONFI
    (the stack publishes no port, so doctor cannot reach it): the fast check ready with a snapshot
    and a vendor endpoint, the judge up, real and not on its fallback;
 4. checks the snapshot against config/calibration/<snapshot>.json (D207): its quality goes into
-   the manifest, or quality none with ALLOW_UNCALIBRATED=1 (the UI then says uncalibrated);
+   the manifest, or quality none with ALLOW_UNCALIBRATED=1 (the UI then says uncalibrated); a
+   snapshot that has a file fails the attempt under ALLOW_UNCALIBRATED=1, whose relaxed policy
+   the release does not ship;
 5. runs RECORD_PASSES rounds of trafficgen --record --upstream generated --model-prefix openai/
    --max-tokens 300 inside the proxy container (scripted answers by test_response, the generated
    pair through OpenRouter) and writes drift.json and a drift table (a real model's answers may
@@ -79,7 +85,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, TextIO, Tuple
 
@@ -113,6 +119,9 @@ MIN_REMAINING_USD = 0.50
 KEY_RESERVE_USD = 0.10
 # The key's usage settles this long after the last call before it is read (D208).
 SETTLE_S = 30.0
+# The gateway's daily caps reset at 00:00 UTC (D208): an attempt that crossed it could spend its
+# caps twice, so none starts this close to it (cards never cross 03:00 Israel time).
+MIDNIGHT_GUARD_MIN = 60
 # What one pass costs at list prices (an estimate; the caps bound it whatever happens).
 ESTIMATE_USD_PER_PASS = 0.5
 # Generated answers (D208): OpenRouter's model ids carry the vendor; answers stay short.
@@ -424,11 +433,44 @@ class AttemptBook:
     spent: Optional[float] = None
     ended: bool = False
     outcome: Optional[str] = None
+    # The attempt's caps (decision + deep audits) from its start: what the gateway let it spend.
+    caps_usd: Optional[float] = None
+    # Whether its end came with a reading of the key after the stack was gone; without one its
+    # spent_usd is a lower bound (the review's reading, or nothing).
+    final_known: bool = False
+    # Index of its last ledger line: a later line's reading bounds what it spent.
+    last_index: int = -1
+
+
+@dataclass
+class Account:
+    """What the ledger counts for one attempt, and how it knows."""
+
+    book: AttemptBook
+    counted: float
+    # reading: the key's usage after the attempt; later: a later reading of the key (an upper
+    # bound: anything else the key paid in between is counted too); caps: no reading since, so
+    # its caps (the most the gateway let it spend).
+    how: str
+
+
+def _reading(entry: Mapping[str, Any]) -> Optional[float]:
+    """The key's usage a ledger line recorded, if any."""
+    for name in ("usage_before_usd", "usage_usd", "usage_after_usd"):
+        value = _number(entry.get(name))
+        if value is not None:
+            return value
+    return None
 
 
 class Ledger:
     """tmp/record-demo/ledger.jsonl: one JSON object per line, appended, never rewritten. It lives
-    outside every volume, so ``down -v`` leaves it (D208)."""
+    outside every volume, so ``down -v`` leaves it (D208).
+
+    An attempt whose final reading failed (the key could not be read after its stack was gone) is
+    never counted at less than it may have spent: the next reading of the key in the ledger (or the
+    caller's current one) less its usage before, else its caps (D208: the caps come from what is
+    left, so an unread spend must not vanish from the total)."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -455,25 +497,74 @@ class Ledger:
             f.flush()
             os.fsync(f.fileno())
 
-    def books(self) -> Dict[str, AttemptBook]:
+    def books(self, entries: Optional[List[Dict[str, Any]]] = None) -> Dict[str, AttemptBook]:
         books: Dict[str, AttemptBook] = {}
-        for e in self.entries():
+        for i, e in enumerate(self.entries() if entries is None else entries):
             attempt = str(e.get("attempt") or "")
             book = books.setdefault(attempt, AttemptBook(attempt=attempt))
             event = e.get("event")
             if event == "start":
                 book.usage_before = _number(e.get("usage_before_usd"))
+                caps = e.get("caps") if isinstance(e.get("caps"), dict) else {}
+                parts = [_number(caps.get(k)) for k in ("decision_usd", "llm_usd")]
+                if all(p is not None for p in parts):
+                    book.caps_usd = round(sum(p or 0.0 for p in parts), 6)
             elif event in ("measure", "end") and not book.ended:
                 spent = _number(e.get("spent_usd"))
                 if spent is not None:
                     book.spent = spent
                 if event == "end":
                     book.ended, book.outcome = True, str(e.get("outcome") or "")
+                    book.final_known = (
+                        spent is not None and _number(e.get("usage_after_usd")) is not None
+                    )
+            else:
+                continue
+            book.last_index = i
         return books
 
-    def spent(self) -> float:
-        """Every attempt's spend: its final reading, else its latest one."""
-        return round(sum(b.spent or 0.0 for b in self.books().values()), 6)
+    def accounts(self, current_usage: Optional[float] = None) -> List[Account]:
+        """What every attempt counts (see the class): its final reading when there is one."""
+        entries = self.entries()
+        out: List[Account] = []
+        for book in self.books(entries).values():
+            known = book.spent or 0.0
+            if not book.ended or book.final_known or book.usage_before is None:
+                out.append(Account(book, known, "reading"))
+                continue
+            later = current_usage
+            for e in entries[book.last_index + 1 :]:
+                reading = _reading(e)
+                if reading is not None:
+                    later = reading
+                    break
+            if later is not None and later - book.usage_before >= known - 1e-9:
+                out.append(Account(book, round(later - book.usage_before, 6), "later"))
+            else:
+                # No reading since, or the usage went down (another key): the caps bound it.
+                out.append(Account(book, max(known, book.caps_usd or 0.0), "caps"))
+        return out
+
+    def spent(self, current_usage: Optional[float] = None) -> float:
+        """Every attempt's spend: its final reading; else its latest one while it is open; else,
+        when its final reading failed, an upper bound (see the class)."""
+        return round(sum(a.counted for a in self.accounts(current_usage)), 6)
+
+    def bounds(self, current_usage: Optional[float] = None) -> List[str]:
+        """The attempts counted at a bound, in words, for the plan."""
+        notes = []
+        for a in self.accounts(current_usage):
+            if a.how == "later":
+                notes.append(
+                    f"attempt {a.book.attempt}'s final reading failed: counted at ${a.counted:.4f}, "
+                    "the key's usage since its start (an upper bound)"
+                )
+            elif a.how == "caps":
+                notes.append(
+                    f"attempt {a.book.attempt}'s final reading failed: counted at its caps "
+                    f"${a.counted:.2f} until the key is read again"
+                )
+        return notes
 
     def open_attempt(self) -> Optional[str]:
         """The attempt that started and has not ended (at most one: a new one is refused)."""
@@ -812,6 +903,19 @@ class Recorder:
             raise KeyReadError("no OPENROUTER_API_KEY")
         return reader()
 
+    def near_midnight(self) -> Optional[str]:
+        """Why no attempt may start now (D208: the daily caps reset at 00:00 UTC), or None."""
+        now = self.now().astimezone(timezone.utc)
+        midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        left = (midnight - now).total_seconds() / 60
+        if left >= MIDNIGHT_GUARD_MIN:
+            return None
+        return (
+            f"it is {now:%H:%M} UTC: the gateway's daily caps reset at 00:00 UTC, so an attempt "
+            f"started within {MIDNIGHT_GUARD_MIN} minutes of it could spend its caps twice (D208); "
+            "start it after 00:00 UTC"
+        )
+
     def repo_version(self) -> str:
         try:
             return self.version_file.read_text(encoding="utf-8").strip()
@@ -826,7 +930,6 @@ class Recorder:
 
         judge_wanted = judge_candidates(keys.judge_provider)
         ledger = self.ledger
-        spent = ledger.spent()
         books = ledger.books()
         open_attempt = ledger.open_attempt()
         blocked = list(keys.problems)
@@ -847,10 +950,11 @@ class Recorder:
         caps: Optional[Caps] = None
         key_line = "  Key       no OPENROUTER_API_KEY: plan only (no usage read)"
         limit_remaining: Optional[float] = None
+        usage: Optional[float] = None
         if keys.openrouter or self.key_reader is not None:
             try:
                 ks = self.read_key()
-                limit_remaining = ks.limit_remaining
+                limit_remaining, usage = ks.limit_remaining, ks.usage
                 limit = (
                     f"limit ${ks.limit:.2f}, ${ks.limit_remaining:.4f} left"
                     if ks.limit is not None and ks.limit_remaining is not None
@@ -861,11 +965,17 @@ class Recorder:
                 key_line = f"  Key       could not read the key's usage: {exc}"
                 blocked.append(f"the key's usage could not be read ({exc})")
         lines.append(key_line)
+        spent = ledger.spent(usage)
         lines.append(
             f"  Ledger    {shown_path(ledger.path)}: ${spent:.4f} spent over {len(books)} "
             f"attempt(s) of RECORD_MAX_TOTAL_USD ${self.total_usd:.2f}"
             + (f"; attempt {open_attempt} is open (ACCEPT or DISCARD it)" if open_attempt else "")
         )
+        for note in ledger.bounds(usage):
+            lines.append(f"            {note}")
+        late = self.near_midnight()
+        if late:
+            blocked.append(late)
         if open_attempt:
             blocked.append(
                 f"attempt {open_attempt} is still open: make record-demo ACCEPT=1 "
@@ -1063,6 +1173,14 @@ class Recorder:
 
     def calibration(self, snapshot: str) -> Dict[str, Any]:
         path = calibration_file(snapshot, self.calibration_dir)
+        if path.is_file() and self.allow_uncalibrated:
+            # The overlay relaxed payments-faq's require_calibration (D208): the tape would show a
+            # calibrated snapshot routed by a policy the release does not ship.
+            raise Failed(
+                f"the snapshot {snapshot} has {shown_path(path)}, but ALLOW_UNCALIBRATED=1 relaxed "
+                f"{UNCALIBRATED_ROUTE}'s require_calibration: record it again without "
+                "ALLOW_UNCALIBRATED=1"
+            )
         if path.is_file():
             quality = calibration_quality(path)
             self.say(f"  calibration: {path.name} ({quality})")
@@ -1374,11 +1492,14 @@ class Recorder:
                 "no calibration for a real snapshot in config/calibration (D207): calibrate first "
                 "(make calib-pass, make calibrate WRITE=1), or pass ALLOW_UNCALIBRATED=1"
             )
+        late = self.near_midnight()
+        if late:
+            raise Refused(late)
         try:
             before = self.read_key()
         except KeyReadError as exc:
             raise Refused(f"the key's usage could not be read: {exc}") from exc
-        caps = plan_caps(self.total_usd, ledger.spent(), before.limit_remaining)
+        caps = plan_caps(self.total_usd, ledger.spent(before.usage), before.limit_remaining)
         if caps.refused:
             raise Refused(caps.refused)
 
@@ -1396,9 +1517,10 @@ class Recorder:
         key_file = folder / "admin.key"
         key_file.touch(mode=0o600)
         key_file.write_text(admin_key + "\n", encoding="utf-8")
-        (folder / "stack.yml").write_text(
-            stack_override(caps, policy, video_port, admin_key), encoding="utf-8"
-        )
+        # stack.yml names the attempt's admin key too: owner-only, like admin.key.
+        stack_file = folder / "stack.yml"
+        stack_file.touch(mode=0o600)
+        stack_file.write_text(stack_override(caps, policy, video_port, admin_key), encoding="utf-8")
         doc: Dict[str, Any] = {
             "attempt": attempt,
             "state": RUNNING,
@@ -1748,7 +1870,7 @@ class Recorder:
             self.save_attempt(attempt, doc)
         self.say(
             f"Attempt {attempt} {outcome}: spent {money(spent)}; every attempt together "
-            f"{money(self.ledger.spent())} of ${self.total_usd:.2f}"
+            f"{money(self.ledger.spent(after.usage if after else None))} of ${self.total_usd:.2f}"
         )
         caps = doc.get("caps") or {}
         cap = float(caps.get("decision_usd") or 0) + float(caps.get("llm_usd") or 0)
