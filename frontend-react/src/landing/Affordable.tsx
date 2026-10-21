@@ -4,7 +4,7 @@
  * measurements (or "not yet measured"), and a calculator over the same cost model.
  */
 import { lazy, Suspense } from 'react';
-import { claim, type ClaimView } from './claims';
+import { claim, optionalClaim, type ClaimView } from './claims';
 import { loaders } from './lazyLoaders';
 import { PartBoundary } from './lazyParts';
 import { ClaimCaveat, ClaimValue, LabelChip, Section } from './ui';
@@ -102,10 +102,13 @@ function PublishedFigures() {
   const arizeOpusCost = claim('arize_ragtruth_opus_cost_per_1k');
   const threshold = claim('arize_ragtruth_tuned_threshold');
   const atHalf = claim('arize_ragtruth_accuracy_at_default_threshold');
-  const orAcc = claim('openrouter_faithfulness_accuracy');
-  const orMs = claim('openrouter_faithfulness_median_ms');
+  // OpenRouter's own test: shown while the claims contract keeps it (its figures are re-checked
+  // against the source before launch, and withdrawn if the page no longer publishes them).
+  const orAcc = optionalClaim('openrouter_faithfulness_accuracy');
+  const orMs = optionalClaim('openrouter_faithfulness_median_ms');
   const measured = [claim('fast_check_cost_per_1k_measured'), claim('gate_latency_p50_measured'), claim('ragtruth_qa_agreement_measured')];
-  // The hero already says "not yet measured" once; here the unpublished ones are named, not repeated.
+  // The only place on the page that names what is not measured yet: the hero shows our figure only
+  // once it is published.
   const published = measured.filter((c) => c.hasValue);
   const pending = measured.filter((c) => !c.hasValue);
   return (
@@ -117,9 +120,11 @@ function PublishedFigures() {
         Accuracy: Jev {num(arizeJev)} at {num(arizeJevCost)} vs Claude Opus 5 {num(arizeOpus)} at {num(arizeOpusCost)}, only at a tuned{' '}
         {num(threshold)} threshold ({num(atHalf)}). <span data-arize-tokens>{arizeTokensNote(claim('fast_check_cost_per_1k'))}</span>
       </Figure>
-      <Figure title="OpenRouter faithfulness test" chip={orAcc}>
-        {num(orAcc)} accuracy, {num(orMs)} on its own test set (not the fast check’s P50 above).
-      </Figure>
+      {orAcc && orMs ? (
+        <Figure title="OpenRouter faithfulness test" chip={orAcc}>
+          {num(orAcc)} accuracy, {num(orMs)} on its own test set (not the fast check’s P50 above).
+        </Figure>
+      ) : null}
       <li className="border-t border-border pt-4" data-measured>
         <p className="text-sm font-semibold text-fg">Our measurements</p>
         {published.length > 0 ? (

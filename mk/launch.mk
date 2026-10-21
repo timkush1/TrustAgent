@@ -62,6 +62,15 @@ clip: ## Copy a file to the Windows clipboard as UTF-16LE: make clip FILE=... (s
 test-linkedin-post: ## Unit tests of make linkedin-post and make clip (no clipboard, no network)
 	cd "$(LAUNCH_ROOT)" && $(PYTHON) -m unittest scripts/tests/test_linkedin_post.py
 
+# The owner's comparison review (G5) and the reverify claims (D113, D212): every source page is
+# read again with a plain GET (no key) and each cell is printed with the sentence that supports it.
+# The fetch log and the proposed contract edits go to tmp/compare-review/ (FETCH=0 re-prints them
+# from the pages saved there); contracts/ is never edited by it.
+FETCH ?= 1
+
+compare-review: ## Re-read every comparison source and reverify claim; print the G5 table with each source's own words (FETCH=0: from the saved pages)
+	@$(PYTHON) "$(LAUNCH_ROOT)/scripts/compare_review.py" $(if $(filter 0,$(FETCH)),,--fetch)
+
 launch-video: ## The 60-second launch video: static beats from the recorded Pages build plus the stack beats, captions burned in (tmp/launch/*.mp4; P6 V-7)
 	@echo "launch-video: not implemented (P6 V-7)"; exit 2
 

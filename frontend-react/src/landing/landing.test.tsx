@@ -21,7 +21,7 @@ import { committedManifest, scenarioTrace } from '@/test/recording';
 import { digest } from 'virtual:trustagent/tape-digest';
 import claimsDoc from '@contracts/claims/value-claims.v1.json';
 import { priceCall } from '@/lib/decision/cost';
-import { claim, LABEL_TEXT, landingClaims, splitClaims, type ClaimView } from './claims';
+import { claim, LABEL_TEXT, landingClaims, optionalClaim, splitClaims, type ClaimView } from './claims';
 import { commonReadDate, compareRows } from './compareData';
 import { command as landingCommand, copy as landingCopy, DEMO_HREF, REFUND } from './content';
 import { auditShareWords, defaultCalculatorInputs, formatMultiple, judgeOptions, modelName, monthlyCost, PRICE_TABLE, referenceJudge, type CalculatorInputs } from './costModel';
@@ -859,6 +859,9 @@ describe('claims', () => {
 
   it('throws on an unknown claim rather than print a number without a source', () => {
     expect(() => claim('nope')).toThrow(/no claim nope/);
+    // A figure that may be withdrawn is looked up as optional: gone means not shown.
+    expect(optionalClaim('nope')).toBeNull();
+    expect(optionalClaim('openrouter_faithfulness_accuracy')?.display).toBe(claim('openrouter_faithfulness_accuracy').display);
   });
 });
 

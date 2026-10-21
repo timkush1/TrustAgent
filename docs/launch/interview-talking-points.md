@@ -173,12 +173,26 @@ No benchmark run of our own is published yet, so there are no measured results h
   3. decision logic identical in Go and in the browser, proven by golden vectors;
   4. honesty built into the product: every number labelled, and "not checked" instead of an
      invented score.
-- **Market context (unverified: re-check every line, or delete it, before using it).** Palo Alto
-  Networks completed its Portkey acquisition (May 2026); Cisco is acquiring Galileo (April 2026);
-  Kong 3.14 ships custom guardrails and OpenRouter launched guardrails; Datadog separates
-  contradiction from unsupported in its hallucination detection; Langfuse and Arize published
-  Jev-as-judge write-ups and LiteLLM merged Jev support (2026-09-22); a routing study found
-  cascades match an LLM alone at a quarter to half of its cost. Arize's judge-cost comparison:
+- **Market context (each line re-read at its source on 2026-10-21; re-check again if you use it
+  much later).**
+  - Palo Alto Networks completed its acquisition of Portkey, an AI gateway, on 2026-05-29
+    ([press release](https://www.paloaltonetworks.com/company/press/2026/palo-alto-networks-completes-acquisition-of-portkey-to-secure-ai-agents)).
+  - Cisco announced on 2026-04-09 that it would acquire Galileo (AI evaluation and observability)
+    for Splunk, and Splunk's acquisitions page now lists it as completed
+    ([Splunk](https://www.splunk.com/en_us/about-splunk/acquisitions/galileo.html)).
+  - Kong Gateway 3.14 ships an AI Custom Guardrail plugin that checks requests and responses
+    through any HTTP guardrail service ([Kong docs](https://developer.konghq.com/plugins/ai-custom-guardrail/)),
+    and OpenRouter launched workspace guardrails: budgets, data-retention and provider rules,
+    prompt-injection patterns ([OpenRouter](https://openrouter.ai/blog/announcements/guardrails/)).
+  - Datadog's hallucination detection separates contradictions from unsupported claims, as
+    TrustAgent does ([Datadog](https://www.datadoghq.com/blog/llm-observability-hallucination-detection/)).
+  - Langfuse added Jev as a judge on 2026-09-22 ([changelog](https://langfuse.com/changelog/2026-09-22-jev-as-a-judge)),
+    Arize published "Jev as a judge" ([Arize](https://arize.com/blog/jev-as-a-judge/)), and
+    LiteLLM's release notes add TypeSafe Jev integrations ([v1.101.1](https://docs.litellm.ai/release_notes/v1.101.1/v1-101-1)).
+  - Routing studies keep a large model's quality while sending most queries to cheaper models
+    ([RouteLLM](https://arxiv.org/abs/2406.18665), [FrugalGPT](https://arxiv.org/abs/2305.05176)).
+
+  Arize's judge-cost comparison:
   <!-- claim:arize_ragtruth_jev_cost_per_1k --> $0.05 / 1,000 [third-party] for Jev against
   <!-- claim:arize_ragtruth_opus_cost_per_1k --> $14.30 / 1,000 [third-party] for Claude Opus 5;
   reached only at a tuned 0.80 threshold on a differently framed question; possible training
