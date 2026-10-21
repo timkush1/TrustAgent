@@ -101,7 +101,8 @@ Five jobs; the first four are **blocking**, Trivy is informational:
 - **Pages** (`pages.yml`): the **build** job runs on every trigger and never deploys. It runs the
   same make targets as `make pages-build`, in order: `check_recording.py` on the tape the site will
   ship (`--require-recorded` on a tag), the static build under `/TrustAgent/` (the tape is `auto` on
-  `main` and pull requests, `recorded` on a tag), the landing page's size budget, file checks (every
+  `main` and pull requests, `recorded` on a tag, or the simulated one on a tag when the
+  repository variable `PAGES_TAG_DATASET` is `simulated`), the landing page's size budget, file checks (every
   page, the 404 fallback, the base path, the shipped tape, no source maps), **gitleaks over the
   built site**, then the Pages artifact. The **deploy** job runs only when the repository variable
   `PAGES_ENABLED` is `true`, never for a pull request, only from `main` or a `v*` tag (and, on a
@@ -217,6 +218,9 @@ A release is a version bump, a tag and two workflows. Nothing is published from 
    `v*` next to `main`. Without it, the deploy job of a `v2.0.0` tag is rejected by the
    environment, even though the build passed.
 3. **Settings → Secrets and variables → Actions → Variables:** set `PAGES_ENABLED` to `true`.
+   Only if the project may not publish a recorded tape (mode R of
+   [docs/launch/terms-check.md](launch/terms-check.md)), also set `PAGES_TAG_DATASET` to
+   `simulated`: a tag then ships the simulated tape. Unset, a tag ships the recorded one.
 4. After the first `release-images` run, open each package (`truthtable-proxy`, `-engine`,
    `-dashboard`) → **Package settings** → visibility **Public**, then set the variable
    `GHCR_PUBLIC` to `true` so the `anonymous-pull` job checks it.

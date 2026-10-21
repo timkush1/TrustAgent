@@ -8,7 +8,8 @@ name: Pages
 #   1. jsonschema for check_recording.py;
 #   2. check_recording.py on the dataset the site will ship (--require-recorded on a tag);
 #   3. the static build (VITE_BASE_PATH /TrustAgent/; dataset auto on main and pull requests,
-#      recorded on a tag: D110);
+#      recorded on a tag: D110; the simulated tape on a tag only with PAGES_TAG_DATASET =
+#      'simulated', mode R);
 #   4. the landing page's size budget (then the build manifests in dist/.vite go: the site does not
 #      need them);
 #   5. file checks (pages, 404 fallback, base path, the shipped dataset, no source maps or build
@@ -55,7 +56,9 @@ jobs:
       PAGES_BASE_PATH: /TrustAgent/
       # The build's VITE_DEMO_DATASET (D110): a release tag ships a real recording or fails; main
       # and pull requests ship the recorded dataset when one is committed, else the simulated one.
-      PAGES_DATASET: ${{ startsWith(github.ref, 'refs/tags/v') && 'recorded' || 'auto' }}
+      # Mode R only (D200, S-10): the repository variable PAGES_TAG_DATASET = 'simulated' makes a
+      # tag ship the simulated tape (mock) instead; unset, or any other value, keeps 'recorded'.
+      PAGES_DATASET: ${{ startsWith(github.ref, 'refs/tags/v') && (vars.PAGES_TAG_DATASET == 'simulated' && 'mock' || 'recorded') || 'auto' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:

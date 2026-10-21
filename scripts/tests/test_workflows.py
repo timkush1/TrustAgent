@@ -164,7 +164,8 @@ class PagesWorkflowTest(unittest.TestCase):
     def test_dataset_and_base_path(self) -> None:
         # D110: recorded on a tag (and check_recording --require-recorded), auto elsewhere.
         self.assertIn(
-            "      PAGES_DATASET: ${{ startsWith(github.ref, 'refs/tags/v') && 'recorded' || 'auto' }}\n",
+            "      PAGES_DATASET: ${{ startsWith(github.ref, 'refs/tags/v') && "
+            "(vars.PAGES_TAG_DATASET == 'simulated' && 'mock' || 'recorded') || 'auto' }}\n",
             self.build,
         )
         self.assertIn("      PAGES_BASE_PATH: /TrustAgent/\n", self.build)
@@ -176,6 +177,33 @@ class PagesWorkflowTest(unittest.TestCase):
         )
         check = RELEASE_MK.split("\npages-recording-check:", 1)[1].split("\n\n", 1)[0]
         self.assertIn("$(if $(filter recorded,$(PAGES_DATASET)), --require-recorded)", check)
+
+    def test_a_tag_ships_the_recorded_tape_unless_mode_r_says_simulated(self) -> None:
+        # S-10 (D200 mode R): the repository variable PAGES_TAG_DATASET defaults to recorded. The
+        # expression is evaluated here for each case: GitHub gives an unset variable as ''.
+        line = re.search(r"(?m)^      PAGES_DATASET: \$\{\{ (.+) \}\}$", self.build)
+        self.assertIsNotNone(line)
+        expr = line.group(1)
+        self.assertNotIn("secrets.", expr)
+
+        def evaluate(ref: str, variable: str) -> str:
+            py = (
+                expr.replace("startsWith(github.ref, 'refs/tags/v')", repr(ref.startswith("refs/tags/v")))
+                .replace("vars.PAGES_TAG_DATASET", repr(variable))
+                .replace("&&", " and ")
+                .replace("||", " or ")
+            )
+            self.assertRegex(py, r"^[\w\s'()=]+$", "only literals and operators are left")
+            return eval(py, {"__builtins__": {}}, {})  # noqa: S307 - literals only, checked above
+
+        tag, main, pr = "refs/tags/v2.0.0", "refs/heads/main", "refs/pull/7/merge"
+        self.assertEqual(evaluate(tag, ""), "recorded", "the default: a tag ships the recording")
+        self.assertEqual(evaluate(tag, "recorded"), "recorded")
+        self.assertEqual(evaluate(tag, "Simulated "), "recorded", "a typo fails closed")
+        self.assertEqual(evaluate(tag, "simulated"), "mock", "mode R ships the simulated tape")
+        for ref in (main, pr):
+            for variable in ("", "simulated"):
+                self.assertEqual(evaluate(ref, variable), "auto")
 
     def test_hardening(self) -> None:
         uses = [line for line in self.text.splitlines() if re.match(r"^\s*(- )?uses:", line)]
