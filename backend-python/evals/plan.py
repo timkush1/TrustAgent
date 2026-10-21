@@ -43,14 +43,15 @@ TYPICAL_RESPONSE_TOKENS = 110
 # What compile adds around an example for two evaluators (about 275 overhead and 150 per
 # question; contracts/pricing/assumptions.v1.json uses 600 for four questions).
 GATE_OVERHEAD_TOKENS = 575
-# The same state and questions sent to the LLM judge, plus its instructions.
+# The judge's prompts around an example are measured from the prompts themselves
+# (`prompt_overheads`); these are the fallbacks. Output sizes and claims per answer are the
+# contracts/pricing/assumptions.v1.json inputs.
 SAME_CHECKS_OVERHEAD_TOKENS = 975
 SAME_CHECKS_OUTPUT_TOKENS = 150
-# A full claim-level audit (assumptions.v1): decompose, then verify each claim with the evidence.
 CLAIMS_PER_ANSWER = 8
-DECOMPOSE_INPUT_TOKENS = 1000
+DECOMPOSE_OVERHEAD_TOKENS = 400
 DECOMPOSE_OUTPUT_TOKENS = 300
-VERIFY_OVERHEAD_TOKENS = 525  # Verifier prompt (450) and the claim (75)
+VERIFY_OVERHEAD_TOKENS = 675  # The verifier's prompt and the claim
 VERIFY_OUTPUT_TOKENS = 120
 
 DEFAULT_JEV_MODEL = "typesafe/jev-1.13"
@@ -240,6 +241,53 @@ def typical_sizes(n: int) -> List[ExampleSize]:
     return [ExampleSize(TYPICAL_EXAMPLE_TOKENS, TYPICAL_RESPONSE_TOKENS)] * max(0, n)
 
 
+def prompt_overheads(
+    evaluators: Sequence[str] = ("groundedness@1", "contradiction@1")
+) -> Dict[str, int]:
+    """
+    Tokens the LLM judge's prompts add around an example, measured from the
+    prompts the bench sends: the same-checks system prompt, question block
+    and answer schema; the decomposer's and the verifier's system prompts.
+    The fixed fallbacks stand in when the prompts cannot be loaded.
+    """
+    try:
+        import json
+
+        from truthtable.graphs.nodes.decomposer import DECOMPOSER_SYSTEM_PROMPT
+        from truthtable.graphs.nodes.verifier import VERIFIER_SYSTEM_PROMPT
+
+        from .judges import (
+            SAME_CHECKS_SYSTEM_PROMPT,
+            load_evaluators,
+            same_checks_prompt,
+            same_checks_schema,
+        )
+
+        questions = load_evaluators(list(evaluators))
+        empty = BenchExample(
+            id="plan",
+            dataset="plan",
+            level="response",
+            query="",
+            response="",
+            context=(),
+            label_hallucinated=False,
+        )
+        return {
+            "same_checks": estimate_tokens(SAME_CHECKS_SYSTEM_PROMPT)
+            + estimate_tokens(same_checks_prompt(empty, questions))
+            + estimate_tokens(json.dumps(same_checks_schema(questions))),
+            "decompose": estimate_tokens(DECOMPOSER_SYSTEM_PROMPT),
+            "verify": estimate_tokens(VERIFIER_SYSTEM_PROMPT) + 75,
+        }
+    except (OSError, ValueError, KeyError, ImportError):
+        return {
+            "same_checks": SAME_CHECKS_OVERHEAD_TOKENS,
+            "decompose": DECOMPOSE_OVERHEAD_TOKENS,
+            "verify": VERIFY_OVERHEAD_TOKENS,
+        }
+
+
 def _price(table: PriceTable, provider: str, model: str) -> Tuple[float, float]:
     entry = table.lookup(provider, model)
     if entry is None:
@@ -274,6 +322,7 @@ def estimate(
 ) -> Estimate:
     """What each system is expected to cost on these examples [estimate]."""
     table = table or active_price_table()
+    overheads = prompt_overheads()
     out = Estimate()
     jev_in, _ = _price(table, "openrouter", jev_model)
     judge_in, judge_out = (
@@ -287,7 +336,7 @@ def estimate(
     if LLM_SAME_CHECKS in systems:
         out.by_system[LLM_SAME_CHECKS] = (
             sum(
-                (size.total + SAME_CHECKS_OVERHEAD_TOKENS) * judge_in
+                (size.total + overheads["same_checks"]) * judge_in
                 + SAME_CHECKS_OUTPUT_TOKENS * judge_out
                 for size in sizes
             )
@@ -297,11 +346,11 @@ def estimate(
         audited = sizes if full_audit_n <= 0 else sizes[: min(full_audit_n, len(sizes))]
         out.by_system[LLM_FULL_AUDIT] = (
             sum(
-                (DECOMPOSE_INPUT_TOKENS + size.response) * judge_in
+                (overheads["decompose"] + size.response) * judge_in
                 + DECOMPOSE_OUTPUT_TOKENS * judge_out
                 + CLAIMS_PER_ANSWER
                 * (
-                    (size.total - size.response + VERIFY_OVERHEAD_TOKENS) * judge_in
+                    (size.total - size.response + overheads["verify"]) * judge_in
                     + VERIFY_OUTPUT_TOKENS * judge_out
                 )
                 for size in audited
