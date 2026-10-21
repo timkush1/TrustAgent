@@ -353,6 +353,12 @@ Component guides: [backend-go](backend-go/README.md) · [backend-python](backend
 
 </details>
 
+## Contributing
+
+Bug reports, fixes and doc corrections are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[code of conduct](CODE_OF_CONDUCT.md). Report a security problem privately, as
+[docs/SECURITY.md](docs/SECURITY.md#reporting) describes.
+
 ## License
 
 [MIT](LICENSE)

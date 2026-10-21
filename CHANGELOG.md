@@ -170,7 +170,7 @@ Details are under *Build log by phase* (*Breaking changes (P3)* and
 - **Community files**: [CONTRIBUTING.md](CONTRIBUTING.md),
   [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), issue forms and a pull request
   template; security reports go through GitHub's private vulnerability reporting
-  ([docs/SECURITY.md](docs/SECURITY.md#reporting-a-vulnerability)).
+  ([docs/SECURITY.md](docs/SECURITY.md#reporting)).
 
 ### Changed
 - **Scoring v2** (ADR-001): per-claim verdict distributions, a trust score that is

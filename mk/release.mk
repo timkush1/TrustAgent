@@ -125,6 +125,22 @@ gitleaks-install: ## Download the pinned gitleaks release into tmp/tools, checke
 	install -m 0755 "$$work/gitleaks" "$(GITLEAKS)"; \
 	echo "✅ gitleaks $(GITLEAKS_VERSION) ($$os-$$arch, SHA-256 checked) in $(GITLEAKS)"
 
+gitleaks-history: gitleaks-install ## gitleaks over the whole git history with the repository's rules (as CI's security job)
+	$(GITLEAKS) git --config .gitleaks.toml --redact --no-banner --exit-code 1 .
+
+# The public-repo hygiene grep (D216): no home-directory paths, orchestration paths or personal
+# email addresses in tracked files outside docs/archive. Each pattern ends in a one-letter class,
+# so this file does not match itself.
+HYGIENE_PATTERN := /home/timkushma[r]|\.cache/trustagent-or[c]h|timandga[l]|mail\.tau\.ac\.i[l]
+
+hygiene-check: ## No local paths or personal emails in tracked files (docs/archive aside; D216)
+	@hits="$$(git grep -n -E '$(HYGIENE_PATTERN)' -- ':!docs/archive' || true)"; \
+	if [ -n "$$hits" ]; then printf '%s\n' "$$hits" | head -20; \
+		echo "hygiene-check: local paths or personal emails in tracked files (D216)" >&2; exit 1; fi; \
+	echo "✅ hygiene: no local paths or personal emails in tracked files"
+
+check: hygiene-check
+
 # ---------- Demo recording (D123) ----------
 # scripts/record_demo.py records the public demo with the real fast check and judge into
 # frontend-react/demo-data/recorded/ (the owner's key, about $1). Without CONFIRM=1 it is a dry

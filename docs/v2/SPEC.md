@@ -2234,9 +2234,9 @@ docker compose version && docker run --rm hello-world            # compose ≥ 2
 # 2. OpenRouter: sign in at openrouter.ai, add $5 at /settings/credits, create key "TrustAgent dev" with a $2 limit
 #    at /settings/keys; put it ONLY in the local .env (never in chat or git).
 # 3. Baseline commit (run as a script so a failure cannot kill your shell):
-cd /home/timkushmar/projects/TrustAgent && bash -euo pipefail <<'EOF'
+cd ~/projects/TrustAgent && bash -euo pipefail <<'EOF'
 git config --local user.name  "timkush1"
-git config --local user.email "timk@mail.tau.ac.il"
+git config --local user.email "<the owner's commit email>"
 printf 'ts_sdk_python.md\nts_sdk_python_usage.md\n.trustagent/\n' >> .git/info/exclude
 git add -A
 if git diff --cached --name-only | grep -qE '(^|/)\.env$'; then echo "STOP: .env staged"; exit 1; fi
@@ -2257,7 +2257,7 @@ EOF
 ```
 
 **P0 gate:**
-- `git log -1 --format='%an <%ae>'` prints `timkush1 <timk@mail.tau.ac.il>`.
+- `git log -1 --format='%an <%ae>'` prints `timkush1 <the owner's commit email>`.
 - `git status --porcelain` is empty.
 - `make test` output is saved to the scratchpad. It is recorded in the **first feature commit** (`docs: record baseline test results; remove CI-CD.md leftovers`), not in P0.
 - Pushing later uses a fine-grained PAT (Contents, Pull requests and Workflows read/write). Push the branch, never `main`. PR bodies end with the Claude Code attribution line required for this session.
