@@ -84,6 +84,44 @@ MEASURED: Dict[str, Any] = {
             "system": "gate",
         },
     },
+    "intervals": {
+        "ragtruth_qa_agreement": {
+            "lo": 0.75,
+            "hi": 0.86,
+            "method": "bootstrap",
+            "resamples": 2000,
+            "seed": 13,
+            "n_pos": 40,
+            "n_neg": 160,
+        },
+    },
+}
+
+LIKE_FOR_LIKE = {
+    "id": "arize_ragtruth_accuracy_at_default_threshold",
+    "text": "Arize RAGTruth test: Jev accuracy at a 0.5 threshold",
+    "unit": "fraction",
+    "display": "76% at 0.5",
+    "label": "third_party",
+    "caveat": "Thresholds need calibrating.",
+}
+
+RECORDED_TAPE: Dict[str, Any] = {
+    "kind": "recorded",
+    "recorded_at": "2026-11-03T12:00:00Z",
+    "trustagent_version": "2.0.0",
+    "decision_model": {
+        "backend": "openrouter-decisions",
+        "snapshot": SNAPSHOT,
+        "host": "openrouter.ai",
+    },
+    "judge": {
+        "provider": "openrouter",
+        "model": "anthropic/claude-haiku",
+        "fallback_active": False,
+        "host": "openrouter.ai",
+    },
+    "answer_sources": {"scripted": 10, "generated": 2, "generated_host": "openrouter.ai"},
 }
 
 CLAIMS = {
@@ -120,6 +158,7 @@ CLAIMS = {
             "display": "~$0.21 / 1,000 answers",
             "label": "estimate",
         },
+        LIKE_FOR_LIKE,
     ],
 }
 
@@ -130,6 +169,7 @@ def make_root(
     licence: str = "Copyright (c) 2026 Jane Doe\n",
     measured: Dict[str, Any] = MEASURED,
     tape: Dict[str, Any] | None = None,
+    claims_doc: Dict[str, Any] = CLAIMS,
 ) -> Path:
     tmp = Path(tempfile.mkdtemp(prefix="release-notes-"))
     (tmp / "VERSION").write_text(version + "\n", encoding="utf-8")
@@ -137,7 +177,11 @@ def make_root(
     (tmp / "LICENSE").write_text("MIT License\n\n" + licence, encoding="utf-8")
     claims = tmp / rn.CLAIMS_PATH
     claims.parent.mkdir(parents=True)
-    claims.write_text(json.dumps(CLAIMS), encoding="utf-8")
+    claims.write_text(json.dumps(claims_doc), encoding="utf-8")
+    # The contract's own vendor host list (D203), as the release checkout has it.
+    schema = tmp / rn.COMMON_SCHEMA
+    schema.parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / rn.COMMON_SCHEMA, schema)
     (tmp / rn.MEASURED_PATH).write_text(json.dumps(measured), encoding="utf-8")
     if tape is not None:
         path = tmp / rn.RECORDED_MANIFEST
@@ -175,6 +219,14 @@ class ReleaseNotesTest(unittest.TestCase):
     def test_notes_from_canned_inspect_output(self) -> None:
         code, out, err = run(self.root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
         self.assertEqual(code, 0, err)
+        # Canned digests never pass for the registry's: the notes say so first, and stderr too.
+        banner = (
+            "> **Canned image data (inspect.json): these digests were not read from the registry. "
+            "Not for publishing.**\n\n"
+        )
+        self.assertTrue(out.startswith(banner), out[:200])
+        self.assertIn("warning: the image digests come from inspect.json, not the registry", err)
+        out = out[len(banner) :]
         # The CHANGELOG section without its heading and without the build log.
         self.assertTrue(out.startswith("The gateway release."), out[:200])
         self.assertNotIn("## v2.0.0", out)
@@ -200,7 +252,6 @@ class ReleaseNotesTest(unittest.TestCase):
             self.assertIn(f"gh attestation verify oci://{ref}@{digest} -R timkush1/TrustAgent", out)
             self.assertIn(f"docker buildx imagetools inspect {ref}:2.0.0", out)
         self.assertIn("check out `v2.0.0` and run `make up`", out)
-        self.assertEqual(err, "")
 
     def test_measured_figures_carry_their_label_run_and_snapshot(self) -> None:
         _, out, _ = run(self.root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
@@ -208,8 +259,17 @@ class ReleaseNotesTest(unittest.TestCase):
             "- Our measured fast-check cost: $0.213 / 1,000 answers [measured] (run 20261102T100000Z-abc1234)",
             out,
         )
+        # D212: the agreement with its interval and n per class, then the like-for-like figure.
         self.assertIn(
-            "- Our RAGTruth-QA agreement: 81.3% [measured] (run 20261102T100000Z-abc1234)", out
+            "- Our RAGTruth-QA agreement: 81.3% [measured] (run 20261102T100000Z-abc1234). "
+            "95% interval 75% to 86% (bootstrap, 2000 resamples); 40 answers with a "
+            "hallucination and 160 without.",
+            out,
+        )
+        self.assertIn(
+            "Like for like (default thresholds): Arize RAGTruth test, Jev accuracy at a 0.5 "
+            "threshold: 76% at 0.5 [third-party]. Thresholds need calibrating.",
+            out,
         )
         self.assertNotIn("p50 fast-check latency", out)  # no value in this run: not listed
         self.assertNotIn("~$0.21", out)  # an estimate is not a measured figure
@@ -225,17 +285,70 @@ class ReleaseNotesTest(unittest.TestCase):
             self.assertNotIn("[measured]", out)
             self.assertIn("No measured benchmark run is published in this release", out)
 
+    def test_an_agreement_is_never_published_without_the_like_for_like_figure(self) -> None:
+        claims = dict(CLAIMS, claims=[c for c in CLAIMS["claims"] if c is not LIKE_FOR_LIKE])
+        root = make_root(claims_doc=claims)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertIn("an agreement is never published alone (D212)", err)
+        # Without a measured agreement the like-for-like figure is not needed.
+        values = {k: v for k, v in MEASURED["values"].items() if k != "ragtruth_qa_agreement"}
+        root = make_root(claims_doc=claims, measured=dict(MEASURED, values=values))
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("Like for like", out)
+
     def test_a_recorded_tape_is_named(self) -> None:
-        tape = {
-            "kind": "recorded",
-            "recorded_at": "2026-11-03T12:00:00Z",
-            "trustagent_version": "2.0.0",
-            "decision_model": {"backend": "openrouter-decisions", "snapshot": SNAPSHOT},
-        }
+        root = make_root(tape=RECORDED_TAPE)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"recorded 2026-11-03 on snapshot {SNAPSHOT} with TrustAgent 2.0.0", out)
+
+    def test_a_tape_that_says_recorded_from_a_non_vendor_host_is_refused(self) -> None:
+        # D203: the hosts are the evidence, not the kind the recorder wrote.
+        for tape, named in (
+            (
+                dict(
+                    RECORDED_TAPE,
+                    decision_model=dict(RECORDED_TAPE["decision_model"], host="mock-upstream"),
+                ),
+                "fast-check host mock-upstream",
+            ),
+            (
+                dict(
+                    RECORDED_TAPE,
+                    judge={k: v for k, v in RECORDED_TAPE["judge"].items() if k != "host"},
+                ),
+                "judge host none",
+            ),
+            (
+                dict(
+                    RECORDED_TAPE,
+                    answer_sources={
+                        "scripted": 1,
+                        "generated": 3,
+                        "generated_host": "mock-upstream",
+                    },
+                ),
+                "generated-answer host mock-upstream",
+            ),
+        ):
+            root = make_root(tape=tape)
+            self.addCleanup(shutil.rmtree, root, True)
+            code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+            self.assertEqual(code, 1, named)
+            self.assertEqual(out, "")
+            self.assertIn(named, err)
+            self.assertIn("not a vendor host", err)
+        # Scripted answers only: no generated host is needed.
+        tape = dict(RECORDED_TAPE, answer_sources={"scripted": 12, "generated": 0})
         root = make_root(tape=tape)
         self.addCleanup(shutil.rmtree, root, True)
-        _, out, _ = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
-        self.assertIn(f"recorded 2026-11-03 on snapshot {SNAPSHOT} with TrustAgent 2.0.0", out)
+        self.assertEqual(run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))[0], 0)
 
     def test_refuses_a_missing_digest(self) -> None:
         engine = copy.deepcopy(self.fixture["engine"])
@@ -298,6 +411,7 @@ class ReleaseNotesTest(unittest.TestCase):
                 "> **Rehearsal (v0.0.0-rehearsal): canned or test data, not for publishing.**"
             )
         )
+        self.assertNotIn("Canned image data", out)  # the rehearsal banner already says so
         self.assertIn("### Highlights", out)
         self.assertIn("truthtable-proxy:0.0.0-rehearsal", out)
         self.assertIn(
@@ -367,6 +481,8 @@ class LiveInspectTest(unittest.TestCase):
         self.assertTrue(config and all(c[1] == config for c in calls))
         self.assertFalse(Path(config).exists(), "the empty DOCKER_CONFIG is removed afterwards")
         self.assertIn(fixture["proxy"]["digest"], out)
+        self.assertNotIn("Canned image data", out)
+        self.assertEqual(err, "")
 
     def test_a_failed_inspect_is_refused(self) -> None:
         root = make_root()

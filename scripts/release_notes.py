@@ -26,7 +26,13 @@ it is a rehearsal at the top.
 
 ``--inspect FILE`` reads canned output instead of calling docker: a JSON object whose keys are the
 service names (proxy, engine, dashboard) or the image references, and whose values are what the
-inspect command prints (the manifest list). Tests and rehearsals use it.
+inspect command prints (the manifest list). Tests and rehearsals use it, and notes made from it say
+at the top that their digests were not read from the registry.
+
+A measured agreement with RAGTruth's labels is followed by the like-for-like third-party figure
+(accuracy at the default 0.5 threshold, D212), and each figure with a 95% interval names it with n
+per class. A tape counts as recorded only when its fast-check, judge and generated-answer hosts are
+vendor hosts (D203); one that says "recorded" with another host is refused.
 
 Exit status: 0 notes printed, 1 refused, 2 usage error or an unreadable file.
 """
@@ -43,7 +49,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_version as cv  # noqa: E402
@@ -62,6 +68,13 @@ OWNER_PLACEHOLDER = "{{OWNER_LEGAL_NAME}}"
 MEASURED_PATH = "contracts/claims/measured.json"
 CLAIMS_PATH = "contracts/claims/value-claims.v1.json"
 RECORDED_MANIFEST = "frontend-react/demo-data/recorded/manifest.json"
+COMMON_SCHEMA = "contracts/schema/common.v1.schema.json"
+# Our agreement with RAGTruth's labels is read only beside the like-for-like third-party figure,
+# accuracy at the default 0.5 threshold, never alone or beside the tuned one (D212).
+AGREEMENT_REFS = ("ragtruth_qa_agreement", "ragtruth_qa_accuracy")
+LIKE_FOR_LIKE_ID = "arize_ragtruth_accuracy_at_default_threshold"
+CHIPS = {"estimate": "estimate", "third_party": "third-party", "vendor": "vendor"}
+INTERVAL_METHODS = {"wilson": "Wilson", "bootstrap": "bootstrap"}
 
 Inspector = Callable[[str, str], Any]
 
@@ -268,6 +281,67 @@ def _read_json(root: Path, rel: str) -> Optional[Any]:
         raise UsageError(f"{rel}: {exc}") from None
 
 
+def measured_note(measured: Dict[str, Any], ref: str, unit: str) -> str:
+    """The 95% interval with n per class (D212), as scripts/check-claims.mjs writes it; or ""."""
+    iv = (measured.get("intervals") or {}).get(ref)
+    if not isinstance(iv, dict):
+        return ""
+    lo, hi = iv.get("lo"), iv.get("hi")
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (lo, hi)):
+        return ""
+    method = INTERVAL_METHODS.get(iv.get("method"), str(iv.get("method") or ""))
+    if iv.get("method") == "bootstrap" and iv.get("resamples"):
+        method = f"{method}, {iv['resamples']} resamples"
+    text = f"95% interval {format_value(lo, unit)} to {format_value(hi, unit)} ({method})"
+    n_pos, n_neg = iv.get("n_pos"), iv.get("n_neg")
+    if isinstance(n_pos, int) and isinstance(n_neg, int):
+        text += f"; {n_pos} answers with a hallucination and {n_neg} without"
+    return text
+
+
+def like_for_like(claims: List[Dict[str, Any]]) -> str:
+    """The third-party figure a measured agreement is read beside (D212); Refused without it."""
+    like = next((c for c in claims if c.get("id") == LIKE_FOR_LIKE_ID), None)
+    if not like or not like.get("display") or like.get("label") not in CHIPS:
+        raise Refused(
+            f"the RAGTruth agreement is measured, but {CLAIMS_PATH} has no {LIKE_FOR_LIKE_ID} "
+            "to show beside it: an agreement is never published alone (D212)"
+        )
+    words = re.sub(r":\s*", ", ", str(like.get("text") or ""))
+    line = (
+        f"Like for like (default thresholds): {words}: {like['display']} [{CHIPS[like['label']]}]."
+    )
+    caveat = str(like.get("caveat") or "").strip()
+    return f"{line} {caveat}".rstrip()
+
+
+def vendor_hosts(root: Path) -> List[str]:
+    """The hosts a recorded tape may name (common.v1 VendorHost, D203)."""
+    schema = _read_json(root, COMMON_SCHEMA) or {}
+    hosts = ((schema.get("$defs") or {}).get("VendorHost") or {}).get("enum")
+    if not isinstance(hosts, list) or not hosts:
+        raise Refused(f"{COMMON_SCHEMA} gives no VendorHost list: the tape cannot be checked")
+    return [str(h) for h in hosts]
+
+
+def tape_hosts_problem(tape: Dict[str, Any], hosts: List[str]) -> Optional[str]:
+    """Why a tape that says "recorded" is not one (a non-vendor or missing host), or None."""
+    named = [
+        ("fast-check", (tape.get("decision_model") or {}).get("host")),
+        ("judge", (tape.get("judge") or {}).get("host")),
+    ]
+    sources = tape.get("answer_sources") or {}
+    if isinstance(sources.get("generated"), int) and sources["generated"] > 0:
+        named.append(("generated-answer", sources.get("generated_host")))
+    bad = [f"{what} host {host or 'none'}" for what, host in named if host not in hosts]
+    if not bad:
+        return None
+    return (
+        f"{RECORDED_MANIFEST} says kind recorded but names {', '.join(bad)}, not a vendor host "
+        f"({', '.join(hosts)}): a tape from mock-upstream is simulated (D203)"
+    )
+
+
 def numbers_section(root: Path) -> List[str]:
     """Every measured figure with its label; a simulated or missing run is said as such."""
     measured = _read_json(root, MEASURED_PATH) or {}
@@ -276,23 +350,30 @@ def numbers_section(root: Path) -> List[str]:
     is_run = measured.get("status") == "measured" and measured.get("mock") is False
     values = measured.get("values") or {}
     shown = []
+    agreement = False
     if is_run:
         for claim in claims:
             if claim.get("label") != "measured":
                 continue
-            entry = values.get(claim.get("measured_ref")) or {}
+            ref = claim.get("measured_ref")
+            entry = values.get(ref) or {}
             value = entry.get("value")
-            if not isinstance(value, (int, float)):
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
                 continue
-            display = claim["display"].replace(
-                "{value}", format_value(value, claim.get("unit", ""))
-            )
+            unit = claim.get("unit", "")
+            display = claim["display"].replace("{value}", format_value(value, unit))
             run = f" (run {entry['run_id']})" if entry.get("run_id") else ""
-            shown.append(f"- {claim['text']}: {display} [measured]{run}")
+            note = measured_note(measured, str(ref), unit)
+            shown.append(
+                f"- {claim['text']}: {display} [measured]{run}" + (f". {note}." if note else "")
+            )
+            agreement = agreement or ref in AGREEMENT_REFS
     if shown:
         snap = measured.get("snapshot")
         snap_text = " and ".join(snap) if isinstance(snap, list) else snap
         lines += shown
+        if agreement:
+            lines += ["", like_for_like(claims)]
         lines += [
             "",
             f"Measured runs: {', '.join(measured.get('runs') or [])}"
@@ -308,6 +389,9 @@ def numbers_section(root: Path) -> List[str]:
         )
     tape = _read_json(root, RECORDED_MANIFEST)
     if isinstance(tape, dict) and tape.get("kind") == "recorded":
+        problem = tape_hosts_problem(tape, vendor_hosts(root))
+        if problem:
+            raise Refused(problem)
         model = tape.get("decision_model") or {}
         lines += [
             "",
@@ -327,8 +411,11 @@ def numbers_section(root: Path) -> List[str]:
 # ------------------------------------------------------------------------------ notes
 
 
-def build_notes(root: Path, tag: str, inspect: Inspector) -> Tuple[str, List[str]]:
-    """(the Markdown notes, warnings). Raises Refused or UsageError."""
+def build_notes(
+    root: Path, tag: str, inspect: Inspector, canned: Optional[str] = None
+) -> Tuple[str, List[str]]:
+    """(the Markdown notes, warnings). ``canned`` names the file the image data came from when it
+    was not read from the registry: such notes say so at the top. Raises Refused or UsageError."""
     version, rehearsal = parse_tag(tag)
     warnings: List[str] = []
     current = cv.read_version(root)
@@ -358,6 +445,16 @@ def build_notes(root: Path, tag: str, inspect: Inspector) -> Tuple[str, List[str
     out: List[str] = []
     if rehearsal:
         out += [f"> **Rehearsal ({tag}): canned or test data, not for publishing.**", ""]
+    elif canned:
+        # Made-up or saved digests must never pass for the registry's: the notes say so.
+        out += [
+            f"> **Canned image data ({canned}): these digests were not read from the registry. "
+            "Not for publishing.**",
+            "",
+        ]
+        warnings.append(
+            f"the image digests come from {canned}, not the registry: the notes say so at the top"
+        )
     out += [release_body(body, tag), ""]
     out += numbers_section(root) + [""]
     out += images_section(found, tag)
@@ -375,7 +472,9 @@ def main(argv: Optional[Sequence[str]] = None, root: Path = ROOT) -> int:
     args = parser.parse_args(argv)
     try:
         if args.inspect:
-            notes, warnings = build_notes(args.root, args.tag, canned_inspector(args.inspect))
+            notes, warnings = build_notes(
+                args.root, args.tag, canned_inspector(args.inspect), canned=args.inspect.name
+            )
         else:
             with tempfile.TemporaryDirectory(prefix="release-notes-docker-") as empty:
                 notes, warnings = build_notes(
