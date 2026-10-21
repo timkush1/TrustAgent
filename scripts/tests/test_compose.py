@@ -12,11 +12,12 @@ import re
 import sys
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Sequence, Set
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import doctor  # noqa: E402
+import public_demo  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
@@ -25,6 +26,9 @@ E2E = (ROOT / "docker-compose.e2e.yml").read_text(encoding="utf-8")
 ONBOARDING = (ROOT / "docker-compose.onboarding.yml").read_text(encoding="utf-8")
 RECORD = (ROOT / "docker-compose.record.yml").read_text(encoding="utf-8")
 KNOWLEDGE = (ROOT / "docker-compose.knowledge.yml").read_text(encoding="utf-8")
+PUBLIC = (ROOT / "docker-compose.public.yml").read_text(encoding="utf-8")
+PUBLIC_LOCAL = (ROOT / "deploy" / "public-demo" / "local.yml").read_text(encoding="utf-8")
+CADDYFILE = (ROOT / "deploy" / "public-demo" / "Caddyfile").read_text(encoding="utf-8")
 DX_MK = (ROOT / "mk" / "dx.mk").read_text(encoding="utf-8")
 RELEASE_MK = (ROOT / "mk" / "release.mk").read_text(encoding="utf-8")
 VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
@@ -93,6 +97,8 @@ class ComposeTest(unittest.TestCase):
             ("docker-compose.onboarding.yml", ONBOARDING),
             ("docker-compose.record.yml", RECORD),
             ("docker-compose.knowledge.yml", KNOWLEDGE),
+            ("docker-compose.public.yml", PUBLIC),
+            ("deploy/public-demo/local.yml", PUBLIC_LOCAL),
         ):
             # `$${X}` is an escaped `$` for the container's shell, not interpolation.
             for var in set(re.findall(r"(?<!\$)\$\{([A-Za-z_][A-Za-z0-9_]*)", text)):
@@ -118,6 +124,8 @@ class ComposeTest(unittest.TestCase):
             ("docker-compose.onboarding.yml", ONBOARDING),
             ("docker-compose.record.yml", RECORD),
             ("docker-compose.knowledge.yml", KNOWLEDGE),
+            ("docker-compose.public.yml", PUBLIC),
+            ("deploy/public-demo/local.yml", PUBLIC_LOCAL),
         ):
             for key in set(pattern.findall(text)):
                 if key in allowed_foreign:
@@ -133,6 +141,8 @@ class ComposeTest(unittest.TestCase):
         self.assertRegex(E2E, r"(?m)^name: truthtable-e2e$")
         self.assertRegex(ONBOARDING, r"(?m)^name: truthtable-onboarding$")
         self.assertRegex(RECORD, r"(?m)^name: truthtable-record$")
+        # The public demo is the demo stack on a VM: same project, so its volumes are the demo's.
+        self.assertRegex(PUBLIC, r"(?m)^name: truthtable-demo$")
 
     def test_record_and_knowledge_overlays_are_checked(self) -> None:
         # D123 and D131: compose-check validates both overlays with the files they are layered
@@ -422,6 +432,220 @@ class ComposeTest(unittest.TestCase):
         self.assertIn("-X github.com/truthtable/backend-go/internal/version.GitSHA=${GIT_SHA}", go)
 
 
+def service_section(text: str, service: str) -> str:
+    """A service's lines: from `  <service>:` to the next line indented two spaces or less."""
+    rest = text.split(f"\n  {service}:\n", 1)[1]
+    end = re.search(r"(?m)^ {0,2}\S", rest)
+    return rest[: end.start()] if end else rest
+
+
+def make_value(name: str) -> str:
+    """A make variable's value, continuation lines joined."""
+    found = re.search(rf"(?m)^{name}\s*[?:]?=((?:.*\\\n)*.*)$", DX_MK)
+    if found is None:
+        raise AssertionError(f"{name} is not defined in mk/dx.mk")
+    return " ".join(found.group(1).replace("\\\n", " ").split())
+
+
+def recipe(target: str) -> str:
+    return DX_MK.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
+
+
+def caddy_routes() -> Dict[str, List[str]]:
+    """The Caddyfile's named matchers: name -> path patterns."""
+    code = "\n".join(line.split("#", 1)[0] for line in CADDYFILE.splitlines())
+    return {
+        name: patterns.split()
+        for name, patterns in re.findall(r"(?m)^\s*@(\w+)\s+path\s+(.+?)\s*$", code)
+    }
+
+
+def caddy_covers(patterns: Sequence[str], path: str) -> bool:
+    """Whether a Caddy `path` matcher (exact, or a trailing `*` prefix) matches ``path``."""
+    return any(path == p or (p.endswith("*") and path.startswith(p[:-1])) for p in patterns)
+
+
+class PublicDemoTest(unittest.TestCase):
+    """D218 (P6 CL-1, CL-2): the always-on public demo's overlay, its edge and its targets."""
+
+    DEMO_STACK = ("proxy", "engine", "postgres", "dashboard", "trafficgen")
+
+    def test_only_caddy_publishes_host_ports(self) -> None:
+        caddy = service_section(PUBLIC, "caddy")
+        ports = caddy.split("    ports:\n", 1)[1].split("    environment:\n", 1)[0]
+        self.assertEqual(
+            re.findall(r'(?m)^      - "([^"]*)"$', ports), ["80:80", "443:443", "443:443/udp"]
+        )
+        # Every port the demo stack publishes in docker-compose.yml (bound to BIND_ADDR) is
+        # unpublished by the demo overlay or this one, so BIND_ADDR stays 127.0.0.1 and Caddy is
+        # the only way in.
+        published = [s for s in self.DEMO_STACK if "    ports:" in service_section(COMPOSE, s)]
+        self.assertEqual(published, ["proxy", "postgres", "dashboard"])
+        for service in published:
+            resets = [
+                text
+                for text in (DEMO, PUBLIC)
+                if f"\n  {service}:\n" in text
+                and "    ports: !reset []" in service_section(text, service)
+            ]
+            self.assertTrue(resets, f"{service} still publishes a host port")
+        for service in self.DEMO_STACK:
+            if f"\n  {service}:\n" in PUBLIC:
+                self.assertNotRegex(service_section(PUBLIC, service), r'- "\d', service)
+
+    def test_the_local_rehearsal_binds_loopback_only(self) -> None:
+        caddy = service_section(PUBLIC_LOCAL, "caddy")
+        self.assertIn("    ports: !override\n", caddy)
+        self.assertEqual(re.findall(r'(?m)^      - "([^"]*)"$', caddy), ["127.0.0.1:28443:28443"])
+        self.assertEqual(public_demo.LOCAL_URL, "http://localhost:28443")
+        self.assertIn(public_demo.LOCAL_URL, CADDYFILE)
+        self.assertIn(public_demo.LOCAL_URL, PUBLIC_LOCAL)
+        self.assertNotIn("\n  proxy:", PUBLIC_LOCAL)
+
+    def test_read_only_retention_origins_and_memory(self) -> None:
+        env = PUBLIC.split("x-public-env: &public-env\n", 1)[1].split("\n\n", 1)[0]
+        self.assertEqual(env.strip(), 'TRUTHTABLE_READONLY: "true"')
+        self.assertEqual(KEYS["TRUTHTABLE_READONLY"]["services"], ["proxy", "engine"])
+        proxy = service_section(PUBLIC, "proxy")
+        for line in (
+            "      <<: *public-env\n",
+            '      TRUTHTABLE_RETENTION_DAYS: "7"\n',
+            # No localhost origin on a public host; TRUTHTABLE_PUBLIC_URL is always allowed.
+            "      TRUTHTABLE_ALLOWED_ORIGINS: ${TRUTHTABLE_PUBLIC_URL:-}\n",
+        ):
+            self.assertIn(line, proxy)
+        # Retention is a proxy key (only the proxy stores traces), so the engine does not get it.
+        self.assertEqual(KEYS["TRUTHTABLE_RETENTION_DAYS"]["services"], ["proxy"])
+        engine = service_section(PUBLIC, "engine")
+        self.assertIn("      <<: *public-env\n", engine)
+        self.assertIn("          memory: 1g\n", engine)
+        self.assertIn("          memory: 4g\n", service_section(COMPOSE, "engine"))
+        # verify (scripts/public_demo.py) relies on the proxy trusting the compose network.
+        self.assertIn(
+            "      TRUTHTABLE_TRUSTED_PROXIES: ${TRUTHTABLE_TRUSTED_PROXIES:-172.16.0.0/12}\n",
+            service_section(COMPOSE, "proxy"),
+        )
+
+    def test_every_service_rotates_its_log(self) -> None:
+        services = re.findall(r"(?m)^  ([a-z][a-z0-9-]*):$", PUBLIC.split("\nservices:\n", 1)[1])
+        services = [s for s in services if s not in ("caddy-data", "caddy-config")]
+        self.assertEqual(sorted(services), sorted([*self.DEMO_STACK, "caddy"]))
+        for service in services:
+            self.assertIn("    logging: *public-logging\n", service_section(PUBLIC, service))
+        logging = PUBLIC.split("x-public-logging: &public-logging\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn('max-size: "10m"', logging)
+        self.assertIn('max-file: "3"', logging)
+
+    def test_caddy_is_pinned_small_and_keeps_its_certificates(self) -> None:
+        caddy = service_section(PUBLIC, "caddy")
+        self.assertRegex(caddy, r"(?m)^    image: caddy:2-alpine@sha256:[0-9a-f]{64}$")
+        comments = " ".join(" ".join(re.findall(r"(?m)^\s*# ?(.*)$", PUBLIC)).split())
+        self.assertRegex(comments, r"Pinned 20\d\d-\d\d-\d\d: caddy:2-alpine;")
+        self.assertIn("the index digest after it is the pin", comments)
+        for line in (
+            "    mem_limit: 128m\n",
+            "    restart: unless-stopped\n",
+            "      - ./deploy/public-demo/Caddyfile:/etc/caddy/Caddyfile:ro\n",
+            "      - caddy-data:/data\n",
+            "      - caddy-config:/config\n",
+            "      dashboard:\n        condition: service_healthy\n",
+            "      TRUTHTABLE_PUBLIC_URL: ${TRUTHTABLE_PUBLIC_URL:-}\n",
+            "    cap_drop: [ALL]\n",
+            "    cap_add: [NET_BIND_SERVICE]\n",
+        ):
+            self.assertIn(line, caddy)
+        volumes = PUBLIC.split("\nvolumes:\n", 1)[1]
+        self.assertEqual(re.findall(r"(?m)^  ([a-z-]+):$", volumes), ["caddy-data", "caddy-config"])
+        # The app images come from docker-compose.yml (TRUSTAGENT_VERSION) and are pulled.
+        self.assertEqual(APP_IMAGE.findall(PUBLIC), [])
+        self.assertNotIn("build:", PUBLIC)
+
+    def test_the_edge_routes(self) -> None:
+        code = "\n".join(line.split("#", 1)[0].rstrip() for line in CADDYFILE.splitlines())
+        sites = re.findall(r"(?m)^(\S+) \{$", code)
+        self.assertEqual(sites, ["{$TRUTHTABLE_PUBLIC_URL}"])
+        self.assertIn("TRUTHTABLE_PUBLIC_URL", KEYS)
+        routes = caddy_routes()
+        self.assertEqual(routes["gateway"], ["/v1", "/v1/*"])
+        self.assertEqual(routes["trustagent"], ["/api/*", "/ws", "/health", "/health/*"])
+        gateway = code.index("handle @gateway {")
+        proxy = code.index("handle @trustagent {")
+        rest = code.index("\thandle {")
+        self.assertLess(gateway, proxy)
+        self.assertLess(proxy, rest)
+        block = code[gateway:proxy]
+        self.assertRegex(block, r'respond "[^"]*' + public_demo.EDGE_404_TEXT + r'[^"]*" 404')
+        self.assertIn("reverse_proxy proxy:8080", code[proxy:rest])
+        self.assertIn("reverse_proxy dashboard:3000", code[rest:])
+        self.assertEqual(code.count("reverse_proxy"), 2)
+        # Caddy writes the connecting address into X-Forwarded-For: no client-supplied address is
+        # trusted or forwarded, and no access log keeps visitors' addresses.
+        for forbidden in ("trusted_proxies", "header_up", "client_ip_headers"):
+            self.assertNotIn(forbidden, code)
+        self.assertRegex(code, r"(?m)^\trequest_header -X-Real-IP$")
+        self.assertNotRegex(code, r"(?m)^\s*log\b")
+
+    def test_the_edge_sends_every_proxied_nginx_path_to_the_proxy(self) -> None:
+        # What the dashboard's nginx forwards to the proxy, Caddy forwards itself (keeping each
+        # visitor's address), except the gateway API, which the edge closes.
+        nginx = (
+            ROOT / "frontend-react" / "nginx" / "templates" / "default.conf.template"
+        ).read_text(encoding="utf-8")
+        proxied = [
+            path
+            for path, body in re.findall(r"location\s+(?:=\s+)?(\S+)\s*\{([^}]*)\}", nginx)
+            if "proxy_pass $trustagent_upstream" in body
+        ]
+        self.assertIn("/api/", proxied)
+        self.assertIn("/v1/", proxied)
+        routes = caddy_routes()
+        for path in proxied:
+            name = "gateway" if path.startswith("/v1") else "trustagent"
+            self.assertTrue(caddy_covers(routes[name], path), path)
+        for path in ("/", "/config.json", "/assets/app.js", "/connect/callback", "/healthz"):
+            self.assertFalse(caddy_covers(routes["trustagent"], path), path)
+            self.assertFalse(caddy_covers(routes["gateway"], path), path)
+
+    def test_the_targets_pull_and_never_build(self) -> None:
+        self.assertRegex(DX_MK, r"(?m)^DEMO_PROJECT \?= truthtable-demo$")
+        self.assertRegex(DX_MK, r"(?m)^PUBLIC_DEMO_PROJECT \?= \$\(DEMO_PROJECT\)$")
+        files = ["docker-compose.yml", "docker-compose.demo.yml", "docker-compose.public.yml"]
+        compose = make_value("PUBLIC_DEMO_COMPOSE")
+        self.assertEqual(re.findall(r"-f (\S+)", compose), files)
+        local = make_value("PUBLIC_DEMO_LOCAL_COMPOSE")
+        self.assertEqual(re.findall(r"-f (\S+)", local), [*files, "deploy/public-demo/local.yml"])
+        for value in (compose, local):
+            self.assertTrue(value.startswith("$(COMPOSE) -p $(PUBLIC_DEMO_PROJECT) "), value)
+            self.assertTrue(value.endswith(" --profile demo"), value)
+        up = recipe("public-demo-up")
+        steps = [
+            "$(PYTHON) scripts/configure.py --ensure",
+            "$(PYTHON) scripts/public_demo.py url",
+            "$$compose pull $$pull",
+            "$$compose up -d --no-build --wait --wait-timeout $(WAIT_TIMEOUT)",
+            "$(PYTHON) scripts/public_demo.py verify --project $(PUBLIC_DEMO_PROJECT)",
+        ]
+        self.assertEqual(sorted(steps, key=up.index), steps)
+        self.assertNotRegex(up, r"(?<!no)-build")
+        self.assertIn('compose="$(PUBLIC_DEMO_LOCAL_COMPOSE)"; pull="--policy missing"', up)
+        self.assertIn('compose="$(PUBLIC_DEMO_COMPOSE)"; pull=""', up)
+        self.assertIn("$(PUBLIC_DEMO_COMPOSE) down\n", recipe("public-demo-down") + "\n")
+        self.assertIn("$(PUBLIC_DEMO_COMPOSE) down --volumes", recipe("public-demo-clean"))
+        self.assertIn(
+            "scripts/setup_url.py --project $(PUBLIC_DEMO_PROJECT)", recipe("public-demo-setup-url")
+        )
+        for target in (
+            "public-demo-up",
+            "public-demo-check",
+            "public-demo-down",
+            "public-demo-clean",
+            "public-demo-logs",
+            "public-demo-setup-url",
+        ):
+            self.assertRegex(DX_MK, rf"(?m)^{target}: ## ", target)
+            self.assertNotIn("not implemented", recipe(target), target)
+
+
 DOCKERFILES = ("backend-go", "backend-python", "frontend-react")
 # The overlays DX-RELEASE owns (§15). docker-compose.load*.yml belongs to the GO stream;
 # scripts/check_version.py warns when an overlay's default tag differs from VERSION.
@@ -462,8 +686,17 @@ class ImagesTest(unittest.TestCase):
         files |= set(re.findall(r"(docker-compose[\w.-]*\.yml)", load_mk))
         for path in sorted(ROOT.glob("docker-compose.*.yml")):
             self.assertIn(path.name, files, f"{path.name} is in no compose stack definition")
-        for var in ("DEMO", "E2E", "ONBOARDING", "LOAD", "RECORD", "KNOWLEDGE"):
-            self.assertIn(f"$({var}_COMPOSE)", check, var)
+        for var in (
+            "DEMO",
+            "E2E",
+            "ONBOARDING",
+            "LOAD",
+            "RECORD",
+            "KNOWLEDGE",
+            "PUBLIC_DEMO",
+            "PUBLIC_DEMO_LOCAL",
+        ):
+            self.assertIn(f"$({var}_COMPOSE) config -q", check, var)
 
     def test_base_images_are_pinned_by_digest(self) -> None:
         # D125: every FROM names a tag and its multi-arch index digest; Dependabot's docker
