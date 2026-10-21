@@ -1,0 +1,130 @@
+# ============================================================================
+# TrustAgent - the always-on public demo (D218; docs/DEPLOY-DEMO.md)
+# ============================================================================
+# The zero-key demo stack on a small VM, reachable from the internet over HTTPS.
+# `make public-demo-up` runs, in effect:
+#
+#   python3 scripts/configure.py --ensure
+#   python3 scripts/public_demo.py url        # TRUTHTABLE_PUBLIC_URL is a public https origin
+#   docker compose -p truthtable-demo -f docker-compose.yml -f docker-compose.demo.yml \
+#     -f docker-compose.public.yml --profile demo pull
+#   docker compose ... up -d --no-build --wait
+#   python3 scripts/public_demo.py verify --project truthtable-demo
+#
+# What this overlay changes on top of docker-compose.demo.yml, which already
+# removes every vendor key and runs the mock fast check and the mock judge
+# (every surface says "Simulated"):
+# - Caddy is the only service with host ports: 80 and 443 (and 443/udp for
+#   HTTP/3) for TRUTHTABLE_PUBLIC_URL, with a Let's Encrypt certificate. The
+#   proxy and the dashboard publish nothing (the demo overlay already unpublishes
+#   postgres), so BIND_ADDR stays 127.0.0.1 and nothing else is reachable.
+# - Caddy sends /api/*, /ws and /health to the proxy itself, not through the
+#   dashboard's nginx, which replaces X-Forwarded-For: every visitor keeps their
+#   own address for the proxy's per-IP caps (TRUTHTABLE_WS_MAX_PER_IP live
+#   connections, TRUTHTABLE_RATE_LIMIT_PER_MINUTE requests). The proxy trusts
+#   X-Forwarded-For from the compose network (TRUTHTABLE_TRUSTED_PROXIES,
+#   172.16.0.0/12 by default); `public_demo.py verify` checks that Caddy's
+#   address is inside it.
+# - /v1 answers 404 at the edge: the demo runs in test mode, so the gateway API
+#   would let anyone script answers into the shared dashboard. trafficgen reaches
+#   the proxy on the compose network.
+# - Read-only (TRUTHTABLE_READONLY, proxy and engine): every write in the
+#   dashboard is refused. Traces, decisions and audits are kept for 7 days
+#   (TRUTHTABLE_RETENTION_DAYS; a proxy key: only the proxy stores them). The
+#   only browser origin is TRUTHTABLE_PUBLIC_URL.
+# - The engine may use 1 GB (the base allows 4 GB, a whole small VM). Every
+#   service's log is rotated (3 files of 10 MB), so a VM that runs for months
+#   does not fill its disk.
+# - The images are pulled (TRUSTAGENT_VERSION, the release's version) and never
+#   built on the VM: `up --no-build`.
+#
+# The project is the demo's, truthtable-demo: on the VM always use the
+# public-demo-* targets (make demo would publish 3000 and 8080 again). For a
+# local rehearsal, TRUTHTABLE_PUBLIC_URL=http://localhost:28443 makes
+# `make public-demo-up` add deploy/public-demo/local.yml (Caddy on
+# 127.0.0.1:28443 over plain HTTP, no certificate). `make compose-check`
+# validates both.
+
+name: truthtable-demo
+
+x-public-env: &public-env
+  TRUTHTABLE_READONLY: "true"
+
+# Docker's json-file driver keeps every line by default.
+x-public-logging: &public-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  proxy:
+    ports: !reset []
+    environment:
+      <<: *public-env
+      TRUTHTABLE_RETENTION_DAYS: "7"
+      # The dashboard is same-origin behind Caddy: no localhost origin on a public
+      # host (TRUTHTABLE_PUBLIC_URL is also the CSRF and WebSocket origin).
+      TRUTHTABLE_ALLOWED_ORIGINS: ${TRUTHTABLE_PUBLIC_URL:-}
+    logging: *public-logging
+
+  engine:
+    environment:
+      <<: *public-env
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    logging: *public-logging
+
+  postgres:
+    logging: *public-logging
+
+  dashboard:
+    ports: !reset []
+    logging: *public-logging
+
+  trafficgen:
+    logging: *public-logging
+
+  # The edge. Pinned 2026-10-10: caddy:2-alpine; the index digest after it is the
+  # pin (re-check it when you deploy). Root in the container, with only the
+  # capability to bind 80 and 443.
+  caddy:
+    image: caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      # The site Caddy serves (deploy/public-demo/Caddyfile) and gets a
+      # certificate for; the proxy reads the same key.
+      TRUTHTABLE_PUBLIC_URL: ${TRUTHTABLE_PUBLIC_URL:-}
+    volumes:
+      - ./deploy/public-demo/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and the ACME account: keep them across restarts (Let's
+      # Encrypt limits how often one name gets a new certificate).
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    # Healthy once the configuration is loaded: the admin API answers on the
+    # container's loopback only.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+      start_interval: 1s
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    logging: *public-logging
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:
