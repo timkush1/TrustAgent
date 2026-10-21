@@ -369,6 +369,38 @@ class ReleaseImagesWorkflowTest(unittest.TestCase):
         self.assertIn("      push:\n", dispatch)
         self.assertIn("        type: boolean\n        default: false", dispatch)
 
+    def test_the_pull_request_filters_cover_every_image_input(self) -> None:
+        # A release PR that changes how an image builds (its Dockerfile, its .dockerignore or a
+        # lockfile it installs from) runs the build-only image job; a filter that misses a file
+        # would let the tag build be the first build of that change.
+        on = on_block(self.text)
+        prs = on.split("\n  pull_request:\n", 1)[1].split("\n  workflow_dispatch:", 1)[0]
+        patterns = [p.strip("'") for p in re.findall(r"(?m)^      - (\S+)$", prs)]
+
+        def matched(path: str) -> bool:
+            for pattern in patterns:
+                if pattern.startswith("**/"):
+                    if path.rsplit("/", 1)[-1] == pattern[3:]:
+                        return True
+                elif path == pattern:
+                    return True
+            return False
+
+        dockerfiles = re.findall(r"(?m)^\s+dockerfile: (\S+)$", self.images)
+        self.assertEqual(len(dockerfiles), 3)
+        for dockerfile in dockerfiles:
+            self.assertTrue((ROOT / dockerfile).is_file(), dockerfile)
+            ignore = f"{dockerfile}.dockerignore"
+            self.assertTrue((ROOT / ignore).is_file(), ignore)
+            for path in (dockerfile, ignore):
+                self.assertTrue(matched(path), f"{path} is outside the pull_request paths")
+        tracked = [p.relative_to(ROOT).as_posix() for p in ROOT.glob("*/Dockerfile")]
+        self.assertEqual(sorted(tracked), sorted(dockerfiles), "an image without a matrix entry")
+        for lock in ("backend-go/go.sum", "backend-python/poetry.lock", "frontend-react/package-lock.json"):
+            self.assertTrue((ROOT / lock).is_file(), lock)
+            self.assertTrue(matched(lock), lock)
+        self.assertTrue(matched(".github/workflows/release-images.yml"))
+
     def test_push_is_guarded_by_repository_event_and_ref(self) -> None:
         push = self.plan.split("          PUSH: >-\n", 1)[1].split("\n        run:", 1)[0]
         self.assertEqual(
@@ -506,6 +538,38 @@ class ReleaseImagesWorkflowTest(unittest.TestCase):
         self.assertLess(body.index("docker logout ghcr.io"), body.index("docker pull"))
         self.assertIn("for svc in proxy engine dashboard", body)
         self.assertIn("for platform in linux/amd64 linux/arm64", body)
+
+
+class EvalWorkflowTest(unittest.TestCase):
+    """eval.yml: the free HaluEval run with a local judge, started by hand only (S-7)."""
+
+    def setUp(self) -> None:
+        self.text = read("eval.yml")
+        self.jobs = jobs(self.text)
+
+    def test_runs_only_when_started_by_hand(self) -> None:
+        on = on_block(self.text)
+        self.assertTrue(on.startswith("  workflow_dispatch:\n"), on)
+        for trigger in ("schedule", "push", "pull_request", "workflow_run", "cron"):
+            self.assertNotIn(trigger, code(on))
+        self.assertEqual(re.findall(r"(?m)^  (\w+):", on), ["workflow_dispatch"])
+
+    def test_the_job_keeps_its_check_name(self) -> None:
+        # The check is named by its job id; renaming it would orphan its history.
+        self.assertEqual(list(self.jobs), ["benchmark"])
+        self.assertEqual(job_name(self.jobs["benchmark"]), "")
+
+    def test_the_summary_labels_its_figures(self) -> None:
+        summary = [s for s in steps(self.jobs["benchmark"]) if s.startswith("name: Publish summary")]
+        self.assertEqual(len(summary), 1)
+        self.assertIn("Label: measured in this run only", summary[0])
+        self.assertIn("not a published TrustAgent figure", summary[0])
+        self.assertIn("contracts/claims/measured.json", summary[0])
+
+    def test_no_badge_points_at_it(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("workflows/eval.yml", readme)
+        self.assertNotIn("actions/workflows/eval.yml/badge.svg", readme)
 
 
 class EvalLiveWorkflowTest(unittest.TestCase):

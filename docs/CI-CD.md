@@ -28,7 +28,7 @@ CI is split into one workflow per area, plus security, the evaluations and the r
 | **Contracts** | `ci-contracts.yml` | every push to `main` + every PR | validate `contracts/` (schemas, vectors, RE2/JS regex portability), the forbidden-identifier scan, every figure in the README and docs against `contracts/claims` (`check-claims.mjs`), and the version mirrors (`check_version.py`) |
 | **E2E** | `ci-e2e.yml` | every push to `main` + every PR + manual button | the DX scripts job, then the demo, e2e and onboarding stacks with trafficgen, doctor and Playwright |
 | **Security** | `security.yml` | every push/PR + weekly Mondays | security scanners (gosec, bandit, gitleaks, npm audit, Trivy) |
-| **Eval** | `eval.yml` | weekly + manual button | benchmark detector quality against HaluEval with a local model (free) |
+| **Eval** | `eval.yml` | manual button only | benchmark detector quality against HaluEval with a local model (free); its summary labels the figures as that run's own |
 | **Eval (live)** | `eval-live.yml` | manual button only, in the protected `eval-live` environment | the paid benchmark (`make gate-eval`, then `make bench-lite`, hard cap $5) with the real fast check and judge; uploads the run, never publishes it |
 | **Knowledge** | `ci-knowledge.yml` | manual, weekly, and changes to the knowledge path | the knowledge add-on end to end in Docker, on mock vendors; not a required check |
 | **Pages** | `pages.yml` | push to `main`, `v*` tags, PRs (build only), manual | build and check the static site; deploy it only when the owner turned Pages on |
@@ -126,9 +126,11 @@ git credentials, no permissions at the top level and only what each job needs, n
 
 ### Eval (`.github/workflows/eval.yml`): "is the detector actually good?"
 
-Weekly (and on demand via the *Run workflow* button): starts an Ollama service container, pulls a
-small model, runs the HaluEval-QA benchmark through the real pipeline, and uploads the metrics as
-an artifact. It never blocks PRs — it's a quality trendline, not a gate.
+On demand only, via the *Run workflow* button (it no longer runs weekly): starts an Ollama service
+container, pulls a small model, runs the HaluEval-QA benchmark through the real pipeline, and
+uploads the metrics as an artifact. Its job summary labels the figures as measured in that run
+with that local judge, not as published TrustAgent figures. It never blocks PRs; it is a quality
+check you start by hand, not a gate.
 
 ### Dependabot (`.github/dependabot.yml`)
 

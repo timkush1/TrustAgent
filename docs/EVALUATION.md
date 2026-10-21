@@ -17,7 +17,7 @@ Mixing these gives flaky CI and meaningless numbers, so they're separated:
 
 | | Tier 1 — Regression gate | Tier 2 — Benchmark |
 |---|---|---|
-| Runs | Every PR (blocking, in `ci-python.yml`) | Weekly + on demand (`eval.yml`, `make eval-benchmark`) |
+| Runs | Every PR (blocking, in `ci-python.yml`) | On demand (`eval.yml`'s Run workflow button, `make eval-benchmark`) |
 | Model | None — recorded responses via `MockLLMProvider` | Live Ollama model (or cloud providers, Phase 5) |
 | Dataset | Golden set, 50 hand-curated examples | HaluEval QA (sampled, balanced) |
 | Measures | Pipeline behavior given fixed model outputs | Real end-to-end detector quality |
@@ -88,9 +88,10 @@ python -m evals.datasets.download halueval --samples 500 --seed 42
 python -m evals.run_eval --dataset halueval --provider ollama --model llama3.2 --output report.json
 ```
 
-The `eval.yml` workflow runs this weekly (and on manual dispatch with
-configurable sample size and model) in an Ollama service container, publishing
-the metric table to the job summary and the full report as an artifact.
+The `eval.yml` workflow runs this on manual dispatch only (with a configurable
+sample size and model) in an Ollama service container, publishing the metric
+table to the job summary, labelled as that run's own measurement with that
+local judge, and the full report as an artifact.
 
 ### Metrics
 
@@ -153,7 +154,7 @@ estimates on the landing page and in the dashboard only through
 | `backend-python/evals/datasets/download.py` | HaluEval downloader/sampler |
 | `backend-python/evals/baselines/golden_v1.json` | Committed regression baseline |
 | `backend-python/src/truthtable/providers/mock.py` | Fixture-replay provider |
-| `.github/workflows/eval.yml` | Tier-2 scheduled benchmark |
+| `.github/workflows/eval.yml` | Tier-2 benchmark, started by hand |
 | `backend-python/evals/bench.py` | Tier-3 harness: `run` and `publish` (bench-lite, eval-live) |
 | `backend-python/evals/judges.py` | The systems compared (gate, LLM same checks, full audit, cascade) |
 | `backend-go/cmd/gate-eval` | The fast check over a JSONL file, with a hard cost cap |
