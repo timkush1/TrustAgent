@@ -120,44 +120,47 @@ gitleaks-install: ## Download the pinned gitleaks release into tmp/tools, checke
 	install -m 0755 "$$work/gitleaks" "$(GITLEAKS)"; \
 	echo "✅ gitleaks $(GITLEAKS_VERSION) ($$os-$$arch, SHA-256 checked) in $(GITLEAKS)"
 
-# ---------- Demo recording (D123) ----------
-# scripts/record_demo.py records the public demo with the real fast check and judge into
-# frontend-react/demo-data/recorded/ (the owner's key, about $1). Without CONFIRM=1 it is a dry
-# run: the plan, its estimate and which keys it found. The stack is docker-compose.record.yml's,
-# project truthtable-record, removed with its volumes when the run ends. RECORD_BUILD follows make
-# up: the images are built from this checkout, or pulled on a release tag (D126).
+# ---------- Demo recording (D123, D207-D210) ----------
+# scripts/record_demo.py records the public demo with the real fast check and judge (the owner's
+# OpenRouter key, about $1 an attempt). Without CONFIRM=1 it is a dry run: the plan, the ledger,
+# this attempt's caps and which keys it found. CONFIRM=1 records one attempt into
+# tmp/record-demo/<attempt>/ and leaves its stack (docker-compose.record.yml, project
+# truthtable-record, images tagged p6rec, no host port) up for the review; ACCEPT=1 ATTEMPT=<id>
+# takes it (FEATURED=<trace id> is the owner's pick when no trace meets the featured rule, VIDEO=1
+# also records the video's stack beats) and DISCARD=1 drops it. tmp/record-demo/ledger.jsonl keeps
+# the key's usage across attempts: RECORD_MAX_TOTAL_USD caps every attempt together,
+# RECORD_PASSES sets the trafficgen passes, ALLOW_UNCALIBRATED=1 records a snapshot without a
+# calibration file (the tape then says uncalibrated).
 RECORD_PROJECT := truthtable-record
 RECORD_COMPOSE  = $(COMPOSE) -p $(RECORD_PROJECT) -f docker-compose.yml -f docker-compose.record.yml
-RECORD_BUILD   ?= $(APP_BUILD)
 CONFIRM        ?=
 RECORD_ARGS    ?=
-# D208-D210 seams (the VEND stream fills them in): an attempt's tape waits in
-# tmp/record-demo/<attempt>/ until ACCEPT=1 ATTEMPT=<id> (VIDEO=1 also records the video's stack
-# beats) or DISCARD=1; RECORD_MAX_TOTAL_USD caps every attempt together, RECORD_PASSES the rounds.
 ACCEPT               ?=
 DISCARD              ?=
 VIDEO                ?=
 ATTEMPT              ?=
+FEATURED             ?=
 RECORD_MAX_TOTAL_USD ?= 4
 RECORD_PASSES        ?= 2
 ALLOW_UNCALIBRATED   ?=
+RECORD_DEMO_ARGS = --passes $(RECORD_PASSES) --max-total-usd $(RECORD_MAX_TOTAL_USD) \
+	$(if $(filter 1,$(ALLOW_UNCALIBRATED)),--allow-uncalibrated) \
+	$(if $(filter 1,$(ACCEPT)),--accept "$(ATTEMPT)" $(if $(FEATURED),--featured "$(FEATURED)") $(if $(filter 1,$(VIDEO)),--video)) \
+	$(if $(filter 1,$(DISCARD)),--discard)
 # record-check-config: what the proxy must see in the record stack, proved without Docker with
 # fake keys (the project's conventions) in an otherwise empty environment, as onboarding-check-config.
 RECORD_CHECK_ENV = OPENROUTER_API_KEY=sk-or-v1-e2e-record TRAFFICGEN_API_KEY=record-check \
 	TRUTHTABLE_API_KEYS=trafficgen=record-check POSTGRES_PASSWORD=record-check
 RECORD_EXPECT = $(foreach kv,TRUTHTABLE_TEST_MODE=true TRUTHTABLE_STRICT_CONFIG=true \
 		TRUTHTABLE_DEMO_MODE=false TRUTHTABLE_PUBLIC_READ=false TRUTHTABLE_TRACE_FLUSH=sync \
-		TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY=0.50 TRUTHTABLE_SPEND_CAP_LLM_USD_DAY=3,--expect $(kv)) \
+		TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY=0.50 TRUTHTABLE_SPEND_CAP_LLM_USD_DAY=3 \
+		TRUTHTABLE_UPSTREAM_URL=https://openrouter.ai/api,--expect $(kv)) \
 	--expect-default TRUTHTABLE_JEV_BACKEND
 
 ##@ Demo recording (the real fast check and judge; your OpenRouter key)
 
-record-demo: ## Record the public demo with the real fast check and judge into demo-data/recorded (a dry run unless CONFIRM=1; about $1 on your OpenRouter key)
-ifneq ($(ACCEPT)$(DISCARD),)
-	@echo "record-demo ACCEPT=1 / DISCARD=1: not implemented (P6 V-4)"; exit 2
-else
-	CONFIRM="$(CONFIRM)" $(PYTHON) scripts/record_demo.py $(if $(RECORD_BUILD),--build) $(RECORD_ARGS)
-endif
+record-demo: ## Record the public demo with the real fast check and judge (a dry run unless CONFIRM=1; ACCEPT=1 ATTEMPT=<id> takes a reviewed attempt, DISCARD=1 drops it; about $1 an attempt on your OpenRouter key)
+	CONFIRM="$(CONFIRM)" $(PYTHON) scripts/record_demo.py $(RECORD_DEMO_ARGS) $(RECORD_ARGS)
 
 record-check-config: ## Prove, without a container, that the gateway accepts the record stack's environment (test mode, real backends, strict config) with fake keys: proxy -check-config
 	@if ! docker compose version >/dev/null 2>&1; then echo "record-check-config: skipped (docker compose not found)"; exit 0; fi; \

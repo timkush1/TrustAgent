@@ -161,7 +161,10 @@ class ComposeTest(unittest.TestCase):
             '      TRUTHTABLE_SPEND_CAP_DECISION_USD_DAY: "0.50"\n',
             '      TRUTHTABLE_SPEND_CAP_LLM_USD_DAY: "3"\n',
             "      TRAFFICGEN_API_KEY:\n",
-            '    ports: !override\n      - "127.0.0.1::8080"',
+            # D208: the generated answers come from OpenRouter, and no service publishes a port.
+            "      TRUTHTABLE_UPSTREAM_URL: https://openrouter.ai/api\n",
+            "      TRUTHTABLE_UPSTREAM_API_KEY: ${OPENROUTER_API_KEY:-}\n",
+            "    ports: !reset []",
         ):
             self.assertIn(line, proxy)
         for line in (
