@@ -814,3 +814,14 @@ def test_a_refused_key_stops_the_run_and_an_unreadable_limit_warns(
     else:
         # The hard cap holds, and the stop rule ends a run the key's own limit stops.
         assert "the key's limit could not be read" in err and len(fake.argv()) == 7
+
+
+def test_a_rebuilt_binary_is_fine_before_anything_was_spent(tmp_path: Path) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    meta = tmp_path / "cache" / "lite-set.meta.json"
+    meta.parent.mkdir(parents=True)
+    meta.write_text(json.dumps({"gate_eval_sha256": "0" * 64}))
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate")) == 0
+
+    assert json.loads(meta.read_text())["gate_eval_sha256"] == planning.sha256_file(fake.binary)

@@ -411,15 +411,16 @@ def meta_path(cache_dir: Path, resume_key: str) -> Path:
     return cache_dir / f"{resume_key}.meta.json"
 
 
-def check_resume_binary(path: Path, gate_eval_sha256: Optional[str]) -> None:
+def check_resume_binary(path: Path, gate_eval_sha256: Optional[str], *, started: bool) -> None:
     """
     Record the gate-eval binary a resume key started with, and refuse another
-    one: the cache key includes the binary, so a resume with a new build
-    would judge (and pay for) every example again.
+    one once the key has spent or cached anything: the cache key includes the
+    binary, so a resume with a new build would judge (and pay for) every
+    example again. Before that, a rebuilt binary simply replaces the record.
     """
     if gate_eval_sha256 is None:
         return
-    if path.is_file():
+    if path.is_file() and started:
         try:
             recorded = json.loads(path.read_text(encoding="utf-8")).get("gate_eval_sha256")
         except (OSError, json.JSONDecodeError, AttributeError):
@@ -547,7 +548,9 @@ async def execute(args: argparse.Namespace) -> Outcome:
     if GATE in systems and args.gate_eval_bin:
         gate_sha = planning.sha256_file(Path(args.gate_eval_bin))
     plan = plan_run(args, systems, examples, budget)
-    check_resume_binary(meta_path(cache_dir, resume_key), gate_sha)
+    check_resume_binary(
+        meta_path(cache_dir, resume_key), gate_sha, started=budget.spent_usd > 0 or len(cache) > 0
+    )
 
     print(
         f"Benchmark {manifest.name} {manifest.subset or ''} {manifest.split}: {len(examples)} "
