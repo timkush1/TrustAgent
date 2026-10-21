@@ -94,7 +94,10 @@ Five jobs; the first four are **blocking**, Trivy is informational:
   Vite, esbuild and the test tools run at build time, so an advisory there reaches the local dev
   server at most. A real HIGH in anything we actually ship still fails.
 - **Trivy** — broad filesystem/dependency scanner, `continue-on-error: true` (reports but never
-  blocks) until its findings have been triaged.
+  blocks) until its findings have been triaged. Its secret scan reads
+  [`trivy-secret.yaml`](../trivy-secret.yaml), which allows only the detector vectors (synthetic
+  keys the Tier-0 secret detector must flag), as `.gitleaks.toml` does;
+  `scripts/tests/test_trivy_secret.py` keeps that allow-list narrow.
 
 ### Release and publishing workflows: "what do we ship?"
 

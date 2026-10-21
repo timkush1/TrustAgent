@@ -147,8 +147,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # The secret scan stays on everywhere; trivy-secret.yaml allows only the detector vectors
+      # (contracts/vectors/detectors/), whose keys are synthetic on purpose, as .gitleaks.toml does.
       - name: Run Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_SECRET_CONFIG: trivy-secret.yaml
         with:
           scan-type: fs
           scan-ref: .
