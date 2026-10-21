@@ -106,7 +106,8 @@ jev-check: ## Check the decision model connection (cmd/jevcheck; in the running 
 # nothing sent) unless CONFIRM=1; hard cap USD 0.01, expected under USD 0.005. A real capture runs
 # the pinned gitleaks over CAPTURE_DIR afterwards, whatever the capture's exit (a capture that
 # stopped half way has written fixtures too). Fixtures from a host that is not a vendor
-# (mock-upstream) say "simulated", never "captured".
+# (mock-upstream) say "simulated", never "captured". A real capture's result line is appended to
+# P6_JOURNAL (tmp/p6/results.log), where make p6-ledger counts it.
 CAPTURE_DIR ?= contracts/fixtures/vendor/captured
 CAPTURE_MAX_COST_USD ?= 0.01
 # The key, the OpenRouter base URL and the model come from the shell or, as the services read
@@ -117,7 +118,11 @@ JEV_CAPTURE = $(JEV_CAPTURE_ENV) go -C backend-go run ./cmd/jevcheck --capture "
 jev-capture: ## Capture sanitized vendor fixtures with jevcheck --capture into CAPTURE_DIR (a dry run unless CONFIRM=1; cap USD 0.01; then gitleaks over it)
 ifeq ($(CONFIRM),1)
 	@$(MAKE) --no-print-directory gitleaks-install
-	@code=0; $(JEV_CAPTURE) || code=$$?; \
+	@mkdir -p "$(dir $(P6_JOURNAL))"; out="$(dir $(P6_JOURNAL))jev-capture.out"; rm -f "$$out.rc"; \
+	{ $(JEV_CAPTURE) || echo $$? > "$$out.rc"; } | tee "$$out"; \
+	code=$$(cat "$$out.rc" 2>/dev/null || echo 0); rm -f "$$out.rc"; \
+	grep '^TRUSTAGENT_P6_RESULT ' "$$out" >> "$(P6_JOURNAL)" \
+		|| echo "jev-capture: no result line, so make p6-ledger cannot count this capture" >&2; \
 	if [ -d "$(CAPTURE_DIR)" ]; then \
 		$(GITLEAKS) dir --config .gitleaks.toml --redact --no-banner --exit-code 1 "$(CAPTURE_DIR)" || exit 1; \
 		echo "✅ gitleaks: nothing found in $(CAPTURE_DIR)"; \
