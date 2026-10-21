@@ -408,9 +408,18 @@ def run_pass(args: argparse.Namespace) -> int:
     if not binary.is_file():
         print(f"calib-pass: no gate-eval binary at {binary}: make gate-eval", file=sys.stderr)
         return result(EXIT_PRECONDITION)
-    if key.has_key and key.status is None:
-        print(f"calib-pass: the key's limit could not be read ({key.problem})", file=sys.stderr)
+    if key.refused:
+        print(
+            f"calib-pass: the key was refused ({key.problem}); nothing was spent", file=sys.stderr
+        )
         return result(EXIT_PRECONDITION)
+    if key.has_key and key.status is None:
+        # The hard cap (gate-eval --max-cost-usd) still holds.
+        print(
+            f"calib-pass: warning: the key's limit could not be read ({key.problem}); the cap is "
+            "not lowered (D201)",
+            file=sys.stderr,
+        )
     cap = vendor_key.effective_cap(args.max_cost_usd, key.status, minimum_usd=args.min_cost_usd)
     if cap.refused:
         print(f"calib-pass: refused: {cap.refused} (D201)", file=sys.stderr)

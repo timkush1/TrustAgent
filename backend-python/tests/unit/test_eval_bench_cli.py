@@ -788,3 +788,29 @@ def test_make_bench_publish_needs_run() -> None:
     named = _make("-n", "bench-publish", "RUN=/abs/run.json", "CHECK_ONLY=1")
     assert named.returncode == 0, named.stderr
     assert '--run "/abs/run.json"' in named.stdout and "--check-only" in named.stdout
+
+
+@pytest.mark.parametrize("status, code", [(401, 2), (402, 0), (500, 0)])
+def test_a_refused_key_stops_the_run_and_an_unreadable_limit_warns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    status: int,
+    code: int,
+) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    monkeypatch.setenv("OPENROUTER_API_KEY", FAKE_KEY)
+
+    def fetch(url: str, headers: Mapping[str, str], timeout: float) -> Tuple[int, bytes]:
+        return status, b"{}"
+
+    monkeypatch.setattr(bench, "_key_fetch", lambda: fetch)
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate")) == code
+
+    err = capsys.readouterr().err
+    if code == 2:
+        assert "the key was refused" in err and fake.argv() == []
+    else:
+        # The hard cap holds, and the stop rule ends a run the key's own limit stops.
+        assert "the key's limit could not be read" in err and len(fake.argv()) == 7

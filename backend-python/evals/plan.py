@@ -115,6 +115,12 @@ class KeyContext:
     snapshot: Optional[str] = None
     problem: Optional[str] = None  # Why the key could not be read
     has_key: bool = False
+    problem_kind: Optional[str] = None  # vendor_key's error kind (auth: the key was refused)
+
+    @property
+    def refused(self) -> bool:
+        """The vendor refused the key (401/403): every paid call would fail."""
+        return self.problem_kind == vendor_key.AUTH
 
 
 def key_context(
@@ -133,6 +139,7 @@ def key_context(
         context.status = vendor_key.read_key_status(key, origin, fetch=fetch)
     except vendor_key.KeyCheckError as exc:
         context.problem = f"{exc.kind}: {exc}"
+        context.problem_kind = exc.kind
     if model:
         context.snapshot = vendor_key.model_snapshot(model, origin, fetch=fetch)
     return context

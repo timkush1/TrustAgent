@@ -526,9 +526,15 @@ async def execute(args: argparse.Namespace) -> Outcome:
     cache = ResultCache(cache_dir / f"{resume_key}.cache.jsonl")
 
     key = read_key(args)
+    if key.refused:
+        raise PreconditionError(f"the key was refused ({key.problem}); nothing was spent")
     if key.has_key and key.status is None:
-        raise PreconditionError(
-            f"the key's limit could not be read ({key.problem}); nothing was spent (D201)"
+        # The hard cap still holds, and the stop rule ends a run the key's limit stops (402).
+        print(
+            f"bench: warning: the key's limit could not be read ({key.problem}); the cap is not "
+            "lowered (D201)",
+            file=sys.stderr,
+            flush=True,
         )
     cap = vendor_key.effective_cap(
         args.max_cost_usd, key.status, spent_usd=budget.spent_usd, minimum_usd=args.min_cost_usd
