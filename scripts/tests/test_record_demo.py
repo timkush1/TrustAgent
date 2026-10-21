@@ -75,6 +75,7 @@ def status(
             "endpoint_host": host,
         },
         "judge": {"state": judge_state, "provider": provider, "fallback_active": fallback},
+        "budgets": {"decision_spent_today_usd": 0.0412, "llm_spent_today_usd": 0.2031},
     }
 
 
@@ -693,6 +694,8 @@ class RecordDemoTest(unittest.TestCase):
         self.assertEqual(result["hosts"], VENDOR_HOSTS)
         self.assertEqual(result["counts"]["n"], 80)
         self.assertIn(f"ACCEPT=1 ATTEMPT={attempt}", self.output())
+        self.assertIn("Breakdown: fast checks $0.0412, deep audits $0.2031", self.output())
+        self.assertEqual(doc["gateway_spend"], {"decision_usd": 0.0412, "llm_usd": 0.2031})
         self.assert_no_key_printed()
 
     def test_no_featured_trace_means_review_needed(self) -> None:

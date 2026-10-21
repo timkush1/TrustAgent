@@ -1482,6 +1482,13 @@ class Recorder:
         self.check(tape, require_recorded=False)
         skipped = skipped_reasons(tape, manifest)
         featured = manifest.get("featured")
+        # The gateway's own count of today's spend: the breakdown, an estimate (the vendor's
+        # reported cost where given, else priced from tokens); the ledger's figure is the key's.
+        budgets = self.status(attempt).get("budgets") or {}
+        gateway = {
+            "decision_usd": budgets.get("decision_spent_today_usd"),
+            "llm_usd": budgets.get("llm_spent_today_usd"),
+        }
         doc.update(
             since=since,
             label=manifest.get("label"),
@@ -1489,6 +1496,7 @@ class Recorder:
             featured=featured,
             skipped=skipped,
             counts=self.counts(manifest),
+            gateway_spend=gateway,
         )
         after = self.settled_usage()
         spent = round(after.usage - before.usage, 6) if after else None
@@ -1513,6 +1521,10 @@ class Recorder:
         self.say(
             f"  Spent so far: {money(spent)} (the key's usage change after a {self.settle_s:.0f} s "
             "settle; the vendor's figure)"
+        )
+        self.say(
+            f"  Breakdown: fast checks {money(gateway['decision_usd'])}, deep audits "
+            f"{money(gateway['llm_usd'])} (the gateway's own count, an estimate)"
         )
         self.drift_summary(drift)
         for reason in skipped:
