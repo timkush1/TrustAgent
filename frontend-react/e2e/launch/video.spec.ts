@@ -218,13 +218,19 @@ test.describe('static beats', () => {
   });
 });
 
-/** GET /api/policies as the signed-in admin: its version and a hash of its content (P5C-27). */
-async function policyFingerprint(page: Page): Promise<{ id: unknown; sha256: string }> {
+/**
+ * GET /api/policies as the signed-in admin: the policy's version and hash (P5C-27), the version's
+ * own sha256 and one of its YAML, never the effective routes (their downgrades follow the budget
+ * and the breaker, which the beats' paid calls move).
+ */
+async function policyFingerprint(page: Page): Promise<{ id: number; sha256: string; yaml: string }> {
   const res = await page.request.get('/api/policies');
   expect(res.ok(), `GET /api/policies answered ${res.status()}`).toBe(true);
-  const body = (await res.json()) as { id?: unknown; effective_routes?: unknown; policy?: unknown };
-  const content = JSON.stringify(body.policy ?? body.effective_routes ?? null);
-  return { id: body.id, sha256: createHash('sha256').update(content).digest('hex') };
+  const body = (await res.json()) as { id?: unknown; sha256?: unknown; yaml?: unknown };
+  if (typeof body.id !== 'number' || typeof body.sha256 !== 'string' || typeof body.yaml !== 'string') {
+    throw new Error('GET /api/policies names no policy version, sha256 and YAML');
+  }
+  return { id: body.id, sha256: body.sha256, yaml: createHash('sha256').update(body.yaml).digest('hex') };
 }
 
 test.describe('stack beats', () => {
