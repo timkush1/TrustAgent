@@ -29,7 +29,9 @@
 #   answers, sync traces, strict configuration;
 # - the fast check: the `compatible` backend on mock-upstream, as in the e2e
 #   stack; the LLM upstreams on mock-upstream; no vendor key reaches anything;
-# - the engine: the mock judge, no fallback, Qdrant at qdrant:6333;
+# - the engine: the mock judge, no fallback, Qdrant at qdrant:6333; the mock
+#   ingests each knowledge document of the scenario packs as one claim, its own
+#   text (backend-python/src/truthtable/providers/mock.py);
 # - mock-upstream runs without a profile, and the database publishes no port.
 
 name: truthtable-knowledge

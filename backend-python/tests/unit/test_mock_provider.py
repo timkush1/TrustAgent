@@ -12,11 +12,13 @@ from truthtable.graphs.nodes.decomposer import (
     create_decomposer_prompt,
 )
 from truthtable.graphs.nodes.verifier import VERIFIER_SYSTEM_PROMPT, create_verifier_prompt
+from truthtable.kb.contradiction import CONTRADICTION_SYSTEM_PROMPT, create_contradiction_prompt
 from truthtable.providers.base import CompletionRequest, Message, MessageRole
 from truthtable.providers.mock import (
     UNPARSEABLE_JUDGE_ANSWER,
     FixtureNotFoundError,
     JudgeClaim,
+    KnowledgeDocument,
     MockLLMProvider,
     load_scenario_pack,
     mock_judge_scope,
@@ -269,6 +271,11 @@ def test_contract_scenario_pack_loads():
                 c["claim"] for c in raw["judge"]["claims"]
             ]
             assert all(isinstance(c, JudgeClaim) for c in scenario.claims)
+        assert scenario.knowledge == tuple(
+            KnowledgeDocument(id=k["id"], text=k["text"]) for k in raw.get("knowledge", [])
+        )
+    # The knowledge stack needs these documents (make knowledge-seed).
+    assert any(scenario.knowledge for scenario in scenarios.values())
 
 
 async def test_registry_builds_a_scenario_judge():
@@ -276,6 +283,115 @@ async def test_registry_builds_a_scenario_judge():
 
     assert isinstance(judge, MockLLMProvider)
     assert judge.scenarios and "grounded-pass" in judge.scenarios
+
+
+# ---------------------------------------------------------------------------
+# Knowledge fixtures (the knowledge stack's ingestion, outside any audit)
+# ---------------------------------------------------------------------------
+
+HANDBOOK = "New employees receive 20 days of paid vacation per year."
+REMOTE = "Employees may work remotely two days a week."
+
+
+def _knowledge_pack() -> Dict[str, Any]:
+    pack = _pack()
+    pack["scenarios"][0]["knowledge"] = [{"id": "handbook", "text": HANDBOOK}]
+    pack["scenarios"][1]["knowledge"] = [
+        {"id": "handbook", "text": HANDBOOK},
+        {"id": "remote", "text": REMOTE},
+    ]
+    return pack
+
+
+@pytest.fixture
+def knowledge_judge() -> MockLLMProvider:
+    return MockLLMProvider(scenarios=parse_scenario_pack(_knowledge_pack()))
+
+
+def _contradiction_request(claim_a: str, claim_b: str) -> CompletionRequest:
+    return make_request(CONTRADICTION_SYSTEM_PROMPT, create_contradiction_prompt(claim_a, claim_b))
+
+
+def test_knowledge_documents_are_indexed_once(knowledge_judge: MockLLMProvider):
+    assert sorted(document.id for document in knowledge_judge.knowledge.values()) == [
+        "handbook",
+        "remote",
+    ]
+
+
+async def test_knowledge_document_decomposes_into_itself(knowledge_judge: MockLLMProvider):
+    response = await knowledge_judge.complete(_decompose_request(f"\n  {HANDBOOK} \n"))
+
+    # One claim, the document's own text, quoting all of it.
+    assert json.loads(response.content) == {"claims": [{"claim": HANDBOOK, "quote": HANDBOOK}]}
+
+
+async def test_knowledge_claim_is_entailed_by_its_own_source(knowledge_judge: MockLLMProvider):
+    request = make_request(VERIFIER_SYSTEM_PROMPT, create_verifier_prompt(HANDBOOK, [HANDBOOK]))
+
+    answer = json.loads((await knowledge_judge.complete(request)).content)
+
+    assert answer["status"] == "SUPPORTED"
+    assert answer["confidence"] == 1.0
+    assert answer["evidence"] == [HANDBOOK]
+
+
+async def test_knowledge_claims_are_consistent(knowledge_judge: MockLLMProvider):
+    same = await knowledge_judge.complete(_contradiction_request(HANDBOOK, HANDBOOK))
+    other = await knowledge_judge.complete(_contradiction_request(HANDBOOK, REMOTE))
+
+    assert json.loads(same.content) == {"relation": "CONSISTENT", "confidence": 1.0}
+    assert json.loads(other.content) == {"relation": "CONSISTENT", "confidence": 1.0}
+
+
+@pytest.mark.parametrize(
+    "request_factory",
+    [
+        # A document the packs do not list.
+        lambda: _decompose_request("The office closes at 5 pm."),
+        # A knowledge document inside a longer upload is a different document.
+        lambda: _decompose_request(f"{HANDBOOK} The office closes at 5 pm."),
+        # A knowledge claim against a source that does not hold it.
+        lambda: make_request(
+            VERIFIER_SYSTEM_PROMPT, create_verifier_prompt(HANDBOOK, ["Something else."])
+        ),
+        # A claim that is no knowledge document, against a source that holds one.
+        lambda: make_request(
+            VERIFIER_SYSTEM_PROMPT, create_verifier_prompt("Vacation is unlimited.", [HANDBOOK])
+        ),
+        # A contradiction check with a claim the packs do not hold.
+        lambda: _contradiction_request(HANDBOOK, "Vacation is unlimited."),
+    ],
+    ids=[
+        "unknown-document",
+        "longer-document",
+        "claim-without-its-source",
+        "unknown-claim",
+        "unknown-contradiction-pair",
+    ],
+)
+async def test_knowledge_miss_fails_loudly(knowledge_judge: MockLLMProvider, request_factory: Any):
+    with pytest.raises(FixtureNotFoundError, match="No fixture matched.*knowledge documents"):
+        await knowledge_judge.complete(request_factory())
+
+
+async def test_knowledge_fixtures_never_answer_inside_an_audit(knowledge_judge: MockLLMProvider):
+    # Every Evaluate opens a scope; only the ingestion path runs outside one.
+    for scenario in ("", "refund"):
+        with mock_judge_scope(scenario) as scope:
+            with pytest.raises(FixtureNotFoundError):
+                await knowledge_judge.complete(_decompose_request(HANDBOOK))
+        assert len(scope.misses) == 1
+        assert "knowledge documents" not in scope.misses[0]
+
+
+async def test_match_fixtures_have_no_knowledge():
+    judge = MockLLMProvider(fixtures=[])
+
+    assert judge.knowledge == {}
+    with pytest.raises(FixtureNotFoundError, match="No fixture matched") as miss:
+        await judge.complete(_decompose_request(HANDBOOK))
+    assert "knowledge documents" not in str(miss.value)
 
 
 def _broken(mutate: Any) -> Dict[str, Any]:
@@ -308,6 +424,25 @@ def _broken(mutate: Any) -> Dict[str, Any]:
         (
             _broken(lambda p: p["scenarios"][0]["judge"]["claims"][0].update(evidence="x")),
             "evidence",
+        ),
+        (_broken(lambda p: p["scenarios"][0].update(knowledge={})), "knowledge must be a list"),
+        (_broken(lambda p: p["scenarios"][0].update(knowledge=["x"])), "must be an object"),
+        (
+            _broken(lambda p: p["scenarios"][0].update(knowledge=[{"id": "", "text": "x"}])),
+            r"knowledge\[0\]\.id",
+        ),
+        (
+            _broken(lambda p: p["scenarios"][0].update(knowledge=[{"id": "k", "text": " "}])),
+            r"knowledge\[0\]\.text",
+        ),
+        (
+            _broken(
+                lambda p: (
+                    p["scenarios"][0].update(knowledge=[{"id": "k", "text": "One."}]),
+                    p["scenarios"][1].update(knowledge=[{"id": "k", "text": "Two."}]),
+                )
+            ),
+            "two different texts",
         ),
     ],
 )

@@ -4,7 +4,9 @@ name: CI (knowledge add-on)
 # (docker-compose.knowledge.yml: Qdrant, the engine built with the `knowledge`
 # extra, the gateway with the handbook route, every vendor on mock-upstream and
 # the mock judge, so nothing costs anything), its documents seeded, then the
-# knowledge scenarios checked (trafficgen --expect --scenarios knowledge).
+# knowledge scenarios checked (trafficgen --expect --scenarios knowledge). The
+# mock judge (providers/mock.py) ingests each knowledge document of the scenario
+# packs as one accepted claim, its own text, and fails any other upload.
 #
 # Not a required check: the engine image with torch and the embedding model
 # make it slow (about 20 minutes), so it runs by hand, weekly, and on pull
@@ -26,6 +28,7 @@ on:
       - backend-python/src/truthtable/kb/**
       - backend-python/src/truthtable/vectorstore/**
       - backend-python/src/truthtable/graphs/nodes/retriever.py
+      - backend-python/src/truthtable/providers/mock.py
       - backend-python/pyproject.toml
       - backend-python/poetry.lock
       - backend-python/Dockerfile
@@ -40,6 +43,7 @@ on:
       - backend-python/src/truthtable/kb/**
       - backend-python/src/truthtable/vectorstore/**
       - backend-python/src/truthtable/graphs/nodes/retriever.py
+      - backend-python/src/truthtable/providers/mock.py
       - backend-python/pyproject.toml
       - backend-python/poetry.lock
       - backend-python/Dockerfile
