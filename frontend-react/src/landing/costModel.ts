@@ -245,7 +245,7 @@ export function auditShareWords(judge: string, flagRate: number, passRate: numbe
   const pct = (v: number) => `${Math.round(v * 1000) / 10}%`;
   const uniform = defaultInput('uniform_sample_rate');
   const sum = flagRate + (1 - flagRate) * passRate + uniform;
-  const total = sum > share + 1e-9 ? 'every answer (the parts below add up to more)' : `${pct(share)} of answers`;
+  const total = sum > share + 1e-9 ? 'every answer (the parts add up to more)' : `${pct(share)} of answers`;
   return (
     `${judge} audits ${total}: every flagged one (${pct(flagRate)}), ${pct(passRate)} of the other ${pct(1 - flagRate)} ` +
     `(${pct((1 - flagRate) * passRate)}), and a ${pct(uniform)} random sample of all answers, for an unbiased hallucination rate.`

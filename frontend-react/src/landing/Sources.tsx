@@ -6,7 +6,7 @@
  */
 import { ArrowRight, ArrowUpRight } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { CLAIMS_AS_OF, LABEL_TEXT, landingClaims, sourceAnchor } from './claims';
+import { LABEL_TEXT, landingClaims, sourceAnchor } from './claims';
 import { compareSources, sourceHost } from './compareData';
 import { judgeOptions } from './costModel';
 import { priceAnchorId } from './priceSources';
@@ -25,8 +25,9 @@ function useOpenOnHash(ref: React.RefObject<HTMLDetailsElement | null>) {
   }, [ref]);
 }
 
-function SourceLink({ url, children }: { url: string | null | undefined; children?: ReactNode }) {
-  if (!url) return <>Computed in this project</>;
+/** A figure with no outside source: the demo's illustration (Simulated), or our own arithmetic. */
+function SourceLink({ url, simulated = false, children }: { url: string | null | undefined; simulated?: boolean; children?: ReactNode }) {
+  if (!url) return <>{simulated ? 'Illustrative, from the demo' : 'Computed in this project'}</>;
   return (
     <a href={url} className="inline-flex items-center gap-0.5 underline underline-offset-2 hover:text-fg" rel="noreferrer">
       {children ?? 'Source'}
@@ -50,12 +51,30 @@ const perMTok = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'U
 /** A price note without the table's internal "[A]" (assumption) marker. */
 const noteText = (note: string | undefined) => (note ?? '').replace(/^\[[A-Z]\]\s*/, '');
 
+/**
+ * The newest "as of" date across the list: the claims, the judge prices and the comparison's
+ * sources (each entry keeps its own). The claims file's own date only names its last edit.
+ */
+function latestReadDate(
+  claims: readonly { asOf: string | null }[],
+  prices: readonly { entry: { as_of?: string | null } }[],
+  compare: readonly { asOf: string }[],
+): string {
+  const dates = [
+    ...claims.map((c) => c.asOf),
+    ...prices.map((p) => p.entry.as_of),
+    ...compare.map((s) => s.asOf),
+  ].filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d));
+  return dates.reduce((a, b) => (b > a ? b : a), '');
+}
+
 export function Sources() {
   const ref = useRef<HTMLDetailsElement>(null);
   useOpenOnHash(ref);
   const claims = landingClaims();
   const prices = judgeOptions().filter((o) => !o.local);
   const compare = compareSources();
+  const latest = latestReadDate(claims, prices, compare);
   return (
     <details ref={ref} id="sources" className="group">
       <summary className="cursor-pointer list-none text-sm font-semibold text-fg marker:hidden">
@@ -68,7 +87,11 @@ export function Sources() {
         Each figure carries a label. <b className="font-medium text-fg">Measured</b>: our own benchmark run.{' '}
         <b className="font-medium text-fg">Estimate</b>: our arithmetic from published prices. <b className="font-medium text-fg">Third-party</b> and{' '}
         <b className="font-medium text-fg">Vendor</b>: someone else’s published numbers. <b className="font-medium text-fg">Simulated</b>: the demo, not
-        model output. Claims as of {CLAIMS_AS_OF}.
+        model output. Each source below is dated with the day it was read; the latest is{' '}
+        <span className="whitespace-nowrap" data-sources-latest>
+          {latest}
+        </span>
+        .
       </p>
       <Group title="Figures">
         {claims.map((c) => (
@@ -79,7 +102,7 @@ export function Sources() {
             <p className="mt-0.5 text-fg-muted">{c.basis}</p>
             {c.caveat ? <p className="mt-0.5 text-fg-muted">{c.caveat}</p> : null}
             <p className="mt-0.5 text-xs text-fg-muted">
-              <SourceLink url={c.sourceUrl} />
+              <SourceLink url={c.sourceUrl} simulated={c.label === 'simulated'} />
               {c.asOf ? ` · as of ${c.asOf}` : ''}
             </p>
           </li>

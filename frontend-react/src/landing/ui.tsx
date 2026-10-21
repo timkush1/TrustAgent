@@ -3,8 +3,8 @@
  * entry has a 110 KB gzip budget (npm run size), so these are plain elements over the shared tokens.
  */
 import clsx from 'clsx';
-import { Check, Copy, Monitor, Moon, Sun } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { BadgeCheck, Calculator, Check, Copy, FlaskConical, Globe, Monitor, Moon, Store, Sun, type LucideIcon } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { copyText } from '@/components/common/clipboard';
 export { Ticked } from '@/components/common/Ticked';
 import { nextThemePreference, setThemePreference, useThemePreference, type ThemePreference } from '@/lib/theme';
@@ -12,18 +12,32 @@ import { sourceAnchor, type ClaimView } from './claims';
 import { buttonClass, container } from './styles';
 
 /** Where a number comes from: an achromatic chip that links to its entry under "Sources". */
+/**
+ * The icon beside each value label: the same five as the dashboard's EvidenceBadge
+ * (src/domain/controlPresentation.ts), so the site and the app show one label system (P5C-10).
+ */
+export const LABEL_ICONS: Record<ClaimView['label'], LucideIcon> = {
+  measured: BadgeCheck,
+  estimate: Calculator,
+  third_party: Globe,
+  vendor: Store,
+  simulated: FlaskConical,
+};
+
 export function LabelChip({ claim, className }: { claim: Pick<ClaimView, 'id' | 'label' | 'labelText'>; className?: string }) {
+  const Icon = LABEL_ICONS[claim.label];
   return (
     <a
       href={`#${sourceAnchor(claim.id)}`}
       data-value-label={claim.label}
       aria-label={`${claim.labelText}: where this number comes from`}
       className={clsx(
-        'inline-flex h-5 shrink-0 items-center rounded-full border border-border-strong px-1.5 align-middle text-2xs font-medium text-fg-muted no-underline transition-colors hover:border-fg-subtle hover:text-fg',
+        'inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-border-strong px-1.5 align-middle text-2xs font-medium whitespace-nowrap text-fg-muted no-underline transition-colors hover:border-fg-subtle hover:text-fg',
         claim.label === 'simulated' && 'border-dashed',
         className,
       )}
     >
+      {Icon ? <Icon aria-hidden="true" className="size-3" /> : null}
       {claim.labelText}
     </a>
   );
@@ -74,13 +88,46 @@ export function Section({ id, eyebrow, title, lead, children, className }: { id:
  * on a narrow screen it scrolls sideways inside a named, focusable region (DESIGN.md: wide content
  * scrolls inside a named, focusable region, never the page).
  */
+/** True while the element's content runs past its right edge and is not scrolled to the end. */
+function useMoreToTheRight(ref: RefObject<HTMLElement | null>): boolean {
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const update = () => setMore(el.scrollWidth - el.clientWidth - el.scrollLeft > 1);
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : null;
+    observer?.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      observer?.disconnect();
+    };
+  }, [ref]);
+  return more;
+}
+
+/**
+ * A line of code that keeps its line and scrolls sideways inside a named, focusable region. When
+ * the line runs past the edge, a short text hint under it says so (a cut-off command must never
+ * look complete), and goes away once the reader has scrolled to the end.
+ */
 export function CodeScroll({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const more = useMoreToTheRight(ref);
   return (
-    // A keyboard has to reach it to scroll it.
-    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
-    <div role="region" aria-label={`${label} (scrolls sideways)`} tabIndex={0} className={clsx('min-w-0 overflow-x-auto', className)} data-code-scroll>
-      {children}
-    </div>
+    <>
+      {/* A keyboard has to reach it to scroll it. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+      <div ref={ref} role="region" aria-label={`${label} (scrolls sideways)`} tabIndex={0} className={clsx('min-w-0 overflow-x-auto', className)} data-code-scroll>
+        {children}
+      </div>
+      {more ? (
+        <p className="mt-1 text-xs text-fg-muted" aria-hidden="true" data-scroll-hint>
+          The line continues: scroll sideways →
+        </p>
+      ) : null}
+    </>
   );
 }
 

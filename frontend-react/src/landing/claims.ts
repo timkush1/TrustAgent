@@ -85,8 +85,6 @@ export function landingClaims(): ClaimView[] {
   return (claimsDoc.claims as ClaimEntry[]).filter((c) => c.surfaces.includes('landing')).map((c) => claim(c.id));
 }
 
-export const CLAIMS_AS_OF: string = claimsDoc.as_of;
-
 /** The anchor of a claim's entry in the footer's source list. */
 export function sourceAnchor(id: string): string {
   return `source-${id}`;
