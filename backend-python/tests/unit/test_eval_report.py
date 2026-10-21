@@ -98,6 +98,10 @@ def _records(system: str, *, cost: float = 0.001, mock: bool = False) -> List[Ju
             cost_source="simulated" if mock else "computed",
             calls=1,
             mock=mock,
+            # Where the calls went (D203): the vendor, unless the output is mock.
+            details={}
+            if mock
+            else {"endpoint_host" if system == GATE else "host": "openrouter.ai"},
         )
         for example_id, label, predicted, score, latency in rows
     ]
@@ -340,6 +344,32 @@ def test_a_non_vendor_run_is_simulated(tmp_path: Path) -> None:
         write_local_run(tmp_path, document, LABEL_MEASURED, records, BENCH_MANIFEST)
 
 
+@pytest.mark.parametrize("knobs", [{"gate_host": None}, {"judge_host": None}])
+def test_a_scored_result_without_a_host_is_simulated(tmp_path: Path, knobs: Dict[str, Any]) -> None:
+    # D203 fails closed: a result that names no host (an old gate-eval build, a pre-P6 cache)
+    # cannot show it came from a vendor, so the run is simulated, never measured.
+    document, label, records = p6_run(**knobs)
+
+    assert label == LABEL_SIMULATED and document["measured"] is False
+    assert simulated_reasons(records, document["vendor"]) == ["non_vendor_host"]
+    with pytest.raises(MockOutputRefused):
+        write_local_run(tmp_path, document, LABEL_MEASURED, records, BENCH_MANIFEST)
+
+
+def test_publish_refuses_results_without_a_host_even_under_a_vendor_block(tmp_path: Path) -> None:
+    # A run.json edited to drop the gate's hosts while its vendor block still names the vendor.
+    run_file = write_p6_run(tmp_path / "local")
+    run = json.loads(run_file.read_text())
+    for record in run["per_example"][GATE]:
+        record["details"].pop("endpoint_host")
+    assert run["benchmark_run"]["vendor"]["decision_host"] == "openrouter.ai"
+
+    problems = publish_problems(run)
+
+    assert [problem.code for problem in problems] == ["non_vendor_host"], problems
+    assert "name no host" in problems[0].message
+
+
 def test_every_refusal_is_listed_together(tmp_path: Path, bench_paths: Dict[str, Path]) -> None:
     run_file = write_p6_run(tmp_path / "local", dirty=True, failed=7, gate_host="127.0.0.1")
 
@@ -498,6 +528,27 @@ def test_check_only_writes_nothing_outside_scratch(
     assert json.loads(written["measured"].read_text())["status"] == "measured"
     assert bench_paths["measured_path"].read_text() == before
     assert not bench_paths["results_dir"].exists() and not bench_paths["index_path"].exists()
+
+
+@pytest.mark.parametrize("knobs", [{"mock": True}, {"gate_host": "127.0.0.1"}])
+def test_check_only_writes_no_would_be_files_for_a_simulated_run(
+    tmp_path: Path, bench_paths: Dict[str, Path], knobs: Dict[str, Any]
+) -> None:
+    # A simulated run's would-be measured.json would say "measured" over mock figures (D203).
+    run_file = write_p6_run(tmp_path / "local", **knobs)
+    scratch = tmp_path / "scratch"
+
+    problems, written = check_publish(
+        run_file,
+        scratch,
+        results_dir=bench_paths["results_dir"],
+        measured_path=bench_paths["measured_path"],
+    )
+
+    assert {"mock", "non_vendor_host"} & {problem.code for problem in problems}
+    assert set(written) == {"problems"}
+    assert sorted(path.name for path in scratch.rglob("*") if path.is_file()) == ["problems.json"]
+    assert json.loads(written["problems"].read_text())["publishable"] is False
 
 
 # ---------------------------------------------------------------------------

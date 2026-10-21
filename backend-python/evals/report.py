@@ -62,6 +62,8 @@ from .judges import (
     CASCADE_RESPONSE,
     FAILED,
     GATE,
+    LLM_FULL_AUDIT,
+    LLM_SAME_CHECKS,
     OK,
     OVER_BUDGET,
     JudgeRecord,
@@ -224,6 +226,29 @@ def record_hosts(records_by_system: Mapping[str, Sequence[JudgeRecord]]) -> Set[
     return hosts
 
 
+# The detail that names where a system's calls went (D203): gate-eval's endpoint_host, the
+# judge provider's host. cascade_response is computed offline from the other two.
+HOST_DETAIL = {GATE: "endpoint_host", LLM_SAME_CHECKS: "host", LLM_FULL_AUDIT: "host"}
+
+
+def unhosted_results(records_by_system: Mapping[str, Sequence[JudgeRecord]]) -> int:
+    """
+    How many scored, non-mock results name no host (D203 fails closed): a
+    result whose host is unknown (a gate-eval build without endpoint_host, a
+    cache from before P6, a host too long to keep) cannot show it came from a
+    vendor, so it counts as a non-vendor host.
+    """
+    count = 0
+    for system, name in HOST_DETAIL.items():
+        for record in records_by_system.get(system) or []:
+            if record.mock or not _is_scored(record):
+                continue
+            host = record.details.get(name)
+            if not (isinstance(host, str) and host):
+                count += 1
+    return count
+
+
 def simulated_reasons(
     records_by_system: Mapping[str, Sequence[JudgeRecord]],
     vendor: Optional[Mapping[str, Optional[str]]] = None,
@@ -231,7 +256,7 @@ def simulated_reasons(
     """
     Why a run is simulated (empty when it is measured): mock output, or a call
     to a host that is not a vendor's (D203), e.g. mock-upstream behind
-    TRUTHTABLE_OPENROUTER_BASE_URL.
+    TRUTHTABLE_OPENROUTER_BASE_URL, or a scored result that names no host.
     """
     reasons: List[str] = []
     if any(is_simulated(records) for records in records_by_system.values()):
@@ -240,7 +265,7 @@ def simulated_reasons(
     hosts = record_hosts(records_by_system)
     if vendor is not None:
         hosts |= {host for host in vendor.values() if host}
-    if hosts - allowed:
+    if hosts - allowed or unhosted_results(records_by_system):
         reasons.append(REASON_NON_VENDOR_HOST)
     return reasons
 
@@ -779,6 +804,15 @@ def publish_problems(run: Mapping[str, Any]) -> List[Problem]:
     if stray and not any(problem.code == "non_vendor_host" for problem in problems):
         problems.append(
             Problem("non_vendor_host", f"results came from {', '.join(stray)}, not a vendor host")
+        )
+    unhosted = unhosted_results(by_system)
+    if unhosted and not any(problem.code == "non_vendor_host" for problem in problems):
+        problems.append(
+            Problem(
+                "non_vendor_host",
+                f"{unhosted} scored results name no host, so nothing shows they came from a "
+                "vendor (run it again with this harness and a fresh gate-eval build)",
+            )
         )
     snapshots = sorted(run_snapshots(run))
     if len(snapshots) > 1 and not any(problem.code == "mixed_snapshot" for problem in problems):
@@ -1396,6 +1430,8 @@ def benchmark_paths() -> Tuple[Path, Path]:
 
 # Run refusals after which the derived measured.json is not checked (it would only echo them).
 _FATAL = frozenset({"mock", "non_vendor_host", "schema", "missing_fields"})
+# Refusals that make a run simulated (D203): --check-only writes none of its would-be files.
+_SIMULATED_CODES = frozenset({"mock", "non_vendor_host"})
 
 
 @dataclass
@@ -1572,7 +1608,10 @@ def check_publish(
     """
     bench publish --check-only (Gate B): every check, and the files a publish
     would write, written into `scratch_dir` only (with problems.json). The
-    published results, index and measured.json are only read.
+    published results, index and measured.json are only read. A simulated run
+    (mock output, a non-vendor host) gets problems.json alone: it can never be
+    published, and a would-be measured.json of it would label simulated
+    figures measured, even in scratch.
     """
     results, _, claims = _default_paths(results_dir, None, measured_path)
     prepared = prepare_publish(
@@ -1602,12 +1641,13 @@ def check_publish(
             ],
         },
     )
-    if prepared.document.get("run_id") is not None:
+    simulated = any(problem.code in _SIMULATED_CODES for problem in prepared.problems)
+    if prepared.document.get("run_id") is not None and not simulated:
         _write_json(written["result"], prepared.document)
         _write_json(written["index"], build_index(prepared.runs, prepared.generated_at))
     else:
         del written["result"], written["index"]
-    if prepared.derived:
+    if prepared.derived and not simulated:
         _write_json(written["measured"], prepared.derived)
     else:
         del written["measured"]
