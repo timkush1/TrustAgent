@@ -21,6 +21,11 @@ const (
 // outcome as an output line.
 type evaluator struct {
 	*studio.Runner
+	// endpointHost is the decision endpoint's bare hostname (nil for mock); connection is warm or
+	// cold (D205); policySource is where the route came from (builtin for --policy builtin).
+	endpointHost *string
+	connection   string
+	policySource string
 }
 
 // compileInfo is what compile() produced for an example.
@@ -50,7 +55,11 @@ type result struct {
 	// Skipped is over_budget when the cost cap stopped the run before this example.
 	Skipped *string `json:"skipped"`
 	// Simulated is true with the mock backend: the probabilities are not model output.
-	Simulated     bool                      `json:"simulated"`
+	Simulated bool `json:"simulated"`
+	// EndpointHost is the bare hostname the decision-model calls went to (D203), null for mock.
+	EndpointHost *string `json:"endpoint_host"`
+	// Connection is warm when --warm made the free key check first (D205), else cold.
+	Connection    string                    `json:"connection"`
 	Route         string                    `json:"route"`
 	Mode          string                    `json:"mode"`
 	Decision      *decision.Core            `json:"decision"`
@@ -73,7 +82,11 @@ type result struct {
 func (e *evaluator) newResult(line int, ex *example) *result {
 	r := &result{
 		Line: line, Route: e.Route.Name, Mode: e.Mode, Simulated: e.Client.Info().Backend == jev.BackendMock,
+		EndpointHost: e.endpointHost, Connection: e.connection,
 		Detectors: []decision.DetectorResult{}, Excluded: []decision.Exclusion{},
+	}
+	if r.Connection == "" {
+		r.Connection = connectionCold
 	}
 	if ex != nil {
 		l := ex.line

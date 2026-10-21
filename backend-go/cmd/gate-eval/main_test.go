@@ -278,10 +278,10 @@ func testEvaluator(t *testing.T, client jev.Client, capUSD float64) *evaluator {
 	route := *pol.Routes[0] // support-bot: groundedness@1 and contradiction@1
 	b := decision.DefaultBudget()
 	b.MaxResponseTokens, b.EvidenceMaxTokens = route.Decision.MaxResponseTokens, route.Evidence.MaxTokens
-	return &evaluator{&studio.Runner{
+	return &evaluator{Runner: &studio.Runner{
 		Client: client, Route: &route, Mode: route.Mode, Model: "typesafe/jev-1.13", Specs: reg.Specs(), Budget: b,
 		PricePerMTok: 10, CallTimeout: time.Second, Spend: studio.NewSpend(capUSD), Call: jev.CallOptions{Class: jev.ClassAsync},
-	}}
+	}, connection: connectionCold}
 }
 
 func examples(n int) string {

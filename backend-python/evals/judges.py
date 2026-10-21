@@ -72,6 +72,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import (
     Any,
     Dict,
@@ -124,7 +125,7 @@ from truthtable.scoring.aggregate import PARTIAL_KEY, SUPPORTED_KEY
 from truthtable.security import parse_json_strict
 
 from .budget import BudgetExhausted, CostBudget, Reservation
-from .examples import LEVEL_CLAIM, BenchExample
+from .examples import LEVEL_CLAIM, BenchExample, evaluator_labels
 
 # benchmark-run.v1 system ids.
 GATE = "gate"
@@ -225,9 +226,14 @@ class JudgeRecord:
     error_kind: Optional[str] = None
     mock: bool = False  # Simulated output (mock decision model or judge)
     details: Dict[str, Any] = field(default_factory=dict)
+    # Free text for the operator (a gate-eval stderr tail, an error message): kept in the
+    # cache and the run's diagnostics file, never in a run's per_example (D204: ids, labels
+    # and scores only; an error can echo the example).
+    note: Optional[str] = None
 
-    def to_json(self) -> Dict[str, Any]:
-        return {
+    def to_json(self, *, public: bool = False) -> Dict[str, Any]:
+        """The record as JSON; `public` leaves out the free-text note."""
+        document = {
             "example_id": self.example_id,
             "system": self.system,
             "status": self.status,
@@ -242,6 +248,9 @@ class JudgeRecord:
             "mock": self.mock,
             "details": self.details,
         }
+        if self.note is not None and not public:
+            document["note"] = self.note
+        return document
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> "JudgeRecord":
@@ -259,6 +268,7 @@ class JudgeRecord:
             error_kind=data.get("error_kind"),
             mock=bool(data.get("mock")),
             details=dict(data.get("details") or {}),
+            note=str(data["note"]) if data.get("note") is not None else None,
         )
 
 
@@ -377,6 +387,16 @@ class MeteredProvider(LLMProvider):
     @property
     def inner_name(self) -> str:
         return self.inner.provider_name
+
+    @property
+    def host(self) -> Optional[str]:
+        """The bare hostname the judge's calls go to (D203); None for a provider without one."""
+        if self.simulated:
+            return None
+        base_url = getattr(self.inner, "base_url", None)
+        if not isinstance(base_url, str) or not base_url:
+            return None
+        return urlsplit(base_url).hostname or None
 
     @property
     def supports_structured_outputs(self) -> bool:
@@ -585,6 +605,14 @@ class GateEvalConfig:
     timeout_s: float = GATE_TIMEOUT_S
     reserve_usd: float = GATE_RESERVE_USD
     env: Mapping[str, str] = field(default_factory=dict)
+    # Variables removed from gate-eval's environment: TRUTHTABLE_POLICY_FILE under
+    # --policy builtin, so no policy file can change what the bench measures (D204).
+    unset_env: Tuple[str, ...] = ()
+
+    def process_env(self, environ: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
+        """gate-eval's environment: this process's, plus `env`, minus `unset_env`."""
+        merged = {**(os.environ if environ is None else environ), **self.env}
+        return {name: value for name, value in merged.items() if name not in self.unset_env}
 
 
 def gate_eval_input(example: BenchExample) -> Dict[str, Any]:
@@ -629,6 +657,24 @@ class GateOutcome:
     calls: int
     status: str
     simulated: bool
+    endpoint_host: Optional[str] = None
+    connection: Optional[str] = None
+    risk_raw: Mapping[str, Optional[float]] = field(default_factory=dict)
+
+
+def _error_reason(evaluators: Mapping[str, Any]) -> Optional[str]:
+    """
+    The decision-model error behind a failed decision, from the evaluators'
+    reasons ("error:credits" -> "credits", "timeout"), so the stop rule can
+    name its fix (D204).
+    """
+    for result in evaluators.values():
+        if not isinstance(result, Mapping) or result.get("status") != "error":
+            continue
+        reason = result.get("reason")
+        if isinstance(reason, str) and reason:
+            return reason.split(":", 1)[1] if reason.startswith("error:") else reason
+    return None
 
 
 def _risk_raw(evaluators: Mapping[str, Any], ref: str) -> Optional[float]:
@@ -673,8 +719,8 @@ def parse_gate_result(line: Mapping[str, Any], config: GateEvalConfig) -> GateOu
     ok = status in ("ok", "partial") and score is not None and not undecided
     error_kind = None
     if not ok:
-        degraded = decision.get("degraded")
-        error_kind = f"gate_{status or 'unknown'}" + (f":{degraded}" if degraded else "")
+        cause = _error_reason(evaluators) or decision.get("skip_reason") or decision.get("degraded")
+        error_kind = f"gate_{status or 'unknown'}" + (f":{cause}" if cause else "")
         if status in ("ok", "partial"):
             error_kind = "gate_no_signal" if score is None else f"gate_verdict_{verdict}"
     backend = str(usage["backend"]) if usage.get("backend") else None
@@ -694,7 +740,15 @@ def parse_gate_result(line: Mapping[str, Any], config: GateEvalConfig) -> GateOu
         calls=calls if isinstance(calls, int) and not isinstance(calls, bool) else 0,
         status=status,
         simulated=line.get("simulated") is True or backend == "mock" or cost_source == SIMULATED,
+        endpoint_host=_short(line.get("endpoint_host")),
+        connection=_short(line.get("connection")),
+        risk_raw={ref: _risk_raw(evaluators, ref) for ref in config.evaluators},
     )
+
+
+def _short(value: Any) -> Optional[str]:
+    """A short identifier from a gate-eval line (a host, an enum), else None."""
+    return value if isinstance(value, str) and 0 < len(value) <= 64 else None
 
 
 def _budget_stop(answer: Optional[Mapping[str, Any]]) -> bool:
@@ -757,7 +811,7 @@ class GateJudge:
         )
 
     async def _run(self, line: str, max_cost_usd: float) -> Tuple[int, bytes, bytes]:
-        env = {**os.environ, **self.config.env}
+        env = self.config.process_env()
         process = await asyncio.create_subprocess_exec(
             *gate_eval_args(self.config, max_cost_usd),
             stdin=asyncio.subprocess.PIPE,
@@ -830,7 +884,7 @@ class GateJudge:
             budget.settle(reservation, None, system=self.system, example_id=example.id)
             tail = stderr.decode("utf-8", "replace").strip()[-300:]
             kind = f"gate_eval_exit_{code}" if code != 0 else "gate_eval_no_answer"
-            return self._record(example, FAILED, error_kind=kind, calls=1, details={"stderr": tail})
+            return self._record(example, FAILED, error_kind=kind, calls=1, note=tail or None)
         error = _line_error(answer)
         if error is not None or not isinstance(answer.get("decision"), Mapping):
             # An invalid example or a compile failure: no decision-model call.
@@ -846,7 +900,7 @@ class GateJudge:
                 FAILED,
                 error_kind="gate_eval_error" if error is not None else "gate_eval_no_decision",
                 cost_usd=charged,
-                details={"error": (error or "")[:300]},
+                note=(error or "")[:300] or None,
             )
 
         outcome = parse_gate_result(answer, self.config)
@@ -860,11 +914,17 @@ class GateJudge:
         details = {
             "backend": outcome.backend,
             "snapshot": outcome.snapshot,
+            "endpoint_host": outcome.endpoint_host,
+            "connection": outcome.connection,
             "gate_status": outcome.status,
             "escalate": outcome.escalate,
             "contradiction": outcome.contradiction,
-            "verdict": answer["decision"].get("verdict"),
-            "action": answer["decision"].get("action"),
+            # Every evaluator's raw risk and the example's labels, so a run can be exported
+            # as held-out calibration labels (D206: bench export-labels).
+            "risk_raw": dict(outcome.risk_raw),
+            "labels": evaluator_labels(example),
+            "verdict": _short(answer["decision"].get("verdict")),
+            "action": _short(answer["decision"].get("action")),
         }
         common: Dict[str, Any] = {
             "latency_ms": outcome.latency_ms if outcome.latency_ms is not None else wall_ms,
@@ -1089,12 +1149,13 @@ class LLMSameChecksJudge:
             **_metered_fields(meter),
         )
         base.details["models"] = sorted(meter.models)
+        base.details["host"] = self.provider.host
         if meter.over_budget:
             base.status, base.error_kind = OVER_BUDGET, "cost_cap"
             return base
         if answers is None:
             base.status, base.error_kind = FAILED, error_kind
-            base.details["problem"] = problem
+            base.note = problem
             return base
         probabilities = {qid: probability for qid, (_, probability) in answers.items()}
         # The risk signal as the gate normalizes a noul answer (SPEC section 2.9).
@@ -1207,6 +1268,7 @@ class LLMFullAuditJudge:
         for key, value in _metered_fields(meter).items():
             setattr(record, key, value)
         record.details["models"] = sorted(meter.models)
+        record.details["host"] = self.provider.host
         if meter.over_budget:
             # A call was refused mid-audit (the graph may have turned it into an
             # UNKNOWN claim): the example is excluded, never scored.

@@ -15,7 +15,12 @@ Benchmark runner (SPEC section 3.2: concurrency, cost cap, resumable cache).
 - the run's CostBudget is shared by every system: once a reservation is
   refused, no new example starts and the rest are recorded over_budget
   (excluded and counted, never silently dropped);
-- one example raising never ends the run (D17): it is recorded failed.
+- one example raising never ends the run (D17): it is recorded failed;
+- the stop rule (D204): after `stop_after_failures` consecutive fresh
+  failures of one system, no new example starts. The examples it never
+  reached are recorded `not_run` and never cached, so the same command with
+  `--retry-failed` continues where it stopped (and retries the failures).
+  Failures reused from the cache do not count: they cost nothing again.
 """
 
 import asyncio
@@ -28,12 +33,15 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 from .budget import CostBudget
 from .examples import BenchExample
-from .judges import FAILED, OVER_BUDGET, Judge, JudgeRecord
+from .judges import FAILED, OK, OVER_BUDGET, Judge, JudgeRecord
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONCURRENCY = 4
 EXAMPLE_TIMEOUT_S = 600.0
+DEFAULT_STOP_AFTER_FAILURES = 5
+# The status of an example the stop rule kept from starting (never cached, never scored).
+NOT_RUN = "not_run"
 
 # (system, done, total) after each example.
 Progress = Callable[[str, int, int], None]
@@ -88,6 +96,24 @@ class ResultCache:
             f.write(json.dumps({"key": key, "record": record.to_json()}, sort_keys=True) + "\n")
 
 
+@dataclass(frozen=True)
+class Stop:
+    """Why the stop rule ended a system: its last consecutive failures."""
+
+    system: str
+    failures: int
+    error_kinds: List[str]  # The consecutive failures' kinds, oldest first
+
+    @property
+    def kind(self) -> str:
+        """The most frequent kind among the consecutive failures (the last on a tie)."""
+        counts: Dict[str, int] = {}
+        for kind in self.error_kinds:
+            counts[kind] = counts.get(kind, 0) + 1
+        best = max(counts.values())
+        return [kind for kind in self.error_kinds if counts[kind] == best][-1]
+
+
 @dataclass
 class SystemRun:
     """One system's records, in example order."""
@@ -96,6 +122,7 @@ class SystemRun:
     records: List[JudgeRecord]
     reused: int = 0  # From the cache
     ran: int = 0  # Judges called in this session (not those skipped past the cap)
+    stopped: Optional[Stop] = None  # The stop rule ended the system
 
     def by_id(self) -> Dict[str, JudgeRecord]:
         return {record.example_id: record for record in self.records}
@@ -121,12 +148,31 @@ async def run_judge(
     retry_failed: bool = False,
     example_timeout_s: float = EXAMPLE_TIMEOUT_S,
     progress: Optional[Progress] = None,
+    stop_after_failures: int = 0,
 ) -> SystemRun:
-    """Judge `examples` with `judge` (see the module docstring)."""
+    """Judge `examples` with `judge` (see the module docstring); 0 turns the stop rule off."""
     fingerprint = judge.fingerprint()
     semaphore = asyncio.Semaphore(max(1, concurrency))
     run = SystemRun(system=judge.system, records=[])
     done = 0
+    streak: List[str] = []  # Error kinds of the current run of consecutive fresh failures
+
+    def not_run(example: BenchExample) -> JudgeRecord:
+        return JudgeRecord(
+            example_id=example.id,
+            system=judge.system,
+            status=NOT_RUN,
+            label=example.label_hallucinated,
+            error_kind="stopped",
+        )
+
+    def count(record: JudgeRecord) -> None:
+        if record.status == FAILED:
+            streak.append(record.error_kind or "unknown")
+            if stop_after_failures > 0 and len(streak) >= stop_after_failures and not run.stopped:
+                run.stopped = Stop(judge.system, len(streak), list(streak))
+        elif record.status == OK:
+            streak.clear()
 
     async def one(example: BenchExample) -> JudgeRecord:
         nonlocal done
@@ -136,6 +182,8 @@ async def run_judge(
             run.reused += 1
             return cached
         async with semaphore:
+            if run.stopped is not None:
+                return not_run(example)
             if budget.exhausted:
                 record = _over_budget(judge, example)
             else:
@@ -153,6 +201,7 @@ async def run_judge(
                     )
             if record.status != OVER_BUDGET:
                 cache.put(key, record)
+                count(record)
             done += 1
             if progress is not None:
                 progress(judge.system, done, len(examples))
