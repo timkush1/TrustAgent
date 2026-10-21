@@ -65,7 +65,7 @@ jobs:
       # key (D70): run the gateway's -check-config on the host with the environment compose
       # gives its proxy, so a refusal shows here with its warnings instead of as an unhealthy
       # container in the E2E job. Same Go and stub setup as ci-go.yml.
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: backend-go/go.mod
           cache-dependency-path: backend-go/go.sum
