@@ -1112,7 +1112,9 @@ def cost_source_entry(run: Mapping[str, Any], system: str) -> Dict[str, Any]:
     if not isinstance(n, int) or isinstance(n, bool) or n < 1:
         return out
     tokens = cost.get("input_tokens_per_answer")
-    tokens = tokens if isinstance(tokens, int) and not isinstance(tokens, bool) and tokens > 0 else None
+    tokens = (
+        tokens if isinstance(tokens, int) and not isinstance(tokens, bool) and tokens > 0 else None
+    )
     judge = (entry.get("judge") or {}).get("model") or None
     dataset = dataset_text(run.get("dataset") or {})
     out.update({"dataset": dataset, "n": n})

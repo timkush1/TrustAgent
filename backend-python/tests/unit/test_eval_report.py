@@ -163,7 +163,9 @@ def test_the_input_tokens_per_answer_are_the_vendors_count_or_nothing() -> None:
     # A record read back from the cache keeps its count; a bad count reads as none.
     again = JudgeRecord.from_json(records[0].to_json())
     assert again.input_tokens == 500
-    assert JudgeRecord.from_json({**records[0].to_json(), "input_tokens": True}).input_tokens is None
+    assert (
+        JudgeRecord.from_json({**records[0].to_json(), "input_tokens": True}).input_tokens is None
+    )
     assert JudgeRecord.from_json({**records[0].to_json(), "input_tokens": 0}).input_tokens is None
 
 
@@ -330,7 +332,9 @@ def test_publish_writes_results_index_and_measured_values(
     )
     assert sources["llm_same_checks_usd_per_1k"]["model"] == "anthropic/claude-haiku-4.5"
     assert sources["llm_full_audit_usd_per_1k"]["cost_source"] == "reported"
-    assert "about 4,210 input tokens per answer" in sources["llm_full_audit_usd_per_1k"]["conditions"]
+    assert (
+        "about 4,210 input tokens per answer" in sources["llm_full_audit_usd_per_1k"]["conditions"]
+    )
     assert sources["attempts"] == {"bench_runs": 1, "refused_run_ids": []}
     accuracy = measured["intervals"]["ragtruth_qa_accuracy"]
     assert accuracy["method"] == "wilson" and (accuracy["n_pos"], accuracy["n_neg"]) == (10, 30)
