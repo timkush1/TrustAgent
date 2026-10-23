@@ -2,36 +2,43 @@
 The body of the release pull request, feat/v2-jev-gateway → main (step C6). Copy it with
 `make clip FILE=docs/launch/release-pr.md` and paste it into the "Open a pull request" form.
 GitHub hides this comment. Links are absolute (a PR body has no relative links). Before copying: the TO FILL lines are filled at C4 (the measured run,
-the tape, the terms mode), and the PR is merged with "Create a merge commit" only (D215).
+the tape, the terms mode), and the owner merges it on GitHub with "Create a merge commit" only (D215, D220).
+main already holds v2 phases P0 to P5: the owner made it public on 2026-10-21 (merge a582549, D220),
+so this PR brings P6 and the fixes made since, and the 2.0.0 version.
 -->
 
 # TrustAgent 2.0.0 "Jev gateway"
 
 TrustAgent 2.0 turns the 1.x async auditor into a **hallucination gateway**. Apps point their
 OpenAI or Anthropic SDK at a Go proxy; every answer gets deterministic Tier-0 checks and one
-**Fast check (Jev)** call that asks all of the route's checks at once, and the route's policy
-observes, flags, blocks or falls back. Groundedness is checked against what the request already
-carries (no RAG by default); an asynchronous deep audit (LangGraph) explains the risky answers
-claim by claim; and a redesigned dashboard, a static demo site and Evaluator Studio sit on top.
+**Fast check (Jev)** call (Jev is TypeSafe AI's decision model, reached through OpenRouter) that
+asks all of the route's checks at once, and the route's policy observes, flags, blocks or falls
+back. Groundedness is checked against what the request already carries (no RAG by default); an
+asynchronous deep audit (LangGraph) explains the risky answers claim by claim; and a redesigned
+dashboard, a static demo site and Evaluator Studio sit on top.
 
-The full list of changes is the `2.0.0 "Jev gateway"` section of [CHANGELOG.md](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/CHANGELOG.md);
+`main` has carried phases P0 to P5 since 2026-10-21. This PR adds P6 (the measured benchmark, the
+recorded demo, the release tooling and launch kit) and makes it version 2.0.0. The full list of
+changes is the `2.0.0 "Jev gateway"` section of [CHANGELOG.md](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/CHANGELOG.md);
 the design is [docs/v2/SPEC.md](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/SPEC.md).
 
-## Phases
+## How it was built
 
-Each phase ran in parallel worktrees, was merged on an integration branch after its own gate, and
-then into `feat/v2-jev-gateway`. The branch keeps that history, so this PR is merged with a merge
+Designed and directed by one developer, built with AI coding agents (Claude Code) working to the
+written plans below, tests and reviews. Each phase ran in parallel worktrees, merged on an
+integration branch only after its own gate, and was checked by separate review agents before it
+reached `feat/v2-jev-gateway`. The branch keeps that history, so this PR is merged with a merge
 commit (no squash, no rebase).
 
 | Phase | What it delivered | Plan |
 |---|---|---|
-| P0 / P0.5 | Baseline, CI split per stream, Makefile fragments, toolchain upgrade | [PLAN.md, phase 8](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/PLAN.md#phase-8--baseline-and-toolchain) |
-| P1 / S0 / P1b | `contracts/`, proto v2, vendor spikes, the zero-key walking skeleton | [phase 9](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/PLAN.md#phase-9--contracts-and-walking-skeleton) |
-| P2 | Gateway, engine, dashboard and DX cores | [phase 10](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/PLAN.md#phase-10--cores) |
-| P3 | The enforcing pipeline, streaming, policies, the redesigned pages (M-Demo gate) | [P3-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P3-PLAN.md) |
-| P4 | Security, the credential store, Connect OpenRouter, Studio, calibration, Savings | [P4-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P4-PLAN.md) |
-| P5 | The static site with live checks, the landing page, release images and tooling | [P5-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P5-PLAN.md) |
-| P6 | Measured benchmarks, the recorded demo, the release tooling and launch kit | [P6-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P6-PLAN.md) |
+| P0 / P0.5 | Baseline, CI split per stream, Makefile fragments, toolchain upgrade (on `main` since 2026-10-21) | [PLAN.md, phase 8](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/PLAN.md#phase-8--baseline-and-toolchain) |
+| P1 / S0 / P1b | `contracts/`, proto v2, vendor spikes, the zero-key walking skeleton (on `main`) | [phase 9](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/PLAN.md#phase-9--contracts-and-walking-skeleton) |
+| P2 | Gateway, engine, dashboard and DX cores (on `main`) | [phase 10](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/PLAN.md#phase-10--cores) |
+| P3 | The enforcing pipeline, streaming, policies, the redesigned pages (on `main`) | [P3-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P3-PLAN.md) |
+| P4 | Security, the credential store, Connect OpenRouter, Studio, calibration, Savings (on `main`) | [P4-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P4-PLAN.md) |
+| P5 | The static site with live checks, the landing page, release images and tooling (on `main`) | [P5-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P5-PLAN.md) |
+| **P6 (this PR)** | Measured benchmarks, the recorded demo, the release tooling and launch kit, version 2.0.0 | [P6-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P6-PLAN.md) |
 
 ## Breaking changes
 
@@ -67,5 +74,6 @@ on, snapshot, TrustAgent version). The terms check is in
       a mock is labelled measured (`make check-claims-launch`).
 - [ ] The owner reviewed the comparison table, the social card, the GIF, the video and the post.
 
-After the merge: the 2.0.0 tag, the GHCR images made public, Pages turned on, and the GitHub
-release with its notes from `make release-notes TAG=v2.0.0`.
+After the merge: Pages deploys the recorded demo, the GitHub release creates the 2.0.0 tag (the
+owner makes it in the web UI) with its notes from `make release-notes TAG=v2.0.0`, and the tag's
+build publishes the semver images (the `edge` images on GHCR are public already).

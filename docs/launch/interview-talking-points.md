@@ -1,8 +1,12 @@
 # Interview talking points
 
-Ten engineering stories from building TrustAgent 2.0, each told the same way: **the decision**,
+Eleven engineering stories from building TrustAgent 2.0, each told the same way: **the decision**,
 **the alternatives** it beat, **the measured result**, and **what went wrong**. Each fits in about
 two minutes; the links go to the code or the record behind it.
+
+Say early how it was built: TrustAgent was designed and directed by one developer and built with AI
+coding agents (Claude Code) working to written plans, tests and reviews. Story 11 is how that was
+run, and it is a strength to explain, not a footnote to hide.
 
 Lead with the measured trade-off (story 1 and the calibration story, 4), then show the Studio (7).
 Interviewers reward trade-off reasoning and measurement over feature counts.
@@ -83,8 +87,9 @@ No benchmark run of our own is published yet, so there are no measured results h
   <!-- claim:arize_ragtruth_jev_accuracy --> 87% [third-party] at its best, which shows why
   thresholds must be calibrated per question and snapshot. That best was reached only at a tuned
   0.80 threshold on a differently framed question; possible training contamination. Not directly
-  transferable to our questions. Our own calibration error before and after is
-  {measured:groundedness_ece_before} and {measured:groundedness_ece_after}.
+  transferable to our questions. Our own calibration error, before and after, held out on the
+  bench's test sample, is the "groundedness calibration error (ECE)" row of *Numbers to quote* once
+  a run is published; until then it is not measured yet, and so say it.
 - **What went wrong.** Labels carry no route, so a calibration fit filtered by route loses the
   labels whose traces retention already deleted. Documented as a known gap for v2.1.
 
@@ -160,6 +165,26 @@ No benchmark run of our own is published yet, so there are no measured results h
 - **Next.** The per-claim cascade inside the deep audit behind a Go `DecisionService`. The
   vendor-neutral `DecisionModel` answers the skeptic's "a small classifier or logprobs could do
   this": the backend is swappable, and the benchmark table decides.
+
+## 11. Running gated agent streams
+
+- **Decision.** The code was written by AI coding agents (Claude Code), directed like a team: each
+  phase had a written plan with numbered, binding decisions; agent streams worked in separate git
+  worktrees and branches with file ownership; a stream merged only after its gate passed (`make
+  check`, the golden vectors, the contract checks, the scanners); separate review agents then
+  checked correctness, coverage and design, with fix rounds until they passed. Spending money,
+  pushing and publishing stayed with the owner, step by step.
+- **Alternatives.** One long chat session (no memory between days, no parallel work); agents that
+  push straight to the main branch; reviewing only by reading the diff.
+- **Measured result.** Cross-language decision logic proven by golden vectors rather than review,
+  scanners clean at every merge, and every paid step a dry run unless confirmed (the plans and the
+  merge commits in `docs/v2/` are the record).
+- **What went wrong.** Two runs of the same fix round once started in parallel, and their agents
+  worked in one worktree until one was killed for memory: the rule became "stop the old run before
+  relaunching". A review found that a run's "measured" label was decided by the backend's name, so
+  output from a mock vendor could have been labelled measured; the fix made the vendor host part of
+  the evidence (D203). And the plans assumed one laptop until the work moved to a cloud session
+  mid-way, so the owner guides were rewritten for it.
 
 ## What is most impressive, and do people value it?
 
