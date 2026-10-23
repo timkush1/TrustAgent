@@ -150,7 +150,7 @@ function Footer() {
             github.com/timkush1/TrustAgent
           </a>
         </div>
-        <p className="mt-4 text-xs text-fg-subtle" data-build-disclosure>
+        <p className="mt-4 text-xs text-fg-muted" data-build-disclosure>
           Designed and directed by one developer; built with AI coding agents (Claude Code).{' '}
           <a href={`${REPO_URL}#how-it-was-built`} className="underline underline-offset-2 hover:text-fg">
             How it was built
