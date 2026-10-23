@@ -21,13 +21,16 @@ document words that contradict it, and `<document>` that document's name.
 
 ## Before recording
 
-- **Real material only.** Record after the measurement step of the
-  [launch checklist](launch-checklist.md): the landing page and the replay from the Pages site
-  with the recorded dataset, and the Studio, Policies and Savings beats on your own stack
-  (`make up` with your key, the calibrated showcase route, and the demo traffic). The static site
-  has no Policies page and runs no paid dry-runs, so those beats need the stack.
-- **Rehearse for free.** `make demo` runs every beat with zero keys, but every number in it is
-  Simulated. Never publish a rehearsal take.
+- **Nobody records it by hand** (D210). The stack beats (Studio, Policies, Savings) are taken by
+  `make launch-video-stack` on the record stack of the attempt under review, which
+  `make record-demo ACCEPT=1 VIDEO=1` runs at B8, inside the record ledger (about $0.05). At C2,
+  `make launch-video` takes the static beats from the recorded Pages build and joins them with
+  those, with the captions below burned in. The static site has no Policies page and runs no paid
+  dry-runs, which is why those beats come from the stack. There is no manual paid recording to
+  make on your own stack.
+- **Rehearse for free.** `make demo` runs every beat with zero keys, and
+  `make launch-video VIDEO_ALLOW_MOCK=1` assembles a rehearsal take in `tmp/launch/rehearsal/`,
+  but every number in them is Simulated. Never publish a rehearsal take.
 - **One theme** for the whole take, browser zoom at its default, a 1920×1080 window, notifications off,
   the bookmarks bar hidden.
 - **No keys on screen**, ever: connect the key before recording, and keep Settings out of frame.
@@ -40,7 +43,7 @@ document words that contradict it, and `<document>` that document's name.
 |---|---|---|---|
 | 0–5 s | Landing page hero | Let the hero card play its three beats, then press **Try the demo** | "Catch hallucinations before your users do." |
 | 5–15 s | Traffic (replay of the recorded dataset) | Wait for the featured answer to arrive; its row turns **Flagged** (or its outcome), with "Checked against: `<document>`" | "Every answer is checked against the documents the app already sent." |
-| 15–27 s | Trace detail of the featured trace | Point at `<claim>`, underlined as contradicted, beside the document's `<evidence>`; open the checks to show Jev's probabilities; wait for the deep-audit explanation to arrive claim by claim | "A fast check flags it before the user reads it. The deep audit explains why." |
+| 15–27 s | Trace detail of the featured trace | Point at `<claim>`, underlined as contradicted, beside the document's `<evidence>`; open the checks to show Jev's probabilities; wait for the deep-audit explanation to arrive claim by claim | "TrustAgent flags it before the user reads it. The deep audit explains why." |
 | 27–40 s | Evaluator Studio (your stack) | Type "Flag when the bot promises a refund", press **Draft with AI**, run the test on its samples, then **Test on past traffic**: how often it would have fired in the last day, and what that run cost, with its label | "Describe a new check in plain English, and test it before it touches users." |
 | 40–50 s | Policies (your stack) | Show the `payments-faq` route in **fallback**; replay one of its answers: the client receives the grounded fallback answer instead. The route is calibrated, or its "uncalibrated" chip is in frame | "Each route decides what happens: observe, flag, block or fall back." |
 | 50–60 s | Savings strip, then a terminal, then the repository | Hold on the Savings strip with every figure's label visible; type `make demo` in a terminal; end on github.com/timkush1/TrustAgent | "Open source. `make demo` runs it with zero keys." |

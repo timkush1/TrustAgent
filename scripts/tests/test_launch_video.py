@@ -88,6 +88,9 @@ class CaptionTest(unittest.TestCase):
         self.assertEqual(len(rows), 6)
         self.assertEqual(rows[-1].end, 60)
         self.assertEqual(rows[0].caption, "Catch hallucinations before your users do.")
+        # The featured trace may have been flagged by an instant check, or have drifted (D209):
+        # the caption credits TrustAgent, never one tier by name.
+        self.assertTrue(rows[2].caption.startswith("TrustAgent flags it"), rows[2].caption)
         srt = launch_video.srt(rows)
         self.assertIn("make demo runs it with zero keys", srt)
         self.assertNotIn("`", srt)
