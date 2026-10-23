@@ -62,7 +62,7 @@ const measuredValues = measuredDoc.values as Record<string, { value: number | nu
 const measuredRun = measuredDoc.status === 'measured' && measuredDoc.mock === false;
 const measuredIntervals = (measuredDoc as { intervals?: Record<string, MeasuredInterval> }).intervals ?? {};
 const measuredSources = (measuredDoc as { sources?: Record<string, { conditions?: unknown } | undefined> }).sources ?? {};
-const measuredUnits = measuredDoc.values as Record<string, { unit?: string; system?: string } | undefined>;
+const measuredUnits = measuredDoc.values as Record<string, { unit?: string; system?: string | null } | undefined>;
 
 /**
  * The measured.json sources key whose conditions fill a caveat's `{cost_conditions}` (D229): a
