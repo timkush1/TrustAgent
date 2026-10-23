@@ -820,7 +820,7 @@ describe('hero latency strip', () => {
   });
 
   it('says how our latency was taken beside it: connection, one at a time, where it ran, snapshot, n (D205)', () => {
-    const conditions = 'warm connection, one request at a time, run on Linux (region cloud us-east), snapshot typesafe/jev-1.13-20260917, n=199';
+    const conditions = 'warm connection, one request at a time, run on Linux, region cloud us-east, snapshot typesafe/jev-1.13-20260917, n=199';
     const base = claim('gate_latency_p50_measured');
     const caveat = fillCaveat(claimsDoc.claims.find((c) => c.id === 'gate_latency_p50_measured')?.caveat ?? null, true, conditions);
     const measured: ClaimView = { ...base, display: '241 ms p50', hasValue: true, value: 241, caveat };

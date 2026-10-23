@@ -32,7 +32,7 @@ REFUND_POLICY = "Unopened items can be returned within 30 days of delivery."
 RESPONSE = f"Thanks for asking! Yes: {REFUND_CLAIM}. Shipping is free."
 SENTENCE = f"Yes: {REFUND_CLAIM}"
 CONDITIONS = (
-    "warm connection, one request at a time, run on Linux (region cloud us-east), "
+    "warm connection, one request at a time, run on Linux, region cloud us-east, "
     "snapshot typesafe/jev-20260901, n=199"
 )
 

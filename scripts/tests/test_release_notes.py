@@ -279,7 +279,7 @@ class ReleaseNotesTest(unittest.TestCase):
     def test_a_measured_latency_names_how_it_was_taken(self) -> None:
         """D205, D225: connection, requests at a time, where it ran, snapshot and n."""
         conditions = (
-            "warm connection, one request at a time, run on Linux (region cloud us-east), "
+            "warm connection, one request at a time, run on Linux, region cloud us-east, "
             f"snapshot {SNAPSHOT}, n=199"
         )
         values = dict(MEASURED["values"])

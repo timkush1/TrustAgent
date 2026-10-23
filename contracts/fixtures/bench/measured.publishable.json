@@ -136,7 +136,7 @@
       "platform": "WSL2",
       "region": "il",
       "n": 199,
-      "conditions": "warm connection, one request at a time, run on WSL2 (region il), snapshot typesafe/jev-1.13-20260917, n=199"
+      "conditions": "warm connection, one request at a time, run on WSL2, region il, snapshot typesafe/jev-1.13-20260917, n=199"
     }
   }
 }

@@ -40,6 +40,7 @@ from evals.report import (
     derive_measured,
     document_problems,
     gate_conditions_text,
+    gate_latency_source,
     measured_problems,
     publish,
     publish_problems,
@@ -769,7 +770,7 @@ def test_a_measured_gate_latency_carries_its_conditions() -> None:
         "platform": "WSL2",
         "region": "il",
         "n": gate_n,
-        "conditions": "warm connection, one request at a time, run on WSL2 (region il), "
+        "conditions": "warm connection, one request at a time, run on WSL2, region il, "
         f"snapshot {SNAPSHOT}, n={gate_n}",
     }
     assert schema_errors(derived, "measured.v1.schema.json") == []
@@ -783,6 +784,14 @@ def test_a_measured_gate_latency_carries_its_conditions() -> None:
     assert "latency_conditions" in [p.code for p in measured_problems(derived)]
 
 
+def test_the_publishable_fixtures_agree_on_the_latency_conditions() -> None:
+    """contracts/fixtures/bench: measured.publishable's conditions are what publish derives."""
+    bench = contracts_dir() / "fixtures" / "bench"
+    run = json.loads((bench / "run.publishable.json").read_text())
+    measured = json.loads((bench / "measured.publishable.json").read_text())
+    assert measured["sources"]["gate_latency"] == gate_latency_source(run)
+
+
 def test_the_conditions_name_where_the_run_really_ran() -> None:
     cold = gate_conditions_text(
         {"connection": "cold", "gate_concurrency": 4},
@@ -792,7 +801,7 @@ def test_the_conditions_name_where_the_run_really_ran() -> None:
     )
     assert cold == (
         "cold connection (each call set up its own), 4 requests at a time, "
-        "run on Linux (region cloud us-east), n=180"
+        "run on Linux, region cloud us-east, n=180"
     )
     assert "laptop" not in cold
 

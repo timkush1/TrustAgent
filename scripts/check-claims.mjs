@@ -1271,7 +1271,7 @@ const MEASURED = {
     fast_check_usd_per_1k: { cost_source: 'reported' },
     gate_latency: {
       connection: 'warm', gate_concurrency: 1, platform: 'Linux', region: 'cloud us-east', n: 199,
-      conditions: `warm connection, one request at a time, run on Linux (region cloud us-east), snapshot ${'jev-1.13-20260917'}, n=199`,
+      conditions: `warm connection, one request at a time, run on Linux, region cloud us-east, snapshot ${'jev-1.13-20260917'}, n=199`,
     },
   },
 };
@@ -1968,7 +1968,7 @@ export function selfTest() {
       lines[lines.length - 1].includes(`decision-model snapshot ${SNAPSHOT}`), lines[lines.length - 1]);
     check('generated block (measured): the latency names its conditions, where it ran and n (D205, D225)',
       (lines[at('meas_latency')] ?? '').includes("212.4 ms p50 [measured] | The fast check's own time per answer: warm connection, " +
-        'one request at a time, run on Linux (region cloud us-east), snapshot jev-1.13-20260917, n=199. |'),
+        'one request at a time, run on Linux, region cloud us-east, snapshot jev-1.13-20260917, n=199. |'),
       lines[at('meas_latency')]);
     const partial = renderMeasuredBlock(FIXTURE_CLAIMS, PARTIAL, read).lines;
     check('generated block (partly measured): a value the run lacks has no [measured] chip and no conditions',

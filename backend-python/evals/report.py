@@ -1012,7 +1012,7 @@ def gate_conditions_text(
     )
     at_once = int(latency.get("gate_concurrency") or 1)
     concurrency = "one request at a time" if at_once == 1 else f"{at_once} requests at a time"
-    where = f"run on {host_env.get('platform')} (region {host_env.get('region')})"
+    where = f"run on {host_env.get('platform')}, region {host_env.get('region')}"
     parts = [connection, concurrency, where]
     if snapshot:
         parts.append(f"snapshot {snapshot}")
