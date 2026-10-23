@@ -162,6 +162,13 @@ describe('landing page', () => {
     expect(measured).toHaveTextContent('Not published yet: our measured fast-check cost, our p50 fast-check latency and our RAGTruth-QA balanced accuracy.');
   });
 
+  it('says in the footer how it was built, as the README does', async () => {
+    await renderLanding();
+    const line = document.querySelector('[data-build-disclosure]') as HTMLElement;
+    expect(line).toHaveTextContent('Designed and directed by one developer; built with AI coding agents (Claude Code).');
+    expect(within(line).getByRole('link', { name: 'How it was built' })).toHaveAttribute('href', expect.stringMatching(/github\.com\/timkush1\/TrustAgent#how-it-was-built$/));
+  });
+
   it('lists the source of every landing claim, judge price and comparison cell in the footer', async () => {
     await renderLanding();
     for (const c of landingClaims()) expect(document.getElementById(`source-${c.id}`), c.id).not.toBeNull();
