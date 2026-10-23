@@ -3318,7 +3318,7 @@ headline with the mock's milliseconds in the note.
 
 ## Appendix H: P6 errata
 
-The lead decisions D200-D219 of `docs/v2/P6-PLAN.md` §1 settle the gaps P6 found. Where a section above
+The lead decisions D200-D239 of `docs/v2/P6-PLAN.md` §1 settle the gaps P6 found. Where a section above
 (or Appendices E-G) says otherwise, the decision cited for it here wins. P6 numbers start at D200 so that
 no number is defined twice (`scripts/check_decision_numbers.py`; P5 used up to D172).
 
@@ -3332,7 +3332,7 @@ no number is defined twice (`scripts/check_decision_numbers.py`; P5 used up to D
 | H-6 | §8.2 | The demo video comes from `make launch-video` (static beats from the recorded Pages build, plus stack beats recorded during `make record-demo ACCEPT=1 VIDEO=1`), captions burned in. It is the LinkedIn post's own media. Fallback: a 45-second take from the Pages build only | D210 |
 | H-7 | §8.3 | Only if the owner chooses at S1: `docs/launch/interview-talking-points.md` leaves the public repository | D216 |
 | H-8 | §4.2 P6 step 7 | The version bump to 2.0.0 happens at Gate A, before the recording, so the tape stamps 2.0.0 | D216 |
-| H-9 | §8.1 | Our measured RAGTruth-QA agreement is compared with the third-party accuracy at the default 0.5 threshold, not with the tuned-threshold figure; plain accuracy (`ragtruth_qa_accuracy`) is published beside the balanced accuracy as the like-for-like number, each with n per class and a 95% interval | D212 |
+| H-9 | §8.1 | Our measured RAGTruth-QA agreement is compared with the third-party accuracy at the default 0.5 threshold, not with the tuned-threshold figure; plain accuracy (`ragtruth_qa_accuracy`) is published beside the balanced accuracy as the like-for-like number, each with n per class and a 95% interval | D212; amended by H-22 (D233) |
 | H-10 | §2.13 (recording.v1) | The generated answers' host is `answer_sources.generated_host`: `answer_sources.generated` stays the count. The P6 plan's `answer_sources.generated.host` means this field | D203 |
 | H-11 | §2.13, §8.1 | "Measured" and "recorded" need vendor hosts: benchmark runs record `vendor{decision_host, judge_host}`, recordings `decision_model.host`, `judge.host` and `answer_sources.generated_host`, all bare hostnames from `common.v1` `VendorHost` (`openrouter.ai`, `api.typesafe.ai`, `api.anthropic.com`). Any other host makes the run simulated (`non_vendor_host`); bench publish, `recording.go` and `check_recording.py --require-recorded` refuse it. The schema itself requires those hosts on a `recorded` tape (the generated host when there are generated answers), so a tape that names none fails validation too | D203 |
 | H-12 | §2.13 | `make bench-lite`, `bench-smoke`, `calib-pass`, `eval-live`, `jev-capture` and `record-demo` are dry runs unless `CONFIRM=1`; `bench-publish` requires `RUN=` and refuses a run with more than 5% failed, fewer than 95% scored, several decision-model snapshots, a dirty tree at its start, a non-vendor host, dataset text in `per_example`, or `cost_source: unknown`. `measured.json` discloses `sources.attempts` | D204 |
@@ -3345,6 +3345,7 @@ no number is defined twice (`scripts/check_decision_numbers.py`; P5 used up to D
 | H-19 | §8.2 | The launch post says where its example answer came from (scripted for the demo, or the model that generated it), names Jev's maker, gives the latency as the benchmark median with its conditions, and says the project was built with AI coding agents; so do the README and the release PR | D227 |
 | H-20 | §2.13 | A simulated (kind mock) tape never names a vendor host for the mock fast check or the mock judge: `recording.Build` and `check_recording.py` refuse it. The hosts a caller passes for a recorded tape are still taken on trust beyond that; storing each call's host on the trace is a P7 item | D203 |
 | H-21 | §4.2 P6 (R-3) | An attempt cannot be recorded on mocks, so the vendor rehearsal proves featured, drift, `ACCEPT` and the video's ffmpeg path through a simulated export, attempts that exist and a static ffmpeg | D226, D228 |
+| H-22 | §8.1 (amends H-9) | Our RAGTruth-QA accuracy is not like for like with any third-party figure: the bench flags an answer at each evaluator's warn_at (groundedness 0.8, which came from Arize's tuned cutoff on RAGTruth itself, or contradiction 0.7) on questions worded differently from Arize's. Every surface names those thresholds and shows Arize's figures at 0.5 and at its tuned 0.80 beside ours, neither as like for like; plain accuracy is published as the measure Arize reports | D233 |
 | H-R | §8 | Reserved for mode R (D200): which Jev-derived figures stay unpublished, and whether third-party and vendor Jev figures already public elsewhere stay with their source links. Written only if the owner's G0 answer is mode R, and approved by the owner before launch | D200 |
 
 Appendix D rows get dated results during P6: the Step 0 free checks (2026-10-10) are recorded there, and
