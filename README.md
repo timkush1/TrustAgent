@@ -359,12 +359,15 @@ Component guides: [backend-go](backend-go/README.md) · [backend-python](backend
 ## How it was built
 
 TrustAgent was designed and directed by one developer and built with AI coding agents (Claude Code)
-working to written plans, tests and reviews. Each phase had a plan with numbered decisions
-([docs/v2/](docs/v2/)); agent streams worked on separate branches behind gates that had to pass
-before a merge (`make check`, the Go and TypeScript golden vectors, the contract checks, the
-security scanners); separate review agents then checked each phase for correctness, coverage and
-design, and the developer made the product calls and approved each merge. Commits made with an
-agent carry its co-author line.
+to plans the developer approved and decisions the developer made. Agents drafted each phase's plan
+with numbered decisions ([docs/v2/](docs/v2/)), wrote the code and the tests, and ran the reviews.
+Agent streams worked on separate branches behind gates that had to pass before a merge (`make
+check`, the Go and TypeScript golden vectors, the contract checks, the gating security scanners:
+gosec, bandit, npm audit and gitleaks); separate review agents then checked each phase for
+correctness, coverage and design, with fix rounds until they passed. The developer made the
+product decisions, approved each phase plan and authorized the pushes and every paid run; agents
+merged after their gates and the review agents passed, and `main` now changes only through pull
+requests the developer merges. Commits made with an agent carry its co-author line.
 
 ## Contributing
 

@@ -267,7 +267,8 @@ Details are under *Build log by phase* (*Breaking changes (P3)* and
   listed with this release's measured run.
 - **No production deployments or users yet**: one developer, a public benchmark
   and scripted demo traffic. TrustAgent was built with AI coding agents (Claude
-  Code) working to written plans, tests and reviews (README, "How it was built").
+  Code) to plans the developer approved and decisions the developer made (README,
+  "How it was built").
 
 ### Build log by phase
 

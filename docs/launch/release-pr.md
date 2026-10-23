@@ -24,11 +24,13 @@ the design is [docs/v2/SPEC.md](https://github.com/timkush1/TrustAgent/blob/feat
 
 ## How it was built
 
-Designed and directed by one developer, built with AI coding agents (Claude Code) working to the
-written plans below, tests and reviews. Each phase ran in parallel worktrees, merged on an
-integration branch only after its own gate, and was checked by separate review agents before it
-reached `feat/v2-jev-gateway`. The branch keeps that history, so this PR is merged with a merge
-commit (no squash, no rebase).
+Designed and directed by one developer, built with AI coding agents (Claude Code) to the plans
+below, which the developer approved, and the decisions the developer made; the agents drafted the
+plans, wrote the code and the tests, and ran the reviews. Each phase ran in parallel worktrees,
+merged on an integration branch only after its own gate, and was checked by separate review agents
+before it reached `feat/v2-jev-gateway`. The developer authorized the pushes and every paid run and
+merges this PR. The branch keeps that history, so this PR is merged with a merge commit (no
+squash, no rebase).
 
 | Phase | What it delivered | Plan |
 |---|---|---|

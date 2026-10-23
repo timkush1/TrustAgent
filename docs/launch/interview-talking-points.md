@@ -5,8 +5,9 @@ Eleven engineering stories from building TrustAgent 2.0, each told the same way:
 two minutes; the links go to the code or the record behind it.
 
 Say early how it was built: TrustAgent was designed and directed by one developer and built with AI
-coding agents (Claude Code) working to written plans, tests and reviews. Story 11 is how that was
-run, and it is a strength to explain, not a footnote to hide.
+coding agents (Claude Code) to plans the developer approved and decisions the developer made; the
+agents drafted the plans, wrote the code and the tests, and ran the reviews. Story 11 is how that
+was run, and it is a strength to explain, not a footnote to hide.
 
 Lead with the measured trade-off (story 1 and the calibration story, 4), then show the Studio (7).
 Interviewers reward trade-off reasoning and measurement over feature counts.
@@ -28,8 +29,8 @@ No benchmark run of our own is published yet, so there are no measured results h
 
 - **Decision.** Three tiers on every answer: deterministic Go detectors (numbers, dates, URLs,
   quotes, citations, secrets), then one Jev call that asks every check at once, then a
-  claim-level LLM audit only for flagged answers plus small samples. This is the response-level
-  cascade OpenRouter and Arize recommend.
+  claim-level LLM audit only for flagged answers plus small samples: a response-level cascade,
+  where the cheap check runs on everything and the expensive one only where it pays.
 - **Alternatives.** An LLM judge on every answer: asking Claude Haiku the same questions costs
   <!-- claim:llm_same_checks_cost_per_1k --> ~$6 / 1,000 [estimate], against
   <!-- claim:fast_check_cost_per_1k --> ~$0.21 / 1,000 answers [estimate] for the fast check, and
@@ -171,20 +172,26 @@ No benchmark run of our own is published yet, so there are no measured results h
 - **Decision.** The code was written by AI coding agents (Claude Code), directed like a team: each
   phase had a written plan with numbered, binding decisions; agent streams worked in separate git
   worktrees and branches with file ownership; a stream merged only after its gate passed (`make
-  check`, the golden vectors, the contract checks, the scanners); separate review agents then
-  checked correctness, coverage and design, with fix rounds until they passed. Spending money,
-  pushing and publishing stayed with the owner, step by step.
+  check`, the golden vectors, the contract checks, the gating scanners); separate review agents
+  then checked correctness, coverage and design, with fix rounds until they passed. The owner made
+  the product decisions, approved each phase plan and authorized the pushes and every paid run
+  (each one a capped dry run until confirmed); agents merged after their gates and the review
+  agents passed; `main` now changes only through pull requests the owner merges.
 - **Alternatives.** One long chat session (no memory between days, no parallel work); agents that
   push straight to the main branch; reviewing only by reading the diff.
 - **Measured result.** Cross-language decision logic proven by golden vectors rather than review,
-  scanners clean at every merge, and every paid step a dry run unless confirmed (the plans and the
-  merge commits in `docs/v2/` are the record).
+  the gating scanners (gosec, bandit, npm audit, gitleaks) clean at every merge, and every paid
+  step a dry run unless confirmed (the plans in `docs/v2/` and the merge commits are the record).
 - **What went wrong.** Two runs of the same fix round once started in parallel, and their agents
   worked in one worktree until one was killed for memory: the rule became "stop the old run before
   relaunching". A review found that a run's "measured" label was decided by the backend's name, so
   output from a mock vendor could have been labelled measured; the fix made the vendor host part of
-  the evidence (D203). And the plans assumed one laptop until the work moved to a cloud session
-  mid-way, so the owner guides were rewritten for it.
+  the evidence (D203). Trivy, an informational scanner outside the merge gates, went red on `main`
+  once v2 was pushed there (vulnerable Go and Python dependencies, and the detector vectors' fake
+  keys); the fix (the Go 1.26 toolchain, gRPC 1.84, LangGraph 1.x, a secret allow-list for those
+  vectors only) came after the push, so the lesson was to read the informational jobs before a
+  push too. And the plans assumed one laptop until the work moved to a cloud session mid-way, so
+  the owner guides were rewritten for it.
 
 ## What is most impressive, and do people value it?
 
