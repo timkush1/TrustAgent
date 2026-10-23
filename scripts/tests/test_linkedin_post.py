@@ -10,8 +10,10 @@ from __future__ import annotations
 import copy
 import io
 import json
+import os
 import shutil
 import stat
+import subprocess  # nosec B404 - runs make with fixed arguments
 import sys
 import tempfile
 import unittest
@@ -27,6 +29,12 @@ ROOT = Path(__file__).resolve().parents[2]
 TRACE_ID = "01a0e73e-1649-7a0c-8ad3-2df6e8a4fa5f"
 REFUND_CLAIM = "you can return it for a full refund within 60 days"
 REFUND_POLICY = "Unopened items can be returned within 30 days of delivery."
+RESPONSE = f"Thanks for asking! Yes: {REFUND_CLAIM}. Shipping is free."
+SENTENCE = f"Yes: {REFUND_CLAIM}"
+CONDITIONS = (
+    "warm connection, one request at a time, run on Linux (region cloud us-east), "
+    "snapshot typesafe/jev-20260901, n=199"
+)
 
 MEASURED: Dict[str, Any] = {
     "schema": "trustagent.measured/v1",
@@ -44,6 +52,16 @@ MEASURED: Dict[str, Any] = {
         "gate_latency_ms_p95": {"value": 512, "unit": "ms"},
         "ragtruth_qa_agreement": {"value": 0.781, "unit": "fraction"},
         "ragtruth_qa_accuracy": {"value": 0.804, "unit": "fraction"},
+    },
+    "sources": {
+        "gate_latency": {
+            "connection": "warm",
+            "gate_concurrency": 1,
+            "platform": "Linux",
+            "region": "cloud us-east",
+            "n": 199,
+            "conditions": CONDITIONS,
+        }
     },
     "intervals": {
         "ragtruth_qa_accuracy": {
@@ -67,6 +85,10 @@ MEASURED: Dict[str, Any] = {
 
 TRACE: Dict[str, Any] = {
     "trace_id": TRACE_ID,
+    "answer_source": "scripted",
+    "model": "gpt-4o-mini",
+    "action": "flag",
+    "body": {"response_text": RESPONSE},
     "audit_detail": {
         "claims": [
             {
@@ -88,7 +110,10 @@ TRACE: Dict[str, Any] = {
                 "index": 2,
                 "claim": "The customer can get a full refund within 60 days.",
                 "status": "CONTRADICTED",
-                "span": {"start": 20, "end": 70},
+                "span": {
+                    "start": RESPONSE.index(REFUND_CLAIM),
+                    "end": RESPONSE.index(REFUND_CLAIM) + len(REFUND_CLAIM),
+                },
                 "quote": REFUND_CLAIM,
                 "evidence": ["A fallback quote."],
                 "evidence_spans": [{"doc_id": "returns-policy.md", "text": REFUND_POLICY}],
@@ -164,15 +189,103 @@ class PostTest(unittest.TestCase):
     def test_the_post_is_filled_from_the_run_and_the_tape(self) -> None:
         code, out, err = run(self.root)
         self.assertEqual(code, 0, err)
-        first = out.split("\n\n", 1)[0]
+        opening, catch = out.split("\n\n", 2)[:2]
         self.assertEqual(
-            first,
-            f"My support bot promised “{REFUND_CLAIM}”. The policy said “{REFUND_POLICY[:-1]}”. "
-            "TrustAgent caught it in 241 ms for $0.051/1,000 answers, 26.84× cheaper than an LLM "
-            "judge doing the same checks [measured].",
+            opening,
+            "TrustAgent checks each LLM answer against the app's own documents, for $0.051 per "
+            "1,000 answers [measured].",
+        )
+        self.assertEqual(
+            catch,
+            f"I gave it {lp.SCRIPTED_SOURCE}. It promised “{SENTENCE}”; the document it was "
+            f"checked against says “{REFUND_POLICY[:-1]}”. TrustAgent flagged it.",
+        )
+        # D205: the median is the benchmark's, with how it was taken; the ratio is rounded.
+        self.assertIn(
+            f"took 241 ms at the median ({CONDITIONS}) and cost 27× less than an LLM judge", out
         )
         self.assertIn("measured on 2026-10-24 with typesafe/jev-20260901", out)
         self.assertNotRegex(out, r"\{[a-z][a-z0-9_.:]*\}", "every placeholder is filled")
+
+    def test_a_scripted_answer_is_never_my_support_bot(self) -> None:
+        """D227: the owner runs no support bot; a demo answer is said for what it is."""
+        _, out, _ = run(self.root)
+        self.assertNotRegex(out, r"(?i)\bmy (support )?bot\b")
+        self.assertIn("a support-bot answer I wrote for the demo", out)
+        root = make_root()
+        self.addCleanup(shutil.rmtree, root, True)
+        path = root / lp.TEMPLATE_PATH
+        text = path.read_text(encoding="utf-8").replace("I gave it {featured.source}.", "My support bot answered.", 1)
+        path.write_text(text, encoding="utf-8")
+        code, out, err = run(root)
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("the post says 'my bot'", err)
+
+    def test_a_generated_answer_names_the_model_that_wrote_it(self) -> None:
+        trace = copy.deepcopy(TRACE)
+        trace.update(answer_source="generated", model="openai/gpt-4o-mini", action="fallback")
+        root = make_root(trace=trace)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root)
+        self.assertEqual(code, 0, err)
+        self.assertIn(
+            "I gave it a support-bot answer that gpt-4o-mini wrote for the demo. It promised", out
+        )
+        self.assertIn("TrustAgent replaced it with a fallback answer.", out)
+
+    def test_the_opening_shows_before_see_more(self) -> None:
+        for argv in ((), ("--restricted",)):
+            _, out, _ = run(self.root, *argv)
+            first = out.split("\n", 1)[0]
+            self.assertLessEqual(len(first), lp.OPENING_MAX, first)
+            self.assertIn("TrustAgent", first)
+        root = make_root()
+        self.addCleanup(shutil.rmtree, root, True)
+        path = root / lp.TEMPLATE_PATH
+        text = path.read_text(encoding="utf-8").replace(
+            "TrustAgent checks each LLM answer", "Long words " * 15 + "TrustAgent checks each LLM answer", 1
+        )
+        path.write_text(text, encoding="utf-8")
+        code, _, err = run(root)
+        self.assertEqual(code, 2)
+        self.assertIn("before '...see more'", err)
+
+    def test_jev_is_credited_to_its_maker_and_the_build_is_disclosed(self) -> None:
+        _, out, _ = run(self.root)
+        self.assertIn("Jev, TypeSafe AI's decision model (through OpenRouter)", out)
+        self.assertIn("built with AI coding agents (Claude Code)", out)
+        self.assertIn("Jev's groundedness scores can invert", out)
+        self.assertIn("calibrate it with your own labels", out)
+        self.assertNotIn("a few labels", out)
+        _, restricted, _ = run(self.root, "--restricted")
+        self.assertIn("a third-party decision model", restricted)
+        self.assertIn("built with AI coding agents (Claude Code)", restricted)
+
+    def test_the_featured_words_are_the_answers_sentence_not_a_fragment(self) -> None:
+        trace = copy.deepcopy(TRACE)
+        claim = trace["audit_detail"]["claims"][2]
+        claim["quote"] = "60 days"  # the judge's quote can be a fragment
+        claim["span"] = {"start": RESPONSE.index("60 days"), "end": RESPONSE.index("60 days") + 7}
+        root = make_root(trace=trace)
+        self.addCleanup(shutil.rmtree, root, True)
+        _, out, _ = run(root)
+        self.assertIn(f"It promised “{SENTENCE}”", out)
+        # Without the answer text, a fragment gives way to the claim.
+        del trace["body"]
+        root = make_root(trace=trace)
+        self.addCleanup(shutil.rmtree, root, True)
+        _, out, _ = run(root)
+        self.assertIn("It promised “The customer can get a full refund within 60 days”", out)
+        self.assertNotIn("“60 days”", out)
+
+    def test_a_latency_without_its_conditions_is_missing(self) -> None:
+        measured = copy.deepcopy(MEASURED)
+        del measured["sources"]
+        root = make_root(measured=measured)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root)
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("gate.conditions", err)
 
     def test_the_post_is_plain_text(self) -> None:
         _, out, _ = run(self.root)
@@ -198,6 +311,11 @@ class PostTest(unittest.TestCase):
             text,
         )
         self.assertIn("76% at 0.5 [third-party]", text)
+        self.assertIn(
+            "That is the same model on a different sample, so a difference between the two is "
+            "not an improvement made by TrustAgent.",
+            text,
+        )
         self.assertNotIn("87%", out, "never beside the tuned-threshold figure (D212)")
 
     def test_an_incomplete_agreement_is_left_out_with_a_note(self) -> None:
@@ -216,7 +334,7 @@ class PostTest(unittest.TestCase):
         _, with_roles, _ = run(self.root, "--roles")
         self.assertNotIn("open to", without)
         self.assertIn("I'm open to backend and AI-platform engineering roles", with_roles)
-        self.assertIn("Built with Go", without)
+        self.assertIn("Go, Python (LangGraph), React and TypeScript", without)
 
     def test_the_featured_claim_needs_a_span_and_falls_back_to_the_evidence_list(self) -> None:
         trace = copy.deepcopy(TRACE)
@@ -225,7 +343,10 @@ class PostTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, root, True)
         code, out, err = run(root)
         self.assertEqual(code, 0, err)
-        self.assertIn(f"promised “{REFUND_CLAIM}”. The policy said “A fallback quote”.", out)
+        self.assertIn(
+            f"promised “{SENTENCE}”; the document it was checked against says “A fallback quote”.",
+            out,
+        )
 
 
 class MissingValueTest(unittest.TestCase):
@@ -324,6 +445,9 @@ class TemplateTest(unittest.TestCase):
                         {
                             "featured.claim",
                             "featured.evidence",
+                            "featured.source",
+                            "featured.outcome",
+                            "gate.conditions",
                             "run.date",
                             "run.ids",
                             "snapshot",
@@ -350,7 +474,7 @@ class TemplateTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, root, True)
         code, out, err = run(root, "--restricted")
         self.assertEqual(code, 0, err)
-        self.assertTrue(out.startswith("Support bots promise things"))
+        self.assertTrue(out.startswith("TrustAgent is my open-source gateway"))
         self.assertIn("the demo replays simulated traffic", out)
 
     def test_an_unknown_placeholder_is_a_usage_error(self) -> None:
@@ -389,7 +513,22 @@ class TemplateTest(unittest.TestCase):
             self.assertIn(flag, post)
         target = launch.split("\nclip:", 1)[1].split("\n\n", 1)[0]
         self.assertIn('scripts/clip.py" "$(FILE)"', target)
+        self.assertIn('scripts/clip.py" -', target)  # a pipe: make release-notes ... | make clip
         self.assertNotIn("not implemented", post + target)
+
+    def test_make_clip_reads_a_pipe_when_file_is_unset(self) -> None:
+        if not shutil.which("make"):
+            self.skipTest("make is not installed")
+        env = {k: v for k, v in os.environ.items() if k not in ("FILE", "MAKEFLAGS", "MFLAGS")}
+        env["PATH"] = "/usr/bin:/bin"  # no clip.exe: the text comes back on stdout
+        r = subprocess.run(  # nosec B603 B607 - fixed arguments
+            ["make", "-s", "--no-print-directory", "clip"],
+            cwd=ROOT, env=env, input="27× — piped\n", capture_output=True, text=True,
+            timeout=60, check=False,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, "27× — piped\n")
+        self.assertIn("went to stdout", r.stderr)
 
 
 class ClipTest(unittest.TestCase):
@@ -464,15 +603,15 @@ class ClipTest(unittest.TestCase):
         self.assertEqual(out, "")
         self.assertIn("copied the post", err)
         copied = self.capture.read_bytes().decode("utf-16-le")
-        self.assertTrue(copied.startswith("My support bot promised"))
-        self.assertIn("26.84×", copied)
+        self.assertTrue(copied.startswith("TrustAgent checks each LLM answer"))
+        self.assertIn("27×", copied)
 
     def test_linkedin_post_clip_without_clip_exe_prints(self) -> None:
         root = make_root()
         self.addCleanup(shutil.rmtree, root, True)
         code, out, err = run(root, "--clip")
         self.assertEqual(code, 0, err)
-        self.assertTrue(out.startswith("My support bot promised"))
+        self.assertTrue(out.startswith("TrustAgent checks each LLM answer"))
         self.assertIn("no clip.exe here", err)
 
 

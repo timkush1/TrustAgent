@@ -12,26 +12,41 @@ make linkedin-post ROLES=1 CLIP=1    # with the "open to roles" line
 make linkedin-post RESTRICTED=1      # the mode-R post: no fast-check figures (see below)
 ```
 
-Edit the words in the templates below; `scripts/linkedin_post.py` lists the placeholders. The
-opening survives LinkedIn's "…see more" cut on its own: a real catch from the recorded tape and
-the three measured figures, in two sentences.
+Edit the words in the templates below; `scripts/linkedin_post.py` lists the placeholders. Three
+rules hold whatever the wording (the script refuses a post that breaks the first two):
+
+- **The first line shows before LinkedIn's "…see more" cut on a phone**: it names TrustAgent and
+  stays within 150 characters once filled.
+- **The featured answer is said for what it is** (D227). The recorded demo's answers are scripted
+  (written for the demo) or generated (a named model wrote them); the owner runs no support bot, so
+  the post never says "my support bot". `{featured.source}` words it from the trace.
+- **A latency is never bare** (D205): the median is the fast check's time on the benchmark, not the
+  time of this one catch, and `{gate.conditions}` follows it (connection, requests at a time, where
+  the run ran, snapshot, n).
+
+The post names who makes Jev (TypeSafe AI) and says how TrustAgent was built (with AI coding
+agents, to plans, tests and reviews the owner set). The owner settles that wording at S1.
 
 ## The post
 
 ```text
-My support bot promised “{featured.claim}”. The policy said “{featured.evidence}”. TrustAgent caught it in {measured:gate_latency_ms_p50} for {measured:fast_check_usd_per_1k}/1,000 answers, {measured:same_checks_cost_ratio}× cheaper than an LLM judge doing the same checks [measured].
+TrustAgent checks each LLM answer against the app's own documents, for {measured:fast_check_usd_per_1k} per 1,000 answers [measured].
 
-TrustAgent is my open-source hallucination gateway. Your app points its OpenAI or Anthropic SDK at a Go gateway, and every answer is checked against the documents the app already sent the model, by Jev, a small decision model that returns probabilities instead of text. One call answers every check at once: is it grounded, does it contradict the source, did it leak personal data, did it promise something it shouldn't. Each route's policy then observes, flags, blocks or falls back, and only the risky answers go on to a claim-by-claim LLM audit.
+I gave it {featured.source}. It promised “{featured.claim}”; the document it was checked against says “{featured.evidence}”. TrustAgent {featured.outcome}.
+
+TrustAgent is my open-source hallucination gateway. Your app points its OpenAI or Anthropic SDK at a Go gateway, and every answer is checked against the documents the app already sent the model by Jev, TypeSafe AI's decision model (through OpenRouter), which returns probabilities instead of text. One call answers every check at once: is it grounded, does it contradict the source, did it leak personal data, did it promise something it shouldn't. Each route's policy then observes, flags, blocks or falls back, and only the risky answers go on to a claim-by-claim LLM audit.
+
+On a public benchmark the fast check took {measured:gate_latency_ms_p50} at the median ({gate.conditions}) and cost {measured:same_checks_cost_ratio}× less than an LLM judge asking the same questions [measured].
 
 {agreement}
 
-The finding that changed the design: without source documents, a classifier's groundedness scores invert. Haqq's public test of Jev on legal citations found it ranked fabricated citations above honest ones when it had no sources (link in the first comment). So TrustAgent never guesses: with nothing to check against, the answer is marked "not checked".
+The finding that changed the design: without source documents, Jev's groundedness scores can invert. Haqq's public test of Jev on legal citations found it ranked fabricated citations above honest ones when it had no sources (link in the first comment). So TrustAgent never guesses: with nothing to check against, the answer is marked "not checked".
 
-You can also describe a new check in plain English: an LLM drafts it once, and Jev runs it on every request. You test it on samples, calibrate it with a few labels, and watch it in shadow before it touches a user.
+You can also describe a new check in plain English: an LLM drafts it once, and Jev runs it on every request. You test it on samples, calibrate it with your own labels, and watch it in shadow before it touches a user.
 
 Every number in the product carries a label (measured, estimate, vendor, third-party or simulated), and CI fails if the README drifts from them. The figures above were measured on {run.date} with {snapshot}.
 
-Built with Go, Python (LangGraph), React and TypeScript, Postgres, gRPC and Docker.
+Designed and directed by me, built with AI coding agents (Claude Code) working to the plans, tests and reviews I set. Go, Python (LangGraph), React and TypeScript, Postgres, gRPC and Docker.
 {roles}I'm open to backend and AI-platform engineering roles, and my messages are open.
 
 Try it in your browser: https://timkush1.github.io/TrustAgent/ (the replay needs nothing; live mode uses your own OpenRouter key)
@@ -53,15 +68,17 @@ Used only if the terms check ends in mode R (no fast-check figures may be publis
 then replays the simulated tape, and live mode uses the visitor's own key.
 
 ```text
-Support bots promise things their own documents don't say. I built TrustAgent, an open-source hallucination gateway, to catch that before the answer reaches the user.
+TrustAgent is my open-source gateway that catches LLM answers which contradict their own documents.
 
-Your app points its OpenAI or Anthropic SDK at a Go gateway. Every answer is checked against the documents the app already sent the model: deterministic checks first, then one call to a small decision model that answers every check at once. Each route's policy then observes, flags, blocks or falls back, and only the risky answers go on to a claim-by-claim LLM audit. With nothing to check against, the answer is marked "not checked" instead of guessed.
+Support bots promise things their own documents don't say. TrustAgent checks the answer before it reaches the user.
 
-You can also describe a new check in plain English: an LLM drafts it once, and the gateway runs it on every request. You test it on samples, calibrate it with a few labels, and watch it in shadow before it touches a user.
+Your app points its OpenAI or Anthropic SDK at a Go gateway. Every answer is checked against the documents the app already sent the model: deterministic checks first, then one call to a third-party decision model that answers every check at once. Each route's policy then observes, flags, blocks or falls back, and only the risky answers go on to a claim-by-claim LLM audit. With nothing to check against, the answer is marked "not checked" instead of guessed.
+
+You can also describe a new check in plain English: an LLM drafts it once, and the gateway runs it on every request. You test it on samples, calibrate it with your own labels, and watch it in shadow before it touches a user.
 
 Every number in the product carries a label (measured, estimate, vendor, third-party or simulated), and CI fails if the README drifts from them.
 
-Built with Go, Python (LangGraph), React and TypeScript, Postgres, gRPC and Docker.
+Designed and directed by me, built with AI coding agents (Claude Code) working to the plans, tests and reviews I set. Go, Python (LangGraph), React and TypeScript, Postgres, gRPC and Docker.
 {roles}I'm open to backend and AI-platform engineering roles, and my messages are open.
 
 Try it in your browser: https://timkush1.github.io/TrustAgent/ (the demo replays simulated traffic; live mode uses your own OpenRouter key)

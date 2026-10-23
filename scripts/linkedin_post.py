@@ -12,8 +12,18 @@ The post's words live in docs/launch/linkedin-post.md, in the ```text block unde
 result; nobody pastes a figure by hand.
 
 Placeholders:
-  {featured.claim}     the answer's words of the featured trace's contradicted claim (its quote)
+  {featured.claim}     the answer's own words for the featured trace's contradicted claim: the
+                       answer's sentence that holds the claim's span, else the quote when it is
+                       a phrase of 4 words or more, else the claim
   {featured.evidence}  the evidence that contradicts it (the document's words)
+  {featured.source}    where that answer came from, said plainly (D227): a scripted answer is "a
+                       support-bot answer I wrote for the demo", a generated one names the model
+                       that wrote it; never "my support bot" (the owner runs no support bot)
+  {featured.outcome}   what TrustAgent did with it: "flagged it", "blocked it", "replaced it with
+                       a fallback answer"
+  {gate.conditions}    how the gate latency was taken (D205): measured.json
+                       sources.gate_latency.conditions (connection, requests at a time, where the
+                       run ran, snapshot, n)
   {measured:KEY}       a value of contracts/claims/measured.json, formatted as the README shows it
                        (ms with " ms", USD with "$", a fraction as a percentage, a multiplier bare)
   {claim:ID}           a claim's display and label chip from value-claims.v1.json, e.g.
@@ -30,6 +40,9 @@ The featured trace is the recorded tape's ``featured.trace_id``
 (frontend-react/demo-data/recorded/); only a tape with kind "recorded" whose fast-check, judge and
 generated-answer hosts are vendor hosts counts (D203), and only a measured run with mock:false. Every missing value is listed and the exit status is 1: the post is never
 printed with a gap or a made-up figure.
+
+The post's first line must show before LinkedIn's "...see more" cut on a phone: it names
+TrustAgent and stays within OPENING_MAX characters once filled, or the script refuses (exit 2).
 
 Exit status: 0 printed (or copied), 1 a value is missing, 2 usage error or a malformed template.
 """
@@ -66,6 +79,18 @@ CHIPS = {
 }
 PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_.:]*)\}")
 ROLES_PREFIX = "{roles}"
+# What a phone shows before "...see more" (about 140-150 characters; LinkedIn does not publish it).
+OPENING_MAX = 150
+# How each answer source is said (D227): a scripted demo answer is never presented as a real bot's.
+SCRIPTED_SOURCE = "a support-bot answer I wrote for the demo"
+GENERATED_SOURCE = "a support-bot answer that {model} wrote for the demo"
+OUTCOMES = {
+    "flag": "flagged it",
+    "block": "blocked it",
+    "fallback": "replaced it with a fallback answer",
+}
+MIN_QUOTE_WORDS = 4
+SENTENCE = re.compile(r"[^.!?\n]+(?:[.!?]+|$)")
 
 
 class UsageError(Exception):
@@ -171,6 +196,9 @@ def measured_value(src: Sources, key: str) -> Optional[float]:
 
 def show(value: float, unit: str) -> str:
     """A measured value as the README shows it (scripts/check-claims.mjs formatting)."""
+    if unit == "multiplier":
+        # Rounded for the post, as the README rounds its estimate (27×, not 26.84×).
+        return str(round(value)) if value >= 10 else f"{value:.1f}".rstrip("0").rstrip(".")
     text = format_value(value, unit)
     if unit == "ms":
         return f"{text} ms"
@@ -179,16 +207,58 @@ def show(value: float, unit: str) -> str:
     return text
 
 
+def _utf16_index(text: str, offset: int) -> int:
+    """The str index of a UTF-16 offset (spans are UTF-16, half-open)."""
+    units = 0
+    for index, char in enumerate(text):
+        if units >= offset:
+            return index
+        units += 2 if ord(char) > 0xFFFF else 1
+    return len(text)
+
+
+def answer_text(trace: Dict[str, Any]) -> str:
+    """The answer the claims' spans point into: body.response_text, else the preview."""
+    body = trace.get("body") if isinstance(trace.get("body"), dict) else {}
+    for text in (body.get("response_text"), trace.get("response_preview")):
+        if isinstance(text, str) and text.strip():
+            return text
+    return ""
+
+
+def span_sentence(answer: str, span: Dict[str, Any]) -> Optional[str]:
+    """The answer's sentence that holds the span's start, or None."""
+    start = span.get("start")
+    if not answer or not isinstance(start, int) or isinstance(start, bool) or start < 0:
+        return None
+    at = _utf16_index(answer, start)
+    if at >= len(answer):
+        return None
+    for m in SENTENCE.finditer(answer):
+        if m.start() <= at < m.end():
+            sentence = m.group(0).strip()
+            return sentence or None
+    return None
+
+
 def featured_claim(trace: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
     """(the answer's words, the contradicting evidence) of the first CONTRADICTED claim that has a
-    span in the answer (D209's rule), or (None, None)."""
+    span in the answer (D209's rule), or (None, None). The words are the answer's sentence that
+    holds the span; else the quote, when it is a phrase rather than a fragment ("60 days"); else
+    the claim."""
     claims = ((trace.get("audit_detail") or {}).get("claims")) or []
+    answer = answer_text(trace)
     for claim in claims:
         if not isinstance(claim, dict) or claim.get("status") != "CONTRADICTED":
             continue
         if not isinstance(claim.get("span"), dict):
             continue
-        words = (claim.get("quote") or claim.get("claim") or "").strip()
+        quote = str(claim.get("quote") or "").strip()
+        words = span_sentence(answer, claim["span"]) or ""
+        if not words and len(quote.split()) >= MIN_QUOTE_WORDS:
+            words = quote
+        if not words:
+            words = str(claim.get("claim") or quote).strip()
         evidence = ""
         for span in claim.get("evidence_spans") or []:
             if isinstance(span, dict) and str(span.get("text") or "").strip():
@@ -200,6 +270,30 @@ def featured_claim(trace: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]
             )
         return (words.rstrip(".") or None), (evidence.rstrip(".") or None)
     return None, None
+
+
+def featured_source(trace: Dict[str, Any]) -> Optional[str]:
+    """Where the featured answer came from, said plainly (D227), or None when the trace does not
+    say. A scripted answer was written for the demo; a generated one names its model."""
+    source = trace.get("answer_source")
+    if source == "scripted":
+        return SCRIPTED_SOURCE
+    model = str(trace.get("model") or "").strip()
+    if source in ("generated", "live") and model:
+        return GENERATED_SOURCE.format(model=model.split("/")[-1])
+    return None
+
+
+def featured_outcome(trace: Dict[str, Any]) -> Optional[str]:
+    return OUTCOMES.get(str(trace.get("action") or ""))
+
+
+def gate_conditions(src: Sources) -> Optional[str]:
+    """measured.json sources.gate_latency.conditions (D205), from a measured run only."""
+    if not measured_run(src):
+        return None
+    text = ((src.measured.get("sources") or {}).get("gate_latency") or {}).get("conditions")
+    return text.strip() if isinstance(text, str) and text.strip() else None
 
 
 def claim_text(src: Sources, claim_id: str) -> Optional[str]:
@@ -245,11 +339,12 @@ def agreement(src: Sources) -> Tuple[Optional[str], List[str]]:
         return None, missing
     assert accuracy is not None and balanced is not None  # for the type checker
     text = (
-        f"On a RAGTruth-QA sample, at the default thresholds, it agreed with the human labels on "
-        f"{show(accuracy, 'fraction')} of answers ({acc_int}) [measured]; balanced across the two "
-        f"classes, {show(balanced, 'fraction')} ({bal_int}) [measured]. Arize's RAGTruth test of "
-        f"Jev at the same default threshold: {like}. RAGTruth is public, so the model may have "
-        f"seen it in training."
+        f"On a RAGTruth-QA sample, at the default thresholds, the fast check agreed with the human "
+        f"labels on {show(accuracy, 'fraction')} of answers ({acc_int}) [measured]; balanced "
+        f"across the two classes, {show(balanced, 'fraction')} ({bal_int}) [measured]. Arize's "
+        f"RAGTruth test of Jev at the same default threshold: {like}. That is the same model on "
+        f"a different sample, so a difference between the two is not an improvement made by "
+        f"TrustAgent. RAGTruth is public, so the model may have seen it in training."
     )
     return text, []
 
@@ -277,14 +372,30 @@ def fill(tpl: str, src: Sources, roles: bool) -> Tuple[str, List[str], List[str]
     notes: List[str] = []
     facts = run_facts(src)
     words, evidence = featured_claim(src.trace) if src.trace else (None, None)
+    source = featured_source(src.trace) if src.trace else None
+    outcome = featured_outcome(src.trace) if src.trace else None
     if src.trace is not None and words is None:
         missing.append("the featured trace has no CONTRADICTED claim with a span and its evidence")
+    if src.trace is not None and source is None:
+        missing.append(
+            "the featured trace does not say where its answer came from (answer_source, model)"
+        )
+    if src.trace is not None and outcome is None:
+        missing.append(
+            f"the featured trace's action {src.trace.get('action')!r} is not flag, block or fallback"
+        )
 
     def value_of(name: str) -> Optional[str]:
         if name == "featured.claim":
             return words
         if name == "featured.evidence":
             return evidence
+        if name == "featured.source":
+            return source
+        if name == "featured.outcome":
+            return outcome
+        if name == "gate.conditions":
+            return gate_conditions(src)
         if name in facts:
             return facts[name]
         if name.startswith("measured:"):
@@ -335,7 +446,25 @@ def fill(tpl: str, src: Sources, roles: bool) -> Tuple[str, List[str], List[str]
         out_lines.append(PLACEHOLDER.sub(sub, line).rstrip())
     text = "\n".join(out_lines)
     text = re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
+    if not missing:
+        check_honesty(text, src)
     return text, missing, notes
+
+
+def check_honesty(text: str, src: Sources) -> None:
+    """The filled post's opening shows before "...see more", and a demo answer is never presented
+    as the output of a support bot the owner runs (D213, D227). Raises UsageError."""
+    opening = text.split("\n", 1)[0]
+    if len(opening) > OPENING_MAX or "TrustAgent" not in opening:
+        raise UsageError(
+            f"the first line must name TrustAgent within {OPENING_MAX} characters so a phone "
+            f"shows it before '...see more' (it has {len(opening)}): {opening!r}"
+        )
+    if re.search(r"\bmy (support )?bot\b", text, re.IGNORECASE):
+        raise UsageError(
+            "the post says 'my bot': the featured answer comes from the demo, not from a bot the "
+            "owner runs; say where it came from with {featured.source} (D227)"
+        )
 
 
 def build(root: Path, restricted: bool, roles: bool) -> Tuple[str, List[str], List[str]]:
@@ -347,7 +476,10 @@ def build(root: Path, restricted: bool, roles: bool) -> Tuple[str, List[str], Li
     names = set(PLACEHOLDER.findall(tpl))
     need_tape = any(n.startswith("featured.") for n in names)
     src = read_sources(root, need_tape=need_tape)
-    if any(n.startswith(("measured:", "run.")) or n in ("snapshot", "agreement") for n in names):
+    if any(
+        n.startswith(("measured:", "run.", "gate.")) or n in ("snapshot", "agreement")
+        for n in names
+    ):
         if not measured_run(src):
             src.problems.insert(
                 0,

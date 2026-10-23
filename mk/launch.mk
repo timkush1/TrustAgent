@@ -56,9 +56,10 @@ PAGES_ONLY ?=
 linkedin-post: ## Print the LinkedIn post as plain text from measured.json, the recorded featured trace and the claims (CLIP=1 copies it, ROLES=1 adds the roles line, RESTRICTED=1 the mode-R post)
 	@$(PYTHON) "$(LAUNCH_ROOT)/scripts/linkedin_post.py" $(if $(CLIP),--clip) $(if $(ROLES),--roles) $(if $(RESTRICTED),--restricted)
 
-clip: ## Copy a file to the Windows clipboard as UTF-16LE: make clip FILE=... (stdout where there is no clip.exe)
-	@if [ -z "$(FILE)" ]; then echo "clip: set FILE, e.g. make clip FILE=tmp/release-notes.md" >&2; exit 2; fi
-	@$(PYTHON) "$(LAUNCH_ROOT)/scripts/clip.py" "$(FILE)"
+clip: ## Copy a file (FILE=...) or a pipe (... | make clip) to the Windows clipboard as UTF-16LE (stdout where there is no clip.exe)
+	@if [ -n "$(FILE)" ]; then $(PYTHON) "$(LAUNCH_ROOT)/scripts/clip.py" "$(FILE)"; \
+	elif [ -t 0 ]; then echo "clip: set FILE (make clip FILE=tmp/release-notes.md) or pipe the text in (make release-notes TAG=v2.0.0 | make clip)" >&2; exit 2; \
+	else $(PYTHON) "$(LAUNCH_ROOT)/scripts/clip.py" -; fi
 
 test-linkedin-post: ## Unit tests of make linkedin-post and make clip (no clipboard, no network)
 	cd "$(LAUNCH_ROOT)" && $(PYTHON) -m unittest scripts/tests/test_linkedin_post.py
