@@ -1,8 +1,10 @@
-"""Every make target that spends money is a dry run unless CONFIRM=1 (D204).
+"""Every make target that spends money is a dry run unless CONFIRM=1 (D204, D232).
 
 A target whose help line names a cost (``USD`` or ``$<digits>``) must branch on CONFIRM before
-its first command, or hand CONFIRM to a script that does. The exceptions are listed with their
-reason. ``make -n`` then proves the dry run of ``eval-compare`` sends nothing to a paid judge.
+its first command, or hand CONFIRM to a script that does, or run only on an attempt that a
+confirmed run created. The exceptions are listed with their reason (D232 records them). ``make
+-n`` then proves the dry run of ``eval-compare`` sends nothing to a paid judge, and that
+``calibrate`` writes only with ``WRITE=1``.
 
 Standard library only; ``make -n`` prints the recipe without running it.
 """
@@ -32,6 +34,12 @@ NOT_GATED: Dict[str, str] = {
 # Targets that hand CONFIRM to a script which prints its plan and spends nothing without it.
 DELEGATED: Dict[str, str] = {
     "record-demo": "scripts/record_demo.py",
+}
+# Targets that run only on what a confirmed run created, and spend inside its caps: the script
+# refuses an attempt that is not under review (scripts/tests/test_launch_video.py proves it), and
+# an attempt exists only after make record-demo CONFIRM=1, whose ledger counts these calls.
+ON_A_CONFIRMED_ATTEMPT: Dict[str, str] = {
+    "launch-video-stack": 'scripts/launch_video.py" stack --attempt',
 }
 
 
@@ -64,6 +72,7 @@ class PaidTargetsAreDryRuns(unittest.TestCase):
             "jev-capture",
             "eval-compare",
             "record-demo",
+            "launch-video-stack",
         ):
             self.assertIn(target, found)
 
@@ -78,6 +87,13 @@ class PaidTargetsAreDryRuns(unittest.TestCase):
                 if target in DELEGATED:
                     self.assertIn('CONFIRM="$(CONFIRM)"', first)
                     self.assertIn(DELEGATED[target], first)
+                    continue
+                if target in ON_A_CONFIRMED_ATTEMPT:
+                    recipe = "\n".join(body)
+                    self.assertIn(ON_A_CONFIRMED_ATTEMPT[target], recipe)
+                    # It never starts a paid run itself: no record_demo.py, no sub-make.
+                    self.assertNotIn("record_demo.py", recipe, target)
+                    self.assertNotIn("$(MAKE)", recipe, target)
                     continue
                 self.assertRegex(first, GATE_RE, f"{target} spends before checking CONFIRM=1")
 
@@ -112,6 +128,30 @@ class EvalCompareDryRun(unittest.TestCase):
             self.assertRegex(out, rf"evals\.run_eval .*--limit 6 --provider {provider}\b")
         self.assertIn("halueval --samples 6", out)
         self.assertNotIn("nothing is spent", out)
+
+
+@unittest.skipUnless(shutil.which("make"), "make is not installed")
+class CalibrateWritesOnlyWhenAsked(unittest.TestCase):
+    def recipe(self, *args: str) -> str:
+        env = {k: v for k, v in os.environ.items() if k not in ("WRITE", "MAKEFLAGS", "MFLAGS")}
+        r = subprocess.run(  # nosec B603 B607 - fixed arguments
+            ["make", "-n", "--no-print-directory", "calibrate", "EVALUATOR=groundedness@1", "IN=-"]
+            + list(args),
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout
+
+    def test_only_write_1_writes_config_calibration(self) -> None:
+        self.assertIn("--write", self.recipe("WRITE=1"))
+        for args in ((), ("WRITE=0",), ("WRITE=no",)):
+            with self.subTest(args=args):
+                self.assertNotIn("--write", self.recipe(*args))
 
 
 if __name__ == "__main__":

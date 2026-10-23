@@ -76,7 +76,7 @@ calibrate: ## Fit a calibration: EVALUATOR=groundedness@1 IN=labels.jsonl [LABEL
 		exit 2; }
 	cd backend-go && go run ./cmd/calibrate --evaluator "$(EVALUATOR)" \
 		$(if $(IN),--in "$(if $(filter -,$(IN)),-,$(abspath $(IN)))") $(if $(LABEL_SOURCE),--label-source "$(LABEL_SOURCE)") \
-		$(foreach d,$(DATASET),--dataset "$(d)") $(if $(WRITE),--write) $(CALIBRATE_ARGS)
+		$(foreach d,$(DATASET),--dataset "$(d)") $(if $(filter 1,$(WRITE)),--write) $(CALIBRATE_ARGS)
 
 export-replay: ## Export a sanitized replay recording: REPLAY_OUT=<dir> [REPLAY_SINCE=<RFC 3339>] [REPLAY_SOURCE=trafficgen] (reads TRUTHTABLE_DATABASE_URL)
 	@test -n "$(REPLAY_OUT)" || { \

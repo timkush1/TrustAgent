@@ -748,6 +748,21 @@ def _print_result(
 # ---------------------------------------------------------------------------
 
 
+def region_note(region: str, systems: Sequence[str]) -> Optional[str]:
+    """
+    D225: a gate latency names where the run ran, from --region (BENCH_REGION). Left at its
+    default it publishes "region local", which tells a reader nothing; say it before money is
+    spent, never refuse after.
+    """
+    if GATE not in systems or (region and region != DEFAULT_REGION):
+        return None
+    return (
+        f"region {region or DEFAULT_REGION}: a published gate latency would say "
+        f'"region {region or DEFAULT_REGION}". Set BENCH_REGION to where this runs (israel on '
+        "the laptop, cloud-<region> in the cloud session, D225)"
+    )
+
+
 def dry_run(args: argparse.Namespace) -> int:
     """Print the plan; nothing is spent and no paid call is made."""
     systems = parse_systems(args.systems)
@@ -804,6 +819,9 @@ def dry_run(args: argparse.Namespace) -> int:
     ]
     if planning.tree_dirty():
         notes.append("the tree has uncommitted changes: a run started now cannot be published")
+    where = region_note(args.region, systems)
+    if where:
+        notes.append(where)
     print(
         planning.render_plan(
             planning.PlanInputs(
@@ -837,6 +855,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     resume_key = args.resume_key or f"{args.tier}-{Path(args.dataset).stem}"
     ledger = Path(args.cache_dir) / f"{resume_key}.ledger.jsonl"
     try:
+        where = region_note(args.region, parse_systems(args.systems))
+        if where:
+            print(f"bench: note: {where}", file=sys.stderr, flush=True)
         outcome = asyncio.run(execute(args))
     except PreconditionError as exc:
         print(f"bench: {exc}", file=sys.stderr)

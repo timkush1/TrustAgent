@@ -77,7 +77,7 @@ launch-video: ## The 60-second launch video (D210): the static beats from the re
 	$(PYTHON) "$(LAUNCH_ROOT)/scripts/launch_video.py" static
 	$(PYTHON) "$(LAUNCH_ROOT)/scripts/launch_video.py" assemble $(if $(filter 1,$(PAGES_ONLY)),--pages-only)
 
-launch-video-stack: ## The launch video's stack beats on a reviewed attempt's record stack: make launch-video-stack ATTEMPT=<id> (make record-demo ACCEPT=1 VIDEO=1 runs it; its calls are in the record ledger)
+launch-video-stack: ## The launch video's stack beats on a reviewed attempt's record stack, about USD 0.05 inside the record ledger: make launch-video-stack ATTEMPT=<id> (make record-demo ACCEPT=1 VIDEO=1 runs it)
 	@if [ -z "$(ATTEMPT)" ]; then echo "launch-video-stack: set ATTEMPT=<id> (make record-demo CONFIRM=1 printed it)"; exit 2; fi
 	$(PYTHON) "$(LAUNCH_ROOT)/scripts/launch_video.py" stack --attempt "$(ATTEMPT)"
 

@@ -488,6 +488,29 @@ def test_a_dry_run_spends_nothing_and_prints_the_plan(
     assert "200 answers, not prepared yet" in capsys.readouterr().out
 
 
+def test_the_default_region_is_named_before_anything_is_spent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # D225: a published latency names where the run ran; "region local" says nothing.
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--dry-run")) == 0
+    out = capsys.readouterr().out
+    assert 'note        region local: a published gate latency would say "region local"' in out
+    assert "Set BENCH_REGION" in out
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--dry-run", "--region", "israel")) == 0
+    assert "Set BENCH_REGION" not in capsys.readouterr().out
+    # Without the gate there is no latency to place.
+    args = _run_args(tmp_path, dataset, fake, "--dry-run", "--systems", "llm_same_checks")
+    assert bench.main(args) == 0
+    assert "Set BENCH_REGION" not in capsys.readouterr().out
+
+    # A run says it on stderr when it starts, and still runs.
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate")) == 0
+    assert "bench: note: region local" in capsys.readouterr().err
+
+
 def test_the_dry_run_reads_the_key_and_the_snapshot_for_free(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
