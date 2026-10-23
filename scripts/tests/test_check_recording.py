@@ -279,6 +279,14 @@ class CheckRecordingTest(unittest.TestCase):
         self.edit_manifest(lambda d: d["decision_model"].update(host="mock-upstream"))
         self.assertEqual(self.problems(), [])
 
+    def test_a_mock_tape_never_names_a_vendor_host(self) -> None:
+        # D203: the mock fast check and the mock judge call no vendor.
+        self.edit_manifest(lambda d: d["decision_model"].update(host="openrouter.ai"))
+        self.assert_problem("non_vendor_host: decision_model.host is 'openrouter.ai' on a mock recording")
+        self.edit_manifest(lambda d: d["decision_model"].pop("host"))
+        self.edit_manifest(lambda d: d["judge"].update(host="api.anthropic.com"))
+        self.assert_problem("non_vendor_host: judge.host is 'api.anthropic.com' on a mock recording")
+
     def test_the_launch_gate_checks_the_version(self) -> None:
         def old(doc: Dict[str, Any]) -> None:
             self.as_recorded(doc)

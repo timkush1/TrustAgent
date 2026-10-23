@@ -190,9 +190,25 @@ func TestBuildMock(t *testing.T) {
 	for _, tr := range recordingtest.Set(t) {
 		traces = append(traces, recordingtest.Mock(tr))
 	}
-	rec, m := build(t, traces, recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: vendorHosts})
+	stand := recording.Hosts{Decision: "mock-upstream", Generated: "mock-upstream"}
+	rec, m := build(t, traces, recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: stand})
 	if rec.Kind != recording.KindMock || rec.Label != recording.MockLabel || !rec.ROI.Simulated || rec.DecisionModel.Backend != "mock" || m["kind"] != "mock" {
 		t.Errorf("recording = %+v", rec)
+	}
+	// D203: the mock fast check and the mock judge call no vendor, so a simulated tape never names
+	// a vendor host for them (an export told otherwise is refused, not relabelled).
+	for _, c := range []struct {
+		hosts recording.Hosts
+		want  string
+	}{
+		{recording.Hosts{Decision: "openrouter.ai"}, "drop --decision-host openrouter.ai"},
+		{recording.Hosts{Judge: "api.anthropic.com"}, "drop --judge-host api.anthropic.com"},
+		{vendorHosts, "the fast check is the mock"},
+	} {
+		_, err := recording.Build(traces, recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: c.hosts})
+		if !errors.Is(err, recording.ErrNotRecordable) || err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("hosts %+v: err = %v, want %q", c.hosts, err, c.want)
+		}
 	}
 }
 

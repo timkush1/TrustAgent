@@ -271,6 +271,19 @@ def check_manifest_rules(m: dict[str, Any], problems: Problems, require_recorded
             )
         if (m.get("roi") or {}).get("simulated") is not True:
             problems.add(where, "a mock recording needs roi.simulated true")
+        # D203: the mock fast check calls no vendor, and neither does the mock judge, so a
+        # simulated tape that names a vendor host for them claims traffic that never happened.
+        vendors = vendor_hosts()
+        claimed = [("decision_model.host", (m.get("decision_model") or {}).get("host"))]
+        if str(judge.get("provider", "")).lower() == "mock":
+            claimed.append(("judge.host", judge.get("host")))
+        for path, host in claimed:
+            if host in vendors:
+                problems.add(
+                    where,
+                    f"non_vendor_host: {path} is {host!r} on a mock recording: the mock calls no "
+                    "vendor, so a simulated tape never names a vendor host",
+                )
         if require_recorded:
             problems.add(
                 where,

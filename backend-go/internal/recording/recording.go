@@ -285,6 +285,14 @@ func Build(traces []Trace, opt Options) (*Recording, error) {
 
 	switch model.Backend {
 	case "mock":
+		// D203: the mock fast check calls no vendor, nor does the mock judge; a simulated tape that
+		// named a vendor host for either would claim traffic that never happened.
+		if VendorHost(model.Host) {
+			return nil, fmt.Errorf("%w: the fast check is the mock, which calls no vendor: drop --decision-host %s", ErrNotRecordable, model.Host)
+		}
+		if strings.EqualFold(judge.Provider, "mock") && VendorHost(judge.Host) {
+			return nil, fmt.Errorf("%w: the judge is the mock, which calls no vendor: drop --judge-host %s", ErrNotRecordable, judge.Host)
+		}
 		r.Kind, r.Label = KindMock, MockLabel
 	case "off":
 		return nil, fmt.Errorf("%w: no trace was checked by a decision model", ErrNotRecordable)
