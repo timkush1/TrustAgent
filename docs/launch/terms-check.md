@@ -30,7 +30,7 @@ display, competitive, evaluat, disclos, reverse.
 | Jev on OpenRouter (model page and any model terms link) | https://openrouter.ai/typesafe/jev-1.13 | TO FILL | TO FILL |
 | TypeSafe Terms of Service | https://typesafe.ai/legal/terms | TO FILL | TO FILL |
 | TypeSafe Acceptable Use Policy | https://typesafe.ai/legal/acceptable-use-policy | TO FILL | TO FILL |
-| TypeSafe Master Customer Agreement (if a link exists) | TO FILL | TO FILL | TO FILL |
+| TypeSafe Master Customer Agreement (the document the reported clause is in) | TO FILL | TO FILL | TO FILL (or "could not find or open it": that is unsure, mode W) |
 | OpenRouter Terms of Service (§5.1, model terms) | https://openrouter.ai/terms | TO FILL | TO FILL |
 
 OpenRouter's model data for TypeSafe's endpoint (read at Step 0, 2026-10-10): it does not train
@@ -41,10 +41,17 @@ prompts and says nothing about benchmarks.
 
 **Mode: TO FILL**, decided on TO FILL by the owner.
 
-- **Mode A** (no clause found, or written permission): the full plan runs. The owner sends the
-  courtesy note (an FYI, whether TypeSafe may be tagged in the post, the results shared three days
-  before posting). Note the date it was sent and any reply here.
-- **Mode W** (a clause found, or unsure): the owner sends the permission request; paid Jev runs
+- **Mode A** (no clause found in any document, the Master Customer Agreement included, or written
+  permission): the full plan runs. The owner sends the courtesy note (an FYI, whether TypeSafe may
+  be tagged in the post, the results shared three days before posting). Note the date it was sent
+  and any reply here.
+- **Unread counts as unsure** (D231): if the Master Customer Agreement could not be found or
+  opened, or it is unclear which terms OpenRouter's Jev page binds its users to, the mode is W,
+  however little the other pages say. A search that found nothing is not a reading of the
+  agreement.
+- **Mode W** (a clause found, or unsure): the owner sends the permission request, which asks
+  whether the Master Customer Agreement applies to OpenRouter users and whether benchmark figures
+  and the recorded demo may be published (a written yes makes it mode A); paid Jev runs
   wait (the cloud session has no private place to keep their outputs, D222), and nothing
   Jev-derived is pushed. After seven days without a reply the owner chooses mode R or keeps waiting.
 - **Mode R** (a clause and no permission): no Jev-derived figure, recorded tape or captured Jev

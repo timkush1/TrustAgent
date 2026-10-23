@@ -25,6 +25,8 @@ paid runs and the release steps run from a Claude cloud session (D221).
 
 - [ ] **G0 terms check.** Every page in [terms-check.md](terms-check.md) read and searched; the
       quoted clauses (or "none found") and the date written there; the mode chosen (A, W or R).
+      Mode A only if the Master Customer Agreement itself was read: an agreement that could not
+      be found or opened counts as unsure, mode W (D231).
 - [ ] **The email** (courtesy note in mode A, permission request in mode W) is sent; its date is in
       terms-check.md. The drafts are kept outside the repository.
 - [ ] **The legal name** replaces `{{OWNER_LEGAL_NAME}}` in `LICENSE`, `frontend-react/package.json`
@@ -38,8 +40,10 @@ paid runs and the release steps run from a Claude cloud session (D221).
       launch day, the audience.
 - [ ] **OpenRouter account** ready, no credit yet; the privacy settings let Jev's provider
       (TypeSafe) be reached (plan §10, G1 step 4).
-- [ ] **The cloud environment** (D221): network access allows `openrouter.ai`, GitHub, the package
-      registries and `ghcr.io`; the setup script installs `ffmpeg`; no key yet.
+- [ ] **The cloud environment** (D221): network access keeps the default trusted list and adds
+      `openrouter.ai` (a custom list also needs GitHub, the package registries, `ghcr.io`, Docker
+      Hub and the OS package mirrors; plan §10, G1 step 5); the setup script installs `ffmpeg`;
+      no key yet.
 
 ## Gate A: ready to spend (the lead, before S2)
 
@@ -63,10 +67,12 @@ paid runs and the release steps run from a Claude cloud session (D221).
 - [ ] **G3 credit and the measurement key** with its fixed limit, entered as the cloud
       environment variable `OPENROUTER_API_KEY` (on the laptop, `make configure WITH_SECRETS=1`),
       never pasted into a chat.
-- [ ] **B3 to B8**, one approved card at a time, each ending with its `TRUSTAGENT_P6_RESULT` line:
-      `make jev-check`, `make jev-capture`, `make bench-smoke`, `make calib-pass` and the free
-      `make calibrate` fits, `make bench-lite` (with the held-out ECE), `make record-demo` (drift
-      reviewed, the featured trace accepted).
+- [ ] **B3 to B8**, one approved card at a time, each ending with its `TRUSTAGENT_P6_RESULT` line
+      (except `make jev-check`, whose single probe reports its snapshot and limit lines instead,
+      D232): `make jev-check`, `make jev-capture`, `make bench-smoke`, `make
+      calib-pass` and the free `make calibrate` fits, `make bench-lite` with `BENCH_REGION` set
+      (then `make calib-holdout` and the check-only publish with `HOLDOUT=`), `make record-demo`
+      (drift reviewed, the featured trace accepted).
 - [ ] **G5 comparison review**, while the bench runs: every cell of
       `contracts/claims/compare.v1.json` read with its quoted source sentence, then accepted,
       changed or dropped; `"reviewed": true` on each accepted cell.
@@ -121,8 +127,10 @@ paid runs and the release steps run from a Claude cloud session (D221).
       GHCR packages (`truthtable-proxy`, `-engine`, `-dashboard`), public since 2026-10-21 (D224),
       still public; `GHCR_PUBLIC` = `true`.
 - [ ] **G11 Pages Connect check** on `https://timkush1.github.io/TrustAgent/app/playground/#live`:
-      the result recorded in SPEC Appendix D; if OpenRouter refused the callback, the Paste-first
-      fix is merged before the tag; the key it made deleted.
+      a small credit limit set on OpenRouter's authorize page if it offers one; one example run,
+      with the browser's network panel showing requests only to the site and openrouter.ai; Forget
+      key clears it; the result recorded in SPEC Appendix D; if OpenRouter refused the callback,
+      the Paste-first fix is merged before the tag; the key it made deleted right after.
 - [ ] **The tag**: `python3 scripts/check_version.py --tag v2.0.0` passes on the merge commit; the
       owner publishes the release `v2.0.0` as a **pre-release** in the web UI, which creates the
       tag on `main` (D221). The tag run deploys Pages from the tag, pushes the semver images, and
@@ -146,15 +154,16 @@ paid runs and the release steps run from a Claude cloud session (D221).
       the stale branches deleted (`copilot/check-insecurities`, every `dependabot/*`,
       `fix/deps-security` once PR #45 is closed or merged); the repository pinned on the profile.
 - [ ] **G13 the stranger check**: the site in a private window and on a phone at 400 px, in both
-      themes: the banner says Recorded (mode A), the first-visit guide reaches the caught answer, a
-      live check with a small-limit key works and Forget key clears it, the network panel shows only
-      the site and openrouter.ai, and every README badge and link opens.
+      themes: the banner says Recorded (mode A), the first-visit guide reaches the caught answer,
+      and every README badge and link opens (the live check with a key is G11's).
 - [ ] **Post Inspector** shows the card from `og.png` for the site URL.
 - [ ] **The post**: `make linkedin-post` (with `ROLES=1` if the owner chose the roles line,
       `RESTRICTED=1` in mode R; `CLIP=1` on the laptop). It exits 1 on any missing value and
-      refuses a first line that would hide behind "…see more"; nothing is typed by hand. Read
-      through: every figure has its label, the example says where its answer came from, Jev is
-      credited to TypeSafe AI, the agreement stands beside the like-for-like third-party figure or
+      refuses a post over 2,800 characters or a first line that would hide behind "…see more";
+      nothing is typed by hand. Read
+      through: every figure has its label, the cost and the latency say what they were measured
+      on, the example says where its answer came from, Jev is credited to TypeSafe AI, the ratio
+      names the judge, the agreement stands beside the like-for-like third-party figure or
       is left out, and the "built with AI coding agents" line is the owner's. Posted with the 4:5
       video as its media, the Haqq link as the first comment ([linkedin-post.md](linkedin-post.md)).
 - [ ] **Afterwards**: every measurement key deleted or limited to its usage plus a little, and gone
