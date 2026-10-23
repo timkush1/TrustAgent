@@ -145,12 +145,14 @@
       "then": {
         "properties": {
           "decision_model": {
+            "required": ["host"],
             "properties": {
               "backend": {"not": {"enum": ["mock", "off"]}},
               "host": {"$ref": "common.v1.schema.json#/$defs/VendorHost"}
             }
           },
           "judge": {
+            "required": ["host"],
             "properties": {
               "fallback_active": {"const": false},
               "host": {"$ref": "common.v1.schema.json#/$defs/VendorHost"}
@@ -159,6 +161,11 @@
           "answer_sources": {
             "properties": {
               "generated_host": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/VendorHost"}, {"type": "null"}]}
+            },
+            "if": {"required": ["generated"], "properties": {"generated": {"minimum": 1}}},
+            "then": {
+              "required": ["generated_host"],
+              "properties": {"generated_host": {"$ref": "common.v1.schema.json#/$defs/VendorHost"}}
             }
           },
           "featured": {"properties": {"rule": {"enum": ["contradicted_with_span", "best_flagged"]}}},
