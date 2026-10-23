@@ -377,7 +377,10 @@ func TestRoiTimeseries(t *testing.T) {
 	if gated != 2 || !nearUSD(decisionUSD, 0.00025) || !nearUSD(llmUSD, 0.012) || !nearUSD(sameUSD, 0.0036) {
 		t.Errorf("series sums: gated %d decision %v llm %v same %v", gated, decisionUSD, llmUSD, sameUSD)
 	}
-	if last := ts.Points[len(ts.Points)-1]; last.T.After(now) || now.Sub(last.T) >= time.Hour {
+	// The newest bucket is the hour that holds now. Right at the turn of an hour the store's clock
+	// may still be in the previous hour (CI ran this at 19:00:00.5 and got 18:00), so a few
+	// seconds of slack are allowed there and nowhere else.
+	if last := ts.Points[len(ts.Points)-1]; last.T.After(now) || now.Sub(last.T) >= time.Hour+5*time.Second {
 		t.Errorf("the last bucket starts at %v (now %v)", last.T, now)
 	}
 

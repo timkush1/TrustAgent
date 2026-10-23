@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestKnowledgeDocs: the documents of the selected scenarios, once per id; one id with two texts
@@ -51,6 +53,10 @@ func TestSeedKnowledgeUpload(t *testing.T) {
 	}
 	refuse := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/health/ready" {
+			_, _ = io.WriteString(w, `{"status":"ready","components":{"engine":"up","knowledge":"up"}}`)
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/api/kb/documents" {
 			http.NotFound(w, r)
 			return
@@ -91,5 +97,46 @@ func TestSeedKnowledgeUpload(t *testing.T) {
 	if _, err := (&generator{opts: options{baseURL: "http://127.0.0.1:1"}, client: http.DefaultClient}).seedKnowledge(context.Background(),
 		[]knowledgeDoc{{ID: "a", Text: "b"}}, key); err == nil {
 		t.Error("a gateway that is not there: no error")
+	}
+}
+
+// TestWaitEngineReady: the seed waits while the gateway reports its engine link down (the
+// knowledge engine still opening its gRPC server), goes on once it is up, and gives up with the
+// last components it saw when the time runs out.
+func TestWaitEngineReady(t *testing.T) {
+	old := readyPoll
+	readyPoll = 5 * time.Millisecond
+	defer func() { readyPoll = old }()
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health/ready" {
+			http.NotFound(w, r)
+			return
+		}
+		if calls.Add(1) < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = io.WriteString(w, `{"status":"not_ready","components":{"engine":"down","knowledge":"down"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"status":"ready","components":{"engine":"up","knowledge":"up"}}`)
+	}))
+	defer srv.Close()
+	g := &generator{opts: options{baseURL: srv.URL}, client: http.DefaultClient}
+	if err := g.waitEngineReady(context.Background(), time.Second); err != nil {
+		t.Fatalf("an engine link that comes up: %v", err)
+	}
+	if n := calls.Load(); n != 3 {
+		t.Errorf("asked %d times, want 3", n)
+	}
+
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"status":"not_ready","components":{"engine":"down","knowledge":"down"}}`)
+	}))
+	defer down.Close()
+	g = &generator{opts: options{baseURL: down.URL}, client: http.DefaultClient}
+	err := g.waitEngineReady(context.Background(), 30*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), `engine "down"`) {
+		t.Errorf("an engine link that stays down: %v", err)
 	}
 }

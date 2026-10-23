@@ -116,6 +116,7 @@ type options struct {
 	interval      time.Duration
 	auditTimeout  time.Duration
 	timeout       time.Duration
+	readyTimeout  time.Duration
 	key           string
 	// modelPrefix and maxTokens rewrite generated scenarios sent to the upstream (D208).
 	modelPrefix string
@@ -210,6 +211,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	fl.IntVar(&o.maxTokens, "max-tokens", 0, "set max_tokens of generated scenarios sent to the upstream, at most this (1-4096; D208)")
 	fl.BoolVar(&o.reportOnly, "report-only", false, "with --expect, report mismatches as drift without failing")
 	fl.StringVar(&o.driftOut, "drift-out", "", "with --expect or --record, write every scenario's outcome (ok, drift, unchecked, failed) to this JSON file")
+	fl.DurationVar(&o.readyTimeout, "ready-timeout", 3*time.Minute, "how long --seed-knowledge waits for the gateway's engine link (GET /health/ready) before uploading")
 	fl.Usage = func() {
 		fmt.Fprintln(stderr, "usage: trafficgen [--once | --loop [--interval 20s]] [--expect [--allow-skip] [--report-only] | --record] [--trace-ids-out FILE] [--drift-out FILE] [--scenarios s0] [--exclude sets] [--phase p3] [--upstream none] [--model-prefix openai/] [--max-tokens 300] [--base-url URL] [--pack main | --file pack.json]")
 		fmt.Fprintln(stderr, "       trafficgen --seed-knowledge --admin-key-file FILE [--scenarios knowledge] [--base-url URL]")
@@ -220,7 +222,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 		return exitUsage
 	}
 	_, knownPack := packFiles[o.pack]
-	if fl.NArg() > 0 || (o.once && o.loop) || o.interval <= 0 || o.auditTimeout <= 0 || o.timeout <= 0 ||
+	if fl.NArg() > 0 || (o.once && o.loop) || o.interval <= 0 || o.auditTimeout <= 0 || o.timeout <= 0 || o.readyTimeout <= 0 ||
 		!slices.Contains(phases, o.phase) || !slices.Contains([]string{upstreamNone, upstreamGenerated, upstreamAll}, o.upstream) ||
 		!knownPack || (o.file != "" && o.pack != packMain) ||
 		// A recording run sends each scenario once, through a real upstream at most for its
@@ -342,6 +344,10 @@ func seedRun(ctx context.Context, o options, all []scenario, sets string, stdout
 		return exitUsage
 	}
 	g := &generator{opts: o, client: &http.Client{Timeout: o.timeout}, out: stdout}
+	if err := g.waitEngineReady(ctx, o.readyTimeout); err != nil {
+		fmt.Fprintln(stderr, "trafficgen: --seed-knowledge:", err)
+		return exitMismatch
+	}
 	res, err := g.seedKnowledge(ctx, docs, key)
 	if err != nil {
 		fmt.Fprintln(stderr, "trafficgen: --seed-knowledge:", err)

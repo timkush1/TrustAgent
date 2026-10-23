@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 // knowledgeDoc is a document the knowledge base must hold for a scenario (scenarios.v1 knowledge).
@@ -73,6 +74,51 @@ type seedResult struct {
 	ClaimsAccepted    int `json:"claims_accepted"`
 	ClaimsQuarantined int `json:"claims_quarantined"`
 	ConflictsDetected int `json:"conflicts_detected"`
+}
+
+// readyPoll is how often waitEngineReady asks the gateway again; a variable so tests can shorten it.
+var readyPoll = 2 * time.Second
+
+// waitEngineReady waits until the gateway's GET /health/ready reports its engine link up and the
+// knowledge component not down. A stack that `compose up --wait` reported healthy can still be
+// opening the engine's gRPC server (the knowledge engine loads its embedding model first), and a
+// seed sent in that window fails with HTTP 500. It returns nil as soon as the link is up, and an
+// error naming the last components it saw when the time runs out.
+func (g *generator) waitEngineReady(ctx context.Context, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	last := "no answer yet"
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.opts.baseURL+"/health/ready", nil)
+		if err != nil {
+			return err
+		}
+		if resp, err := g.client.Do(req); err != nil {
+			last = err.Error()
+		} else {
+			var ready struct {
+				Components map[string]string `json:"components"`
+			}
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+			resp.Body.Close()
+			if json.Unmarshal(b, &ready) == nil && ready.Components != nil {
+				engine, knowledge := ready.Components["engine"], ready.Components["knowledge"]
+				if engine == "up" && knowledge != "down" {
+					return nil
+				}
+				last = fmt.Sprintf("engine %q, knowledge %q", engine, knowledge)
+			} else {
+				last = fmt.Sprintf("HTTP %d", resp.StatusCode)
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the gateway's engine link was not up within %s (last: %s)", timeout, last)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(readyPoll):
+		}
+	}
 }
 
 // seedKnowledge uploads docs to the gateway's knowledge base (POST /api/kb/documents, the admin
