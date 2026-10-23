@@ -215,7 +215,9 @@ class PostTest(unittest.TestCase):
         root = make_root()
         self.addCleanup(shutil.rmtree, root, True)
         path = root / lp.TEMPLATE_PATH
-        text = path.read_text(encoding="utf-8").replace("I gave it {featured.source}.", "My support bot answered.", 1)
+        text = path.read_text(encoding="utf-8").replace(
+            "I gave it {featured.source}.", "My support bot answered.", 1
+        )
         path.write_text(text, encoding="utf-8")
         code, out, err = run(root)
         self.assertEqual((code, out), (2, ""))
@@ -243,7 +245,9 @@ class PostTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, root, True)
         path = root / lp.TEMPLATE_PATH
         text = path.read_text(encoding="utf-8").replace(
-            "TrustAgent checks each LLM answer", "Long words " * 15 + "TrustAgent checks each LLM answer", 1
+            "TrustAgent checks each LLM answer",
+            "Long words " * 15 + "TrustAgent checks each LLM answer",
+            1,
         )
         path.write_text(text, encoding="utf-8")
         code, _, err = run(root)
@@ -523,8 +527,13 @@ class TemplateTest(unittest.TestCase):
         env["PATH"] = "/usr/bin:/bin"  # no clip.exe: the text comes back on stdout
         r = subprocess.run(  # nosec B603 B607 - fixed arguments
             ["make", "-s", "--no-print-directory", "clip"],
-            cwd=ROOT, env=env, input="27× — piped\n", capture_output=True, text=True,
-            timeout=60, check=False,
+            cwd=ROOT,
+            env=env,
+            input="27× — piped\n",
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
         )
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout, "27× — piped\n")
