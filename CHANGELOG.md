@@ -176,6 +176,10 @@ Details are under *Build log by phase* (*Breaking changes (P3)* and
   diagnoses a running stack, `make configure WITH_SECRETS=1` asks for keys at
   hidden prompts, the onboarding and e2e stacks run every vendor on
   mock-upstream, and `make docs-links` checks every relative link.
+- **Always-on demo recipe** (optional): `docker-compose.public.yml` puts Caddy
+  in front of a read-only demo stack with automatic HTTPS, and the
+  `make public-demo-*` targets start, check and remove it on a small VM
+  ([docs/DEPLOY-DEMO.md](docs/DEPLOY-DEMO.md)).
 - **Community files**: [CONTRIBUTING.md](CONTRIBUTING.md),
   [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), issue forms and a pull request
   template; security reports go through GitHub's private vulnerability reporting

@@ -32,8 +32,8 @@ Total: ~93 hours over ~10 weeks part-time.
 | [10](#phase-10--cores) | P2 | Gateway, engine, dashboard and DX cores, four streams in parallel | Done (2026-09-28) |
 | [11](#phase-11--integration-and-the-m-demo-gate) | P3 | Enforcing pipeline, streaming, policies, the redesigned pages; M-Demo gate | Done (2026-10-01) |
 | [12](#phase-12--security-credentials-studio-roi) | P4 | Security, credentials and Connect OpenRouter, Studio, labels and calibration, Savings | Done (2026-10-09) |
-| [13](#phase-13--static-site-landing-release-tooling) | P5 | Static site with live checks, landing page, release images and tooling, launch drafts | In progress |
-| [14](#phase-14--measurement-and-launch) | P6 | Measured benchmarks, a recorded demo, the 2.0.0 release and Pages | Planned |
+| [13](#phase-13--static-site-landing-release-tooling) | P5 | Static site with live checks, landing page, release images and tooling, launch drafts | Done |
+| [14](#phase-14--measurement-and-launch) | P6 | Measured benchmarks, a recorded demo, the 2.0.0 release and Pages | In progress |
 | [15](#phase-15--v21) | P7 | v2.1: per-claim Jev cascade, knowledge gates, key rotation | Planned |
 
 ## Why this ordering
@@ -296,22 +296,22 @@ v1 and the 1.0 `/api/audits` shape are deleted.
 
 ## Phase 13 — Static site, landing, release tooling
 
-**SPEC**: P5 · **Status**: In progress (plan: [docs/v2/P5-PLAN.md](v2/P5-PLAN.md))
+**SPEC**: P5 · **Status**: Done (plan: [docs/v2/P5-PLAN.md](v2/P5-PLAN.md))
 
-- [ ] **Live checks in the browser** on the static site: Connect or paste an OpenRouter key, kept
+- [x] **Live checks in the browser** on the static site: Connect or paste an OpenRouter key, kept
       in the tab for at most 2 hours, courtesy caps, the 402 screen, the static PKCE callback
-- [ ] **Static Studio**: templates, editor, test bench, threshold what-if, local calibration,
+- [x] **Static Studio**: templates, editor, test bench, threshold what-if, local calibration,
       Draft with AI, Copy and Download
-- [ ] **Landing page**: cost calculator pinned by the `cost` vectors, the dated comparison
+- [x] **Landing page**: cost calculator pinned by the `cost` vectors, the dated comparison
       table, Try it, Write your own checks, the "What Jev was asked" panel, self-host
-- [ ] **Replay**: simulated and recorded datasets, the glass box rebuilt in the browser, honest
+- [x] **Replay**: simulated and recorded datasets, the glass box rebuilt in the browser, honest
       static states, the first-visit guide, the `/og` card
-- [ ] **Gateway tools**: the vendor-fault scenarios, `trafficgen --record`, the knowledge
+- [x] **Gateway tools**: the vendor-fault scenarios, `trafficgen --record`, the knowledge
       scenario in process, published k6 overhead runs, Tier-0 benchmarks, `jevcheck`
-- [ ] **Release**: version tooling, multi-arch GHCR images with attestations, the pull-based
+- [x] **Release**: version tooling, multi-arch GHCR images with attestations, the pull-based
       quickstart, `pages.yml` (deploys only once the owner turns Pages on), `record-demo`,
       the complete doctor, `first-run` and golden-path tests
-- [ ] **Docs and launch**: `check-claims`, the README hero, ADR-005 to ADR-010, the launch
+- [x] **Docs and launch**: `check-claims`, the README hero, ADR-005 to ADR-010, the launch
       drafts in [docs/launch/](launch/), capture tooling
 
 **Gate**: P5-PLAN §18 — the static build passes its Playwright projects (labels visible, no
@@ -321,7 +321,7 @@ network except the site and openrouter.ai, CSP meta present) and the size budget
 
 ## Phase 14 — Measurement and launch
 
-**SPEC**: P6 (the owner's key; bench-lite capped at $5) · **Status**: Planned
+**SPEC**: P6 (the owner's key; bench-lite capped at $5) · **Status**: In progress (plan: [docs/v2/P6-PLAN.md](v2/P6-PLAN.md); the tooling is built, the paid runs wait for the owner)
 
 - [ ] `make bench-lite` (RAGTruth-QA: the fast check, the same checks asked of an LLM, a full
       audit) and `make calibrate WRITE=1` on the pinned snapshot

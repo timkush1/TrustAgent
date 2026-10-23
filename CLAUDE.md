@@ -34,7 +34,7 @@ streams to a React dashboard over WebSocket v2.
 | `frontend-react/` | React 19.3 + TypeScript 6 + Vite 8 + TanStack Router/Query + Tailwind 4 dashboard; house rules in `frontend-react/DESIGN.md` |
 | `contracts/` | Cross-language source of truth: JSON Schemas, config-key registry (`config/keys.v1.json`), evaluator templates, question sets, rules, demo scenarios, UI copy/glossary, pricing, value claims, golden vectors |
 | `proto/evaluator.proto` | Go↔Python gRPC contract (v2, additive) |
-| `docker-compose.yml` (+ `.demo.yml`, `.e2e.yml`, `.onboarding.yml`, `.load*.yml`) | Default set: proxy, engine, postgres, dashboard. Profiles: `knowledge`, `local-llm`, `observability`, `redis`, `demo`, `e2e`, `load`. No fixed container names: `docker compose exec <service>` (engine service is `engine`). make passes `GIT_SHA` as a build arg |
+| `docker-compose.yml` (+ `.demo.yml`, `.e2e.yml`, `.onboarding.yml`, `.load*.yml`, `.knowledge.yml`, `.record.yml` for `make record-demo`, `.public.yml` for the always-on demo behind Caddy) | Default set: proxy, engine, postgres, dashboard. Profiles: `knowledge`, `local-llm`, `observability`, `redis`, `demo`, `e2e`, `load`. No fixed container names: `docker compose exec <service>` (engine service is `engine`). make passes `GIT_SHA` as a build arg |
 | `Makefile`, `mk/*.mk` | Thin root Makefile including one fragment per stream (`go`, `py`, `web`, `dx`, `contracts`, `load`, `release`, `launch`) |
 | `.github/workflows/` | `ci-{go,python,web,contracts,docker,e2e}.yml` (job names are branch-protection checks: keep them stable), `security.yml` (gosec, bandit, npm audit, gitleaks with `.gitleaks.toml`), `eval.yml`; release side: `pages.yml` (deploys only once the owner enables Pages), `release-images.yml` (GHCR), `eval-live.yml` |
 | `VERSION` | Project version (mirrors: pyproject.toml, package.json and its lockfile, `backend-go/internal/version/version.go`, `truthtable/__init__.py`, the compose image tag) |
@@ -83,6 +83,18 @@ make lint-workflows # actionlint + zizmor over .github/workflows
 make check-claims   # every <!-- claim:ID --> figure in README/docs vs contracts/claims; claims-write regenerates measured tables
 make check-claims-launch                          # launch gate: recorded dataset, measured run, reviewed comparison, og.png
 make og / hero-gif / screenshots                  # launch captures (og and hero-gif refuse the simulated tape; screenshots show its label)
+# Paid targets (bench-lite, bench-smoke, calib-pass, eval-live, jev-capture, record-demo) print their plan and spend nothing unless CONFIRM=1
+make bench-smoke / calib-pass [CALIB_N=…]         # 20-answer smoke bench / calibration pass through one warm gate-eval (caps USD 0.30)
+make calib-holdout RUN=<abs run.json>             # held-out ECE and Brier before and after calibration (free)
+make bench-publish RUN=<abs run.json> [HOLDOUT=…] [CHECK_ONLY=1]   # publish a measured run; refuses mock, stand-in hosts and every D204 rule
+make p6-ledger      # read-only sum of the measurement spend against the key's usage and the caps
+make jev-capture    # sanitized vendor fixtures via jevcheck --capture, then gitleaks over them
+make record-demo ACCEPT=1 ATTEMPT=<id> [FEATURED=<trace>] [VIDEO=1] / DISCARD=1 ATTEMPT=<id>   # take or drop a reviewed attempt
+make launch-video [PAGES_ONLY=1] / launch-video-stack ATTEMPT=<id>   # the 60-second launch video (refuses a simulated tape)
+make release-notes TAG=v2.0.0 / linkedin-post [CLIP=1 ROLES=1 RESTRICTED=1] / clip FILE=…   # launch text; each exits 1 on a missing value
+make compare-review # re-read every comparison source and reverify claim; prints the G5 table
+make hygiene-check / gitleaks-history             # no local paths or personal emails in tracked files / gitleaks over the whole history
+make public-demo-up / check / setup-url / logs / down / clean   # the always-on demo on a VM (docs/DEPLOY-DEMO.md)
 ```
 
 Per-project:
