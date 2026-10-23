@@ -11,6 +11,7 @@ import json
 import pytest
 
 from truthtable.graphs.audit_graph import build_audit_graph, run_audit
+from truthtable.graphs.state import AuditState
 from truthtable.providers.mock import MockLLMProvider
 
 
@@ -177,3 +178,46 @@ async def test_contradicted_and_unverifiable_differ_end_to_end():
         "UNSUPPORTED",
     ]
     assert state["claim_verifications"][0]["reasoning"] == "9am, not 10am."
+
+
+async def test_the_result_carries_every_state_key():
+    # LangGraph leaves out of a run's result the keys no node wrote; run_audit
+    # returns every AuditState key, None when unset, as callers have always had.
+    response_text = "Paris is the capital of France."
+    provider = MockLLMProvider(
+        fixtures=make_fixtures(
+            response_text,
+            {
+                "Paris is the capital of France.": {
+                    "status": "SUPPORTED",
+                    "confidence": 0.95,
+                    "evidence": ["Paris is the capital of France."],
+                }
+            },
+        )
+    )
+    graph = build_audit_graph(provider=provider)
+
+    checked = await run_audit(
+        graph=graph,
+        request_id="test-keys-checked",
+        user_query="What is the capital of France?",
+        llm_response=response_text,
+        context_docs=["Paris is the capital and largest city of France."],
+    )
+    # No evidence: the audit ends at preflight, before decompose and score.
+    unchecked = await run_audit(
+        graph=graph,
+        request_id="test-keys-unchecked",
+        user_query="What is the capital of France?",
+        llm_response=response_text,
+        context_docs=[],
+    )
+
+    for state in (checked, unchecked):
+        assert list(state) == list(AuditState.__annotations__)
+    assert checked["verdict"] == "GROUNDED"
+    assert checked["context_trimmed"] is None  # the verifier sent all of the evidence
+    assert unchecked["verdict"] == "NOT_ASSESSED"
+    for key in ("extracted_claims", "context_trimmed", "scores", "grade", "scoring_version"):
+        assert unchecked[key] is None, key
