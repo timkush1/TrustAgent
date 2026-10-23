@@ -61,23 +61,45 @@ const entries = new Map((claimsDoc.claims as ClaimEntry[]).map((c) => [c.id, c])
 const measuredValues = measuredDoc.values as Record<string, { value: number | null }>;
 const measuredRun = measuredDoc.status === 'measured' && measuredDoc.mock === false;
 const measuredIntervals = (measuredDoc as { intervals?: Record<string, MeasuredInterval> }).intervals ?? {};
-const measuredSources = (measuredDoc as { sources?: { gate_latency?: { conditions?: unknown } } }).sources ?? {};
+const measuredSources = (measuredDoc as { sources?: Record<string, { conditions?: unknown } | undefined> }).sources ?? {};
+const measuredUnits = measuredDoc.values as Record<string, { unit?: string; system?: string } | undefined>;
 
 /**
- * A caveat as the page shows it. `{gate_conditions}` is filled from measured.json
- * (sources.gate_latency.conditions: the connection, requests at a time, where the run ran, the
- * snapshot and n; D205), as scripts/check-claims.mjs fills it for the README. A value not
- * measured yet has no conditions, so its caveat is dropped; a placeholder is never shown raw.
+ * The measured.json sources key whose conditions fill a caveat's `{cost_conditions}` (D229): a
+ * cost per 1,000 answers its own, the same-checks ratio the LLM judge's cost (which names the
+ * judge). The same rule as scripts/check-claims.mjs costConditionsKey.
+ */
+export function costConditionsKey(ref: string | undefined): string | null {
+  if (!ref) return null;
+  if (ref === 'same_checks_cost_ratio') return 'llm_same_checks_usd_per_1k';
+  const entry = measuredUnits[ref];
+  return entry?.unit === 'usd_per_1k' && entry.system !== 'proxy' ? ref : null;
+}
+
+function sourceConditions(key: string | null): unknown {
+  return measuredRun && key ? measuredSources[key]?.conditions : undefined;
+}
+
+const PLACEHOLDERS = ['{gate_conditions}', '{cost_conditions}'] as const;
+
+/**
+ * A caveat as the page shows it, filled from measured.json as scripts/check-claims.mjs fills it
+ * for the README: `{gate_conditions}` from sources.gate_latency.conditions (the connection,
+ * requests at a time, where the run ran, the snapshot and n; D205), `{cost_conditions}` from the
+ * cost's sources.<key>.conditions (the dataset, n, the input tokens per answer and the judge;
+ * D229). A value not measured yet has no conditions, so its caveat is dropped; a placeholder is
+ * never shown raw.
  */
 export function fillCaveat(
   caveat: string | null,
   hasValue: boolean,
-  conditions: unknown = measuredRun ? measuredSources.gate_latency?.conditions : undefined,
+  conditions: unknown = sourceConditions('gate_latency'),
+  costConditions: unknown = undefined,
 ): string | null {
-  if (!caveat?.includes('{gate_conditions}')) return caveat;
+  if (!caveat || !PLACEHOLDERS.some((p) => caveat.includes(p))) return caveat;
   if (!hasValue) return null;
-  const text = typeof conditions === 'string' && conditions.trim() ? conditions.trim() : 'conditions not recorded';
-  return caveat.replace('{gate_conditions}', text);
+  const words = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : 'conditions not recorded');
+  return caveat.replace('{gate_conditions}', words(conditions)).replace('{cost_conditions}', words(costConditions));
 }
 const INTERVAL_METHODS: Record<string, string> = { wilson: 'Wilson', bootstrap: 'bootstrap' };
 
@@ -121,7 +143,7 @@ export function claim(id: string): ClaimView {
     basis: c.basis,
     sourceUrl: c.source_url,
     asOf: c.as_of,
-    caveat: fillCaveat(c.caveat, hasValue),
+    caveat: fillCaveat(c.caveat, hasValue, sourceConditions('gate_latency'), sourceConditions(costConditionsKey(c.measured_ref))),
     interval: hasValue && label === 'measured' && measuredRun && c.measured_ref ? intervalText(measuredIntervals[c.measured_ref], c.unit) : null,
   };
 }

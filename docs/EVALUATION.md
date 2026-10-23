@@ -154,7 +154,12 @@ dirty when it started.
 split (`calib-pass`) and measured on the bench's test sample
 (`calib-holdout`), so the published "ECE after calibration" is held out, never
 in-sample. Numbers from these runs replace the estimates on the landing page
-and in the dashboard only through `bench-publish`, which needs one named run
+and in the dashboard only through `bench-publish`. Each published figure keeps
+what it was measured on: a latency its connection, requests at a time, where
+the run ran, snapshot and n; a cost its dataset, n and the mean input tokens
+per answer the vendor counted (a cost per answer grows with the documents'
+length, so a benchmark's cost holds only for answers of that size).
+`bench-publish` needs one named run
 (`RUN=`) and lists every refusal at once: mock output or a non-vendor host, a
 tree that was dirty at the start, more than 5% failures or fewer than 95%
 scored, more than one decision-model snapshot, an unknown cost source,

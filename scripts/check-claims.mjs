@@ -32,6 +32,9 @@
  *   [load-run-missing]    a measured overhead value names a run with no docs/benchmarks/load file
  *   [latency-conditions]  a measured gate latency has no sources.gate_latency.conditions in
  *                         measured.json (D205): the figure would show without how it was taken
+ *   [cost-conditions]     a measured cost (or the same-checks ratio) has no sources.<key>.conditions
+ *                         in measured.json (D229): the figure would show without the dataset and the
+ *                         input tokens per answer it paid for
  *   [empty-measured-chip] a measured claim with no value carries the [measured] chip: an absent
  *                         value is not a measurement, so "not yet measured" goes without it
  *   [pair-unknown]        an estimate's measured_pair names no measured claim
@@ -417,6 +420,34 @@ export function gateConditions(claim, measured, empty) {
   };
 }
 
+/**
+ * The measured.json sources key whose conditions fill a caveat's {cost_conditions} (D229): a cost
+ * per 1,000 answers its own (not the proxy's), the same-checks ratio the LLM judge's cost, which
+ * names the judge. Mirrors contracts/validate.mjs costConditionsKey; null when none applies.
+ */
+export function costConditionsKey(ref, entry) {
+  if (ref === 'same_checks_cost_ratio') return 'llm_same_checks_usd_per_1k';
+  if (entry?.unit === 'usd_per_1k' && entry.system !== 'proxy') return ref;
+  return null;
+}
+
+/**
+ * The words for a cost caveat's {cost_conditions} (D229): measured.json sources.<key>.conditions,
+ * as bench publish wrote it (the dataset, n, the input tokens per answer, the judge model). A cost
+ * per answer grows with the documents' length, so it is never shown without them. Nothing for a
+ * value not measured yet: the caveat is then dropped, never shown with a raw placeholder.
+ */
+export function costConditions(claim, measured, empty) {
+  if (empty) return { text: null, problem: null };
+  const key = costConditionsKey(claim.measured_ref, measured?.values?.[claim.measured_ref]);
+  const text = key ? measured?.sources?.[key]?.conditions : null;
+  if (typeof text === 'string' && text.trim()) return { text: text.trim(), problem: null };
+  return {
+    text: 'conditions not recorded',
+    problem: `${MEASURED_PATH} publishes ${claim.measured_ref} without sources.${key ?? claim.measured_ref}.conditions (D229): rerun make bench-publish`,
+  };
+}
+
 function inMeasuredBlock(claim) {
   return claim.label === 'measured' && claim.surfaces.some((s) => SURFACES.includes(s));
 }
@@ -510,6 +541,11 @@ export function renderMeasuredBlock(claims, measured, read, loadRuns = []) {
       const filled = gateConditions(c, measured, shown.empty);
       if (filled.problem) problems.push(filled.problem);
       caveat = filled.text === null ? '' : caveat.replace('{gate_conditions}', filled.text);
+    }
+    if (caveat.includes('{cost_conditions}')) {
+      const filled = costConditions(c, measured, shown.empty);
+      if (filled.problem) problems.push(filled.problem);
+      caveat = filled.text === null ? '' : caveat.replace('{cost_conditions}', filled.text);
     }
     const note = [shown.empty ? '' : measuredNote(c, measured), caveat].filter(Boolean).join(' ');
     const result = shown.empty ? shown.text : `${shown.text} [${LABEL_CHIPS.measured}]`;
@@ -725,7 +761,11 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
   const byId = new Map(claims.claims.map((c) => [c.id, c]));
   const like = byId.get(LIKE_FOR_LIKE_ID) ?? null;
   const block = renderMeasuredBlock(claims, measured, read, loadRuns);
-  for (const p of block.problems) report('error', p.includes('sources.gate_latency') ? 'latency-conditions' : 'load-run-missing', MEASURED_PATH, null, p);
+  const blockRule = (p) => {
+    if (p.includes('sources.gate_latency')) return 'latency-conditions';
+    return p.includes('(D229)') ? 'cost-conditions' : 'load-run-missing';
+  };
+  for (const p of block.problems) report('error', blockRule(p), MEASURED_PATH, null, p);
   const pkce = pkceStatus(specText);
   const rewrites = new Map();
   let markerCount = 0;
@@ -780,8 +820,9 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
             `claim ${claim.id} is labelled ${claim.label}: its chip is [${want}], not [${chip[1]}]`);
         }
       }
-      // A caveat filled from the run ({gate_conditions}) exists only once the value is measured.
-      const runCaveat = claim.caveat?.includes('{gate_conditions}') && expected.empty;
+      // A caveat filled from the run ({gate_conditions}, {cost_conditions}) exists only once the
+      // value is measured.
+      const runCaveat = /\{(gate|cost)_conditions\}/.test(claim.caveat ?? '') && expected.empty;
       if (claim.caveat && !runCaveat && !checkCaveat(claim, mk, file, lines, visible, prose, files, read)) {
         report('error', 'caveat-missing', file, line,
           `claim ${claim.id}: its caveat ("${claim.caveat}") or a link to an anchor holding it must follow within ${CAVEAT_WINDOW_LINES} lines`);
@@ -1234,7 +1275,7 @@ const FIXTURE_CLAIMS = {
       source_url: null, as_of: null, caveat: 'Replayed illustration.', surfaces: ['landing'] },
     { id: 'meas_cost', text: 'Our fast-check cost per 1,000 answers', value: null, unit: 'usd_per_1k',
       display: '${value} / 1,000 answers', empty_display: 'not yet measured', label: 'measured', basis: 'b',
-      source_url: null, as_of: null, caveat: null, measured_ref: 'fast_check_usd_per_1k', surfaces: ['readme'] },
+      source_url: null, as_of: null, caveat: 'The fast check alone, on {cost_conditions}.', measured_ref: 'fast_check_usd_per_1k', surfaces: ['readme'] },
     { id: 'meas_overhead', text: 'Gateway overhead, p50', value: null, unit: 'ms', display: '{value} ms p50',
       empty_display: 'not yet measured', label: 'measured', basis: 'b', source_url: null, as_of: null,
       caveat: "Gateway's own time with simulated vendors; {machine}", measured_ref: 'proxy_overhead_ms_p50',
@@ -1284,7 +1325,10 @@ const MEASURED = {
     ragtruth_qa_agreement: { lo: 0.75, hi: 0.86, method: 'bootstrap', resamples: 2000, seed: 13, n_pos: 40, n_neg: 160 },
   },
   sources: {
-    fast_check_usd_per_1k: { cost_source: 'reported' },
+    fast_check_usd_per_1k: {
+      cost_source: 'reported', dataset: 'RAGTruth-QA test split', n: 200, input_tokens_per_answer: 640,
+      conditions: 'RAGTruth-QA test split, n=200, about 640 input tokens per answer',
+    },
     groundedness_ece: {
       method: 'holdout', calibration_file: `config/calibration/${SNAPSHOT}.json`, calibration_sha256: 'a'.repeat(64), dataset: 'ragtruth:qa-train@c103204',
     },
@@ -1496,8 +1540,18 @@ const CASES = [
     name: 'a measured value is read from a measured run',
     measured: MEASURED,
     read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
-    files: { 'README.md': 'Ours: <!-- claim:meas_cost --> $0.213 / 1,000 answers [measured]' },
+    files: {
+      'README.md': 'Ours: <!-- claim:meas_cost --> $0.213 / 1,000 answers [measured]. The fast check alone, on ' +
+        'RAGTruth-QA test split, n=200, about 640 input tokens per answer.',
+    },
     expect: [],
+  },
+  {
+    name: 'a measured cost outside the block carries its conditions (D229)',
+    measured: MEASURED,
+    read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
+    files: { 'README.md': 'Ours: <!-- claim:meas_cost --> $0.213 / 1,000 answers [measured]' },
+    expect: ['caveat-missing'],
   },
   {
     name: 'a value in a file that is not a measured run is refused',
@@ -1645,7 +1699,8 @@ const CASES = [
       { measured: { ...MEASURED, snapshot: [SNAPSHOT, 'jev-1.14-20261101'] }, expect: ['launch-snapshot'] },
       { measured: { ...MEASURED, snapshot: [SNAPSHOT, 'jev-1.14-20261101'], sources: { ...MEASURED.sources, snapshot_split: true } }, expect: [] },
       { measured: { ...MEASURED, sources: { ...MEASURED.sources, snapshot_split: true } }, expect: ['launch-snapshot'] },
-      { measured: { ...MEASURED, sources: { fast_check_usd_per_1k: { cost_source: 'reported' }, groundedness_ece: MEASURED.sources.groundedness_ece } }, expect: ['latency-conditions'] },
+      { measured: { ...MEASURED, sources: { fast_check_usd_per_1k: MEASURED.sources.fast_check_usd_per_1k, groundedness_ece: MEASURED.sources.groundedness_ece } }, expect: ['latency-conditions'] },
+      { measured: { ...MEASURED, sources: { ...MEASURED.sources, fast_check_usd_per_1k: { cost_source: 'reported' } } }, expect: ['cost-conditions'] },
     ],
     expect: [],
   },
@@ -2020,6 +2075,17 @@ export function selfTest() {
     check('generated block (measured): a latency without its conditions is a problem, never a raw placeholder',
       bare.problems.some((p) => p.includes('without sources.gate_latency.conditions')) && !bare.lines.join('\n').includes('{gate_conditions}'),
       JSON.stringify(bare.problems));
+    check('generated block (measured): the cost names the dataset, n and the input tokens per answer (D229)',
+      (lines[at('meas_cost')] ?? '').includes('$0.213 / 1,000 answers [measured] | Cost as the vendor reported it. The fast check alone, on ' +
+        'RAGTruth-QA test split, n=200, about 640 input tokens per answer. |'),
+      lines[at('meas_cost')]);
+    check('generated block (measured): a cost without its conditions is a problem, never a raw placeholder',
+      bare.problems.some((p) => p.includes('without sources.fast_check_usd_per_1k.conditions (D229)')) && !bare.lines.join('\n').includes('{cost_conditions}'),
+      JSON.stringify(bare.problems));
+    check('cost conditions: a cost is its own key, the ratio is the judge\'s cost, a proxy figure has none',
+      costConditionsKey('fast_check_usd_per_1k', { unit: 'usd_per_1k', system: 'gate' }) === 'fast_check_usd_per_1k' &&
+        costConditionsKey('same_checks_cost_ratio', { unit: 'multiplier', system: 'gate' }) === 'llm_same_checks_usd_per_1k' &&
+        costConditionsKey('proxy_overhead_ms_p50', { unit: 'ms', system: 'proxy' }) === null);
     const split = renderMeasuredBlock(FIXTURE_CLAIMS, { ...MEASURED, snapshot: [SNAPSHOT, 'jev-1.14'], sources: { snapshot_split: true } }, read).lines;
     check('generated block (split snapshots): the footer names both', split[split.length - 1].includes(`snapshots ${SNAPSHOT} and jev-1.14`));
     const computed = renderMeasuredBlock(FIXTURE_CLAIMS, { ...MEASURED, sources: { fast_check_usd_per_1k: { cost_source: 'computed' } } }, read).lines;

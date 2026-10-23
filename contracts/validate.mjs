@@ -624,6 +624,17 @@ if (assumptions && prices) {
 
 // ------------------------------------------------------------------------------------------ claims
 
+/**
+ * The measured.json sources key whose conditions fill a claim's {cost_conditions} (D229): a cost
+ * per 1,000 answers its own (not the proxy's), the same-checks ratio the LLM judge's cost, which
+ * names the judge. Mirrors scripts/check-claims.mjs costConditionsKey; null when none applies.
+ */
+function costConditionsKey(ref, entry) {
+  if (ref === 'same_checks_cost_ratio') return 'llm_same_checks_usd_per_1k';
+  if (entry?.unit === 'usd_per_1k' && entry.system !== 'proxy') return ref;
+  return null;
+}
+
 // The rules bench publish keeps for measured.json beyond its schema (D204, D206, D207, D212).
 // Each problem starts with the code a refusal fixture names (fixtures/bench/measured.refused.<code>.json).
 function measuredProblems(m) {
@@ -648,8 +659,12 @@ function measuredProblems(m) {
   for (const [k, v] of Object.entries(m.values)) {
     if (v.value === null || v.unit !== 'usd_per_1k' || v.system === 'proxy') continue;
     const src = m.sources?.[k]?.cost_source;
-    if (src === undefined) out.push(`cost_source_missing: values.${k} needs sources.${k}.cost_source (reported or computed)`);
-    else if (!['reported', 'computed'].includes(src)) out.push(`cost_source_unknown: sources.${k}.cost_source ${src} is refused (D204)`);
+    if (src === undefined) {
+      out.push(`cost_source_missing: values.${k} needs sources.${k}.cost_source (reported or computed)`);
+      continue;
+    }
+    if (!['reported', 'computed'].includes(src)) out.push(`cost_source_unknown: sources.${k}.cost_source ${src} is refused (D204)`);
+    if (!m.sources[k].conditions) out.push(`cost_conditions: values.${k} needs sources.${k}.conditions: the dataset, n and the input tokens per answer (D229)`);
   }
   if ((m.values.groundedness_ece_after?.value ?? null) !== null && m.sources?.groundedness_ece?.method !== 'holdout') {
     out.push('ece_source: groundedness_ece_after needs sources.groundedness_ece, held out (D206)');
@@ -682,11 +697,18 @@ if (claims) {
       error(REL, `${c.id}: measured claims have value null (read from measured.json), a measured_ref and an empty_display`);
     }
     if (c.label !== 'measured' && c.value === null) error(REL, `${c.id}: only measured claims may have a null value`);
-    // A caveat's {name} is filled from the measured run (D205, D118); any other {name} would show raw.
+    // A caveat's {name} is filled from the measured run (D205, D118, D229); any other {name} would show raw.
     for (const [, name] of (c.caveat ?? '').matchAll(/\{([a-z_]+)\}/g)) {
-      const system = measured?.values?.[c.measured_ref]?.system;
-      const fills = { machine: system === 'proxy', gate_conditions: system === 'gate' && /^gate_latency_ms_/.test(c.measured_ref ?? '') };
-      if (!fills[name]) error(REL, `${c.id}: caveat placeholder {${name}} is not filled for this claim (only {machine} on a proxy overhead claim, {gate_conditions} on a gate latency claim)`);
+      const entry = measured?.values?.[c.measured_ref];
+      const system = entry?.system;
+      const fills = {
+        machine: system === 'proxy',
+        gate_conditions: system === 'gate' && /^gate_latency_ms_/.test(c.measured_ref ?? ''),
+        cost_conditions: costConditionsKey(c.measured_ref, entry) !== null,
+      };
+      if (!fills[name]) {
+        error(REL, `${c.id}: caveat placeholder {${name}} is not filled for this claim (only {machine} on a proxy overhead claim, {gate_conditions} on a gate latency claim, {cost_conditions} on a cost or same-checks ratio claim)`);
+      }
     }
     if (c.assumption_ref !== undefined) {
       const f = figureValues.get(c.assumption_ref);

@@ -19,8 +19,15 @@ func TestROIMeasuredFullAuditParse(t *testing.T) {
 	if !m.ok || m.per1k != 28.5 || m.runID != "lite-p6-x" || m.tier != "lite" || m.costSource != "reported" {
 		t.Fatalf("measured figure %+v", m)
 	}
-	if b := m.basis(); !strings.HasPrefix(b, "measured · run lite-p6-x: ") || strings.Contains(b, "tokens") {
+	if b := m.basis(); !strings.HasPrefix(b, "measured · run lite-p6-x: ") || strings.Contains(b, "vendor price") || strings.Contains(b, ", on ") {
 		t.Errorf("basis %q", b)
+	}
+	// D229: what the cost was measured on follows it (a cost per answer grows with the documents).
+	const conditions = "RAGTruth-QA test split, n=50, about 4,210 input tokens per answer, judge anthropic/claude-haiku-4.5"
+	withConditions := parseMeasuredFullAudit([]byte(strings.Replace(measuredDoc, `"cost_source":"reported"}`,
+		`"cost_source":"reported","conditions":"`+conditions+`"}`, 1)))
+	if want := "in the published lite run, on " + conditions; !strings.Contains(withConditions.basis(), want) {
+		t.Errorf("basis %q does not say %q", withConditions.basis(), want)
 	}
 	computed := parseMeasuredFullAudit([]byte(strings.Replace(measuredDoc, `"cost_source":"reported"`, `"cost_source":"computed"`, 1)))
 	if !strings.Contains(computed.basis(), "(measured tokens × vendor price)") {

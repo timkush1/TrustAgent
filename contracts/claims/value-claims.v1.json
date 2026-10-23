@@ -246,7 +246,7 @@
       "basis": "usage.cost reported on bench-lite fast-check calls.",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "The fast check alone (the LLM audit of risky and sampled answers is extra), on {cost_conditions}. The cost grows with the length of the documents checked.",
       "measured_ref": "fast_check_usd_per_1k",
       "surfaces": ["landing", "readme", "dashboard"]
     },
@@ -336,7 +336,7 @@
       "basis": "Checks the token model behind the estimate for asking an LLM judge the same questions.",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "The LLM judge asked the same questions about the same answers: {cost_conditions}.",
       "measured_ref": "same_checks_cost_ratio",
       "surfaces": ["readme", "docs"]
     },
@@ -351,7 +351,7 @@
       "basis": "usage.cost of the Claude Haiku full audit (decompose, then verify each claim) on the bench-lite RAGTruth-QA subset.",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "Decompose, then verify each claim, on {cost_conditions}.",
       "measured_ref": "llm_full_audit_usd_per_1k",
       "surfaces": ["readme", "docs"]
     },

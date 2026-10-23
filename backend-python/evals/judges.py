@@ -223,6 +223,9 @@ class JudgeRecord:
     cost_usd: Optional[float] = None  # None when unknown
     cost_source: str = UNKNOWN
     calls: int = 0
+    # The example's input tokens as the vendor counted them (None when not reported): a cost per
+    # answer means little without the tokens it paid for (the documents' length).
+    input_tokens: Optional[int] = None
     error_kind: Optional[str] = None
     mock: bool = False  # Simulated output (mock decision model or judge)
     details: Dict[str, Any] = field(default_factory=dict)
@@ -244,6 +247,7 @@ class JudgeRecord:
             "cost_usd": self.cost_usd,
             "cost_source": self.cost_source,
             "calls": self.calls,
+            "input_tokens": self.input_tokens,
             "error_kind": self.error_kind,
             "mock": self.mock,
             "details": self.details,
@@ -265,11 +269,19 @@ class JudgeRecord:
             cost_usd=data.get("cost_usd"),
             cost_source=str(data.get("cost_source") or UNKNOWN),
             calls=int(data.get("calls") or 0),
+            input_tokens=_tokens(data.get("input_tokens")),
             error_kind=data.get("error_kind"),
             mock=bool(data.get("mock")),
             details=dict(data.get("details") or {}),
             note=str(data["note"]) if data.get("note") is not None else None,
         )
+
+
+def _tokens(value: Any) -> Optional[int]:
+    """A token count, or None when it is missing or not a positive integer."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
 
 
 def aggregate_cost_source(sources: Iterable[str]) -> str:
@@ -473,6 +485,8 @@ def _metered_fields(meter: CallMeter) -> Dict[str, Any]:
         "cost_usd": None if meter.unknown_cost else meter.cost_usd,
         "cost_source": meter.cost_source,
         "calls": meter.calls,
+        # No call, or a vendor that reported no usage: unknown, never 0.
+        "input_tokens": _tokens(meter.input_tokens) if meter.calls else None,
         "mock": meter.mock,
     }
 
@@ -657,6 +671,7 @@ class GateOutcome:
     calls: int
     status: str
     simulated: bool
+    input_tokens: Optional[int] = None
     endpoint_host: Optional[str] = None
     connection: Optional[str] = None
     risk_raw: Mapping[str, Optional[float]] = field(default_factory=dict)
@@ -738,6 +753,7 @@ def parse_gate_result(line: Mapping[str, Any], config: GateEvalConfig) -> GateOu
         cost_usd=cost if cost is not None and cost >= 0 else None,
         cost_source=cost_source,
         calls=calls if isinstance(calls, int) and not isinstance(calls, bool) else 0,
+        input_tokens=_tokens(usage.get("input_tokens")),
         status=status,
         simulated=line.get("simulated") is True or backend == "mock" or cost_source == SIMULATED,
         endpoint_host=_short(line.get("endpoint_host")),
@@ -931,6 +947,7 @@ class GateJudge:
             "cost_usd": charged if outcome.cost_usd is not None else None,
             "cost_source": outcome.cost_source,
             "calls": outcome.calls,
+            "input_tokens": outcome.input_tokens,
             "mock": outcome.simulated,
             "details": details,
         }

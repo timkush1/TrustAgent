@@ -119,10 +119,19 @@
       "refused_run_ids": []
     },
     "fast_check_usd_per_1k": {
-      "cost_source": "unknown"
+      "cost_source": "unknown",
+      "dataset": "RAGTruth-QA test split",
+      "n": 200,
+      "input_tokens_per_answer": 640,
+      "conditions": "RAGTruth-QA test split, n=200, about 640 input tokens per answer"
     },
     "llm_same_checks_usd_per_1k": {
-      "cost_source": "reported"
+      "cost_source": "reported",
+      "dataset": "RAGTruth-QA test split",
+      "n": 200,
+      "input_tokens_per_answer": 1590,
+      "model": "anthropic/claude-haiku-4.5",
+      "conditions": "RAGTruth-QA test split, n=200, about 1,590 input tokens per answer, judge anthropic/claude-haiku-4.5"
     },
     "groundedness_ece": {
       "method": "holdout",

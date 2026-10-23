@@ -75,7 +75,7 @@
     "sources": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Where the measured values come from (D204, D206, D207). Each <key>_usd_per_1k value names its cost source: reported (usage.cost from the vendor) or computed (measured tokens × vendor price); unknown is refused.",
+      "description": "Where the measured values come from (D204, D206, D207). Each <key>_usd_per_1k value names its cost source: reported (usage.cost from the vendor) or computed (measured tokens × vendor price); unknown is refused. Each also says what it was measured on (D229).",
       "properties": {
         "attempts": {
           "type": "object",
@@ -123,8 +123,14 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["cost_source"],
+          "description": "A cost value's source (D204) and the conditions it was measured under (D229), from the bench run that measured it: the dataset its answers came from, n (the examples the cost is divided over), the mean input tokens per answer as the vendor counted them (a cost per answer grows with the documents' length), the judge model of an LLM system, and conditions, the sentence shown after the figure wherever it appears (the {cost_conditions} placeholder in the cost claims' caveat). bench publish writes it; conditions is required whenever the cost value is published.",
           "properties": {
-            "cost_source": {"enum": ["reported", "computed"]}
+            "cost_source": {"enum": ["reported", "computed"]},
+            "dataset": {"type": "string", "minLength": 1, "maxLength": 120},
+            "n": {"type": "integer", "minimum": 1},
+            "input_tokens_per_answer": {"type": "integer", "minimum": 1},
+            "model": {"type": "string", "minLength": 1, "maxLength": 120},
+            "conditions": {"type": "string", "minLength": 1, "maxLength": 300}
           }
         }
       }

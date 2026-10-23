@@ -121,6 +121,9 @@ ATTEMPTS_SINCE = "2026-10-10T00:00:00Z"
 # D204 publish thresholds.
 MAX_FAILURE_RATE = 0.05
 MIN_SCORED_FRACTION = 0.95
+# D229: a cost's input tokens per answer are published when at least this share of the examples
+# that made a call have the vendor's count.
+TOKENS_REPORTED_SHARE = 0.95
 
 # Simulated reasons (run.json `simulated_reasons`).
 REASON_MOCK = "mock"
@@ -311,6 +314,19 @@ def quality_counts(
     return {**totals, "failure_rate": round(rate, METRIC_DECIMALS), "by_system": by_system}
 
 
+def input_tokens_per_answer(records: Sequence[JudgeRecord]) -> Optional[int]:
+    """
+    The mean input tokens of the examples that made a call, as the vendor counted them: what a
+    cost per answer paid for (it grows with the documents' length). None when fewer than
+    TOKENS_REPORTED_SHARE of those examples have a count (a mean of a few is no description).
+    """
+    called = [record for record in records if record.calls > 0]
+    counted = [record.input_tokens for record in called if record.input_tokens]
+    if not counted or len(counted) < TOKENS_REPORTED_SHARE * len(called):
+        return None
+    return round(sum(counted) / len(counted))
+
+
 def _cost(records: Sequence[JudgeRecord]) -> Dict[str, Any]:
     paid = [record for record in records if record.calls > 0 or record.cost_usd]
     usd_total = sum(record.cost_usd or 0.0 for record in records)
@@ -322,6 +338,7 @@ def _cost(records: Sequence[JudgeRecord]) -> Dict[str, Any]:
         "usd_total": round(usd_total, COST_DECIMALS),
         "usd_per_1k": round(usd_total / attempted * 1000, COST_DECIMALS) if attempted else 0.0,
         "cost_source": source,
+        "input_tokens_per_answer": input_tokens_per_answer(records),
     }
 
 
@@ -572,6 +589,7 @@ _RECORD_KEYS = frozenset(
         "cost_usd",
         "cost_source",
         "calls",
+        "input_tokens",
         "error_kind",
         "mock",
         "details",
@@ -1048,6 +1066,64 @@ def gate_latency_source(run: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
+def dataset_text(dataset: Mapping[str, Any]) -> str:
+    """A run's dataset as the cost conditions name it: "RAGTruth-QA test split"."""
+    name = str(dataset.get("name") or "an unnamed dataset")
+    subset = str(dataset.get("subset") or "")
+    if subset:
+        name = f"{name}-{subset.upper()}" if len(subset) <= 3 else f"{name} {subset}"
+    split = str(dataset.get("split") or "")
+    return f"{name} {split} split" if split else name
+
+
+def cost_conditions_text(
+    dataset: str, n: int, tokens: Optional[int], judge_model: Optional[str]
+) -> str:
+    """
+    The words written after a measured cost per 1,000 answers (D229): the dataset its answers
+    came from, how many, the mean input tokens each paid for (a cost per answer grows with the
+    documents' length) and, for an LLM system, the judge model. Every surface shows this sentence
+    as written here (measured.json sources.<key>.conditions, the cost claims' {cost_conditions}).
+    """
+    parts = [f"{dataset}, n={n}"]
+    if tokens:
+        parts.append(f"about {tokens:,} input tokens per answer")
+    if judge_model:
+        parts.append(f"judge {judge_model}")
+    return ", ".join(parts)
+
+
+def cost_source_entry(run: Mapping[str, Any], system: str) -> Dict[str, Any]:
+    """
+    measured.json sources.<key> of a cost value (D204, D229) from the bench run that measured it:
+    its cost source, and the conditions a reader needs to weigh the figure (the dataset, the
+    examples it was divided over, the input tokens per answer and the judge model).
+    """
+    entry = _system(run, system) or {}
+    cost = entry.get("cost") or {}
+    out: Dict[str, Any] = {"cost_source": cost.get("cost_source")}
+    counts = ((run.get("quality") or {}).get("by_system") or {}).get(system) or {}
+    n = counts.get("n")
+    if isinstance(n, int) and not isinstance(n, bool):
+        excluded = counts.get("excluded")
+        n -= excluded if isinstance(excluded, int) and not isinstance(excluded, bool) else 0
+    else:
+        n = (run.get("dataset") or {}).get("n")
+    if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+        return out
+    tokens = cost.get("input_tokens_per_answer")
+    tokens = tokens if isinstance(tokens, int) and not isinstance(tokens, bool) and tokens > 0 else None
+    judge = (entry.get("judge") or {}).get("model") or None
+    dataset = dataset_text(run.get("dataset") or {})
+    out.update({"dataset": dataset, "n": n})
+    if tokens is not None:
+        out["input_tokens_per_answer"] = tokens
+    if judge:
+        out["model"] = str(judge)
+    out["conditions"] = cost_conditions_text(dataset, n, tokens, str(judge) if judge else None)
+    return out
+
+
 def derive_measured(
     runs: Sequence[Mapping[str, Any]],
     previous: Mapping[str, Any],
@@ -1157,8 +1233,7 @@ def derive_measured(
     for key, system in COST_KEYS.items():
         run = from_run.get(key)
         if run is not None:
-            source = ((_system(run, system) or {}).get("cost") or {}).get("cost_source")
-            sources[key] = {"cost_source": source}
+            sources[key] = cost_source_entry(run, system)
         elif values.get(key, {}).get("value") is None:
             sources.pop(key, None)
     latency_run = next((from_run[key] for key in LATENCY_KEYS if key in from_run), None)
@@ -1318,10 +1393,19 @@ def measured_problems(measured: Mapping[str, Any]) -> List[Problem]:
                     f"values.{key} needs sources.{key}.cost_source (reported or computed)",
                 )
             )
-        elif source not in ("reported", "computed"):
+            continue
+        if source not in ("reported", "computed"):
             out.append(
                 Problem(
                     "cost_source_unknown", f"sources.{key}.cost_source {source} is refused (D204)"
+                )
+            )
+        if not sources[key].get("conditions"):
+            out.append(
+                Problem(
+                    "cost_conditions",
+                    f"values.{key} needs sources.{key}.conditions: the dataset, n and the input "
+                    "tokens per answer (D229)",
                 )
             )
     if (values.get(ECE_AFTER_KEY) or {}).get("value") is not None and (

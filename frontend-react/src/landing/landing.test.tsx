@@ -22,7 +22,7 @@ import { digest } from 'virtual:trustagent/tape-digest';
 import claimsDoc from '@contracts/claims/value-claims.v1.json';
 import { priceCall } from '@/lib/decision/cost';
 import { OurMeasurements } from './Affordable';
-import { claim, fillCaveat, intervalText, LABEL_TEXT, landingClaims, optionalClaim, splitClaims, type ClaimView } from './claims';
+import { claim, costConditionsKey, fillCaveat, intervalText, LABEL_TEXT, landingClaims, optionalClaim, splitClaims, type ClaimView } from './claims';
 import { commonReadDate, compareRows } from './compareData';
 import { command as landingCommand, copy as landingCopy, DEMO_HREF, REFUND } from './content';
 import { auditShareWords, defaultCalculatorInputs, formatMultiple, judgeOptions, modelName, monthlyCost, PRICE_TABLE, referenceJudge, type CalculatorInputs } from './costModel';
@@ -840,7 +840,24 @@ describe('hero latency strip', () => {
     // Before a run publishes, the latency claims carry no caveat at all.
     expect(claim('gate_latency_p50_measured').caveat).toBeNull();
     expect(claim('gate_latency_p95_measured').caveat).toBeNull();
+    expect(claim('fast_check_cost_per_1k_measured').caveat).toBeNull();
     for (const c of landingClaims()) expect(c.caveat ?? '').not.toMatch(/\{[a-z_]+\}/);
+  });
+
+  it('says what our cost was measured on beside it: the dataset, n and the input tokens per answer (D229)', () => {
+    const conditions = 'RAGTruth-QA test split, n=200, about 640 input tokens per answer';
+    const raw = claimsDoc.claims.find((c) => c.id === 'fast_check_cost_per_1k_measured')?.caveat ?? null;
+    expect(raw).toContain('{cost_conditions}');
+    const caveat = fillCaveat(raw, true, undefined, conditions);
+    expect(caveat).toContain(conditions);
+    expect(caveat).toMatch(/length of the documents/);
+    expect(caveat).not.toMatch(/\{/);
+    expect(fillCaveat('On {cost_conditions}.', true, 'warm', undefined)).toBe('On conditions not recorded.');
+    expect(fillCaveat('On {cost_conditions}.', false, 'warm', conditions)).toBeNull();
+    expect(costConditionsKey('fast_check_usd_per_1k')).toBe('fast_check_usd_per_1k');
+    expect(costConditionsKey('same_checks_cost_ratio')).toBe('llm_same_checks_usd_per_1k');
+    expect(costConditionsKey('proxy_overhead_ms_p50')).toBeNull();
+    expect(costConditionsKey('gate_latency_ms_p50')).toBeNull();
   });
 });
 

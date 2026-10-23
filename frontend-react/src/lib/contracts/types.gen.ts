@@ -801,6 +801,10 @@ export interface BenchmarkRun {
        * simulated is impossible here (mock is false).
        */
       cost_source: 'reported' | 'computed' | 'free_local' | 'unknown';
+      /**
+       * The mean input tokens of the examples that made a call, as the vendor counted them; null when fewer than 95% of them have a count (D229). A cost per answer grows with the documents' length, so it is published beside the cost.
+       */
+      input_tokens_per_answer?: number | null;
     };
     reliability: {
       lo: Probability;

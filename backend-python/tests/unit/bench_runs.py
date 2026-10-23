@@ -84,6 +84,7 @@ def gate_records(
                 cost_usd=0.00004,
                 cost_source="simulated" if mock else cost_source,
                 calls=1,
+                input_tokens=None if mock or status == OVER_BUDGET else 600 + 2 * index,
                 error_kind={OK: None, FAILED: "gate_error:credits"}.get(status, "cost_cap"),
                 mock=mock,
                 details={
@@ -118,6 +119,7 @@ def judge_records(
             cost_usd=0.003 if system == LLM_SAME_CHECKS else 0.03,
             cost_source="simulated" if mock else cost_source,
             calls=1 if system == LLM_SAME_CHECKS else 9,
+            input_tokens=None if mock else 1590 if system == LLM_SAME_CHECKS else 4210,
             mock=mock,
             details={"models": ["anthropic/claude-haiku-4.5"], "host": host},
         )

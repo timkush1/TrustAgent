@@ -48,7 +48,8 @@
       "cost": {
         "usd_total": 0.0042,
         "usd_per_1k": 0.021,
-        "cost_source": "reported"
+        "cost_source": "reported",
+        "input_tokens_per_answer": 640
       },
       "reliability": []
     },
@@ -86,7 +87,8 @@
       "cost": {
         "usd_total": 0.56,
         "usd_per_1k": 2.8,
-        "cost_source": "reported"
+        "cost_source": "reported",
+        "input_tokens_per_answer": 1590
       },
       "reliability": []
     }

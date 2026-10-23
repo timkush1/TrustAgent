@@ -137,6 +137,10 @@
               "cost_source": {
                 "enum": ["reported", "computed", "free_local", "unknown"],
                 "description": "simulated is impossible here (mock is false)."
+              },
+              "input_tokens_per_answer": {
+                "anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}],
+                "description": "The mean input tokens of the examples that made a call, as the vendor counted them; null when fewer than 95% of them have a count (D229). A cost per answer grows with the documents' length, so it is published beside the cost."
               }
             }
           },

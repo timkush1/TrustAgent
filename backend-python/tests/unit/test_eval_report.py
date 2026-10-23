@@ -42,6 +42,7 @@ from evals.report import (
     document_problems,
     gate_conditions_text,
     gate_latency_source,
+    input_tokens_per_answer,
     measured_problems,
     publish,
     publish_problems,
@@ -130,7 +131,12 @@ def test_summarize_system_by_hand() -> None:
         assert 0.0 <= lo <= hi <= 1.0
     assert summary["latency_ms"] == {"p50": 200.0, "p95": 400.0}
     # Every example's cost counts; per 1k attempted (4 ok + 1 failed).
-    assert summary["cost"] == {"usd_total": 0.006, "usd_per_1k": 1.2, "cost_source": "computed"}
+    assert summary["cost"] == {
+        "usd_total": 0.006,
+        "usd_per_1k": 1.2,
+        "cost_source": "computed",
+        "input_tokens_per_answer": None,  # the vendor counted none
+    }
     assert [(b["lo"], b["n"], b["frac_pos"]) for b in summary["reliability"]] == [
         (0.2, 1, 0.0),
         (0.4, 1, 1.0),
@@ -139,6 +145,26 @@ def test_summarize_system_by_hand() -> None:
     ]
     assert summary["judge"] == {"provider": "openrouter", "model": "anthropic/claude-haiku-4.5"}
     assert summary["decision_model"] is None
+
+
+def test_the_input_tokens_per_answer_are_the_vendors_count_or_nothing() -> None:
+    # D229: the mean over the examples that made a call; a cost per answer grows with them.
+    records = _records(GATE)
+    for record, tokens in zip(records, (500, 700, 600, 600, 1100)):
+        record.input_tokens = tokens
+    assert input_tokens_per_answer(records) == 700  # the exclusion made no call
+    summary = summarize_system(GATE, records, GATE_MODEL, bootstrap_resamples=10)
+    assert summary is not None and summary["cost"]["input_tokens_per_answer"] == 700
+    assert schema_errors(p6_run()[0], "benchmark-run.v1.schema.json") == []
+    # Under 95% of the calls counted: no mean of a few is published as the answers' size.
+    records[4].input_tokens = None
+    assert input_tokens_per_answer(records) is None
+    assert input_tokens_per_answer([]) is None
+    # A record read back from the cache keeps its count; a bad count reads as none.
+    again = JudgeRecord.from_json(records[0].to_json())
+    assert again.input_tokens == 500
+    assert JudgeRecord.from_json({**records[0].to_json(), "input_tokens": True}).input_tokens is None
+    assert JudgeRecord.from_json({**records[0].to_json(), "input_tokens": 0}).input_tokens is None
 
 
 def test_summary_without_scored_examples_is_none() -> None:
@@ -289,8 +315,22 @@ def test_publish_writes_results_index_and_measured_values(
     # Not measured by a benchmark run: still "not yet measured".
     assert values["proxy_overhead_ms_p50"] is None and values["groundedness_ece_after"] is None
     sources = measured["sources"]
-    assert sources["fast_check_usd_per_1k"] == {"cost_source": "reported"}
-    assert sources["llm_full_audit_usd_per_1k"] == {"cost_source": "reported"}
+    # D229: what each cost was measured on, as every surface shows it.
+    assert gate["cost"]["input_tokens_per_answer"] == 639
+    assert sources["fast_check_usd_per_1k"] == {
+        "cost_source": "reported",
+        "dataset": "RAGTruth-QA test split",
+        "n": 40,
+        "input_tokens_per_answer": 639,
+        "conditions": "RAGTruth-QA test split, n=40, about 639 input tokens per answer",
+    }
+    assert sources["llm_same_checks_usd_per_1k"]["conditions"] == (
+        "RAGTruth-QA test split, n=40, about 1,590 input tokens per answer, "
+        "judge anthropic/claude-haiku-4.5"
+    )
+    assert sources["llm_same_checks_usd_per_1k"]["model"] == "anthropic/claude-haiku-4.5"
+    assert sources["llm_full_audit_usd_per_1k"]["cost_source"] == "reported"
+    assert "about 4,210 input tokens per answer" in sources["llm_full_audit_usd_per_1k"]["conditions"]
     assert sources["attempts"] == {"bench_runs": 1, "refused_run_ids": []}
     accuracy = measured["intervals"]["ragtruth_qa_accuracy"]
     assert accuracy["method"] == "wilson" and (accuracy["n_pos"], accuracy["n_neg"]) == (10, 30)
@@ -307,7 +347,7 @@ def test_a_computed_cost_is_named_as_such(tmp_path: Path, bench_paths: Dict[str,
     _publish(run_file, bench_paths)
 
     measured = json.loads(bench_paths["measured_path"].read_text())
-    assert measured["sources"]["fast_check_usd_per_1k"] == {"cost_source": "computed"}
+    assert measured["sources"]["fast_check_usd_per_1k"]["cost_source"] == "computed"
 
 
 @pytest.mark.parametrize(

@@ -300,14 +300,38 @@ def measured_note(measured: Dict[str, Any], ref: str, unit: str) -> str:
     return text
 
 
+def cost_conditions_key(measured: Dict[str, Any], ref: Any) -> Optional[str]:
+    """The measured.json sources key whose conditions fill a {cost_conditions} (D229): a cost per
+    1,000 answers its own, the same-checks ratio the LLM judge's cost (scripts/check-claims.mjs
+    costConditionsKey)."""
+    if ref == "same_checks_cost_ratio":
+        return "llm_same_checks_usd_per_1k"
+    entry = (measured.get("values") or {}).get(ref) or {}
+    if entry.get("unit") == "usd_per_1k" and entry.get("system") != "proxy":
+        return str(ref)
+    return None
+
+
 def figure_caveat(root: Path, measured: Dict[str, Any], claim: Dict[str, Any]) -> str:
     """
     A measured figure's caveat with its run placeholders filled, as scripts/check-claims.mjs fills
     them: {gate_conditions} from measured.json sources.gate_latency (D205: the connection, the
-    requests at a time, where the run ran, the snapshot and n), {machine} from the load run.
-    Refused when the run does not say how a latency was taken: it is never published bare.
+    requests at a time, where the run ran, the snapshot and n), {cost_conditions} from the cost's
+    sources.<key> (D229: the dataset, n, the input tokens per answer and the judge), {machine}
+    from the load run. Refused when the run does not say how a latency or a cost was measured:
+    neither is ever published bare.
     """
     caveat = str(claim.get("caveat") or "").strip()
+    if "{cost_conditions}" in caveat:
+        key = cost_conditions_key(measured, claim.get("measured_ref"))
+        conditions = ((measured.get("sources") or {}).get(key or "") or {}).get("conditions")
+        if not isinstance(conditions, str) or not conditions.strip():
+            raise Refused(
+                f"{MEASURED_PATH} publishes {claim.get('measured_ref')} without "
+                f"sources.{key}.conditions: a cost is never published without the dataset and "
+                "the input tokens per answer it paid for (D229); rerun make bench-publish"
+            )
+        caveat = caveat.replace("{cost_conditions}", conditions.strip())
     if "{gate_conditions}" in caveat:
         conditions = ((measured.get("sources") or {}).get("gate_latency") or {}).get("conditions")
         if not isinstance(conditions, str) or not conditions.strip():
@@ -430,7 +454,8 @@ def numbers_section(root: Path) -> List[str]:
         model = tape.get("decision_model") or {}
         lines += [
             "",
-            f"The live demo replays a recorded tape: real fast-check and judge answers, recorded "
+            f"The live demo replays a recorded tape: real fast-check and judge answers about "
+            f"scripted and generated demo answers, recorded "
             f"{str(tape.get('recorded_at', ''))[:10]} on snapshot {model.get('snapshot')} with "
             f"TrustAgent {tape.get('trustagent_version')}.",
         ]

@@ -312,6 +312,37 @@ class ReleaseNotesTest(unittest.TestCase):
         self.assertEqual(out, "")
         self.assertIn("never published without how it was taken (D205)", err)
 
+    def test_a_measured_cost_says_what_it_was_measured_on(self) -> None:
+        """D229: the dataset, n and the input tokens per answer follow a measured cost."""
+        conditions = "RAGTruth-QA test split, n=200, about 640 input tokens per answer"
+        claims = dict(CLAIMS, claims=[dict(c) for c in CLAIMS["claims"]])
+        for c in claims["claims"]:
+            if c["id"] == "fast_check_cost_per_1k_measured":
+                c["caveat"] = "The fast check alone, on {cost_conditions}."
+        sources = {"fast_check_usd_per_1k": {"cost_source": "reported", "conditions": conditions}}
+        root = make_root(measured=dict(MEASURED, sources=sources), claims_doc=claims)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"The fast check alone, on {conditions}.", out)
+        self.assertNotIn("{cost_conditions}", out)
+        # Without the conditions the cost is refused, never printed bare.
+        root = make_root(measured=MEASURED, claims_doc=claims)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertIn("input tokens per answer it paid for (D229)", err)
+
+    def test_a_recorded_tape_says_whose_answers_it_checked(self) -> None:
+        root = make_root(tape=RECORDED_TAPE)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+        self.assertEqual(code, 0, err)
+        self.assertIn(
+            "real fast-check and judge answers about scripted and generated demo answers", out
+        )
+
     def test_a_mock_or_unmeasured_run_lists_no_measured_figure(self) -> None:
         for measured in (dict(MEASURED, mock=True), dict(MEASURED, status="not_measured")):
             root = make_root(measured=measured)
