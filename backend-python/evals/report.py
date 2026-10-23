@@ -128,6 +128,8 @@ REASON_NON_VENDOR_HOST = "non_vendor_host"
 
 HOLDOUT_SCHEMA = "trustagent.calibration-holdout/v1"
 HOLDOUT_EVALUATOR = "groundedness@1"
+# What make calib-holdout writes next to the run for HOLDOUT= (evals/calibset.py run_holdout).
+HOLDOUT_REPORT_NAME = "holdout-groundedness.json"
 CALIBRATION_FILE = re.compile(r"^config/calibration/[A-Za-z0-9._-]+\.json$")
 
 # benchmark-run.v1 run_id; "." and ".." are refused too (the id names files).
@@ -1454,6 +1456,32 @@ def read_holdout(
     return report, problems
 
 
+def unpassed_holdout(
+    run_file: Path, run: Mapping[str, Any], *, root: Optional[Path] = None
+) -> List[Problem]:
+    """
+    D206: the held-out check make calib-holdout wrote next to the run, when publish would accept
+    it but it was not passed. Publishing without it would leave the ECE before and after
+    unpublished with nothing to notice, so it is refused. A report publish would refuse (a
+    calibration that is not measured, another snapshot) is no reason to stop: publishing without
+    the held-out ECE is D206's own path then.
+    """
+    candidate = run_file.parent / HOLDOUT_REPORT_NAME
+    if not candidate.is_file():
+        return []
+    report, problems = read_holdout(candidate, run, root=root)
+    if report is None or problems:
+        return []
+    return [
+        Problem(
+            "holdout_not_passed",
+            f"make calib-holdout checked this run ({candidate}) but it was not passed: add "
+            f"HOLDOUT={candidate} (bench publish --calibration-holdout), or the held-out ECE "
+            "before and after calibration goes unpublished (D206)",
+        )
+    ]
+
+
 def count_attempts(
     results_dir: Path, tier: str, current: Mapping[str, Any], previous: Mapping[str, Any]
 ) -> Dict[str, Any]:
@@ -1550,6 +1578,8 @@ def prepare_publish(
         report, holdout_problems = read_holdout(calibration_holdout, run, root=root)
         problems += holdout_problems
         holdout = report if not holdout_problems else None
+    else:
+        problems += unpassed_holdout(run_file, run, root=root)
 
     published = load_results(results_dir) if results_dir.is_dir() else []
     runs: List[Mapping[str, Any]] = [

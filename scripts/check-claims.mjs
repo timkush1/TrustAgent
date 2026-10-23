@@ -978,6 +978,8 @@ function parseJson(buf) {
  *     another snapshot than the measured run (D207, D216);
  *   - a not_measured measured.json, a bench run of it that failed more than 5% of its examples or
  *     whose file is missing, no snapshot, or two snapshots without snapshot_split (D204, D207);
+ *   - a measured.json without the held-out ECE before and after calibration, unless the tape says
+ *     it was recorded without a measured calibration (D206);
  *   - any comparison cell that is unverified or not reviewed by the owner;
  *   - a missing or malformed og.png;
  *   - a claim that still says what must be re-checked (reverify, D212);
@@ -1053,6 +1055,18 @@ export function launchChecks({ claims = { claims: [] }, measured, compare, read 
     if (recorded && snaps.length && !snaps.includes(tape)) {
       report('launch-snapshot', RECORDED_MANIFEST_PATH,
         `the tape was recorded on snapshot ${tape ?? 'missing'}, the measured run on ${snaps.join(' and ')}: they must match (D207)`);
+    }
+    // D206: the held-out ECE before and after calibration is published with its method, unless
+    // the tape says it was recorded without a measured calibration (ALLOW_UNCALIBRATED=1), when
+    // there is no measured calibration to hold out.
+    const ece = (key) => measured.values?.[key]?.value;
+    const heldOut = typeof ece('groundedness_ece_before') === 'number' && typeof ece('groundedness_ece_after') === 'number' &&
+      measured.sources?.groundedness_ece?.method === 'holdout';
+    const quality = recorded?.calibration?.quality;
+    if (!heldOut && !(typeof quality === 'string' && quality !== 'measured')) {
+      report('launch-ece', MEASURED_PATH,
+        'the held-out ECE before and after calibration is not published: run `make calib-holdout RUN=<abs run.json>`, ' +
+          'then `make bench-publish RUN=<abs run.json> HOLDOUT=<the holdout-groundedness.json beside it>` (D206)');
     }
   }
 
@@ -1263,12 +1277,17 @@ const MEASURED = {
     proxy_overhead_ms_p50: { ...NOT_MEASURED.values.proxy_overhead_ms_p50, value: 1.234, run_id: 'load-1' },
     gate_latency_ms_p50: { ...NOT_MEASURED.values.gate_latency_ms_p50, value: 212.4, run_id: 'bench-1' },
     ragtruth_qa_agreement: { ...NOT_MEASURED.values.ragtruth_qa_agreement, value: 0.8125, run_id: 'bench-1' },
+    groundedness_ece_before: { value: 0.21, unit: 'fraction', description: 'd', run_id: 'bench-1', system: 'gate' },
+    groundedness_ece_after: { value: 0.04, unit: 'fraction', description: 'd', run_id: 'bench-1', system: 'gate' },
   },
   intervals: {
     ragtruth_qa_agreement: { lo: 0.75, hi: 0.86, method: 'bootstrap', resamples: 2000, seed: 13, n_pos: 40, n_neg: 160 },
   },
   sources: {
     fast_check_usd_per_1k: { cost_source: 'reported' },
+    groundedness_ece: {
+      method: 'holdout', calibration_file: `config/calibration/${SNAPSHOT}.json`, calibration_sha256: 'a'.repeat(64), dataset: 'ragtruth:qa-train@c103204',
+    },
     gate_latency: {
       connection: 'warm', gate_concurrency: 1, platform: 'Linux', region: 'cloud us-east', n: 199,
       conditions: `warm connection, one request at a time, run on Linux, region cloud us-east, snapshot ${'jev-1.13-20260917'}, n=199`,
@@ -1626,7 +1645,31 @@ const CASES = [
       { measured: { ...MEASURED, snapshot: [SNAPSHOT, 'jev-1.14-20261101'] }, expect: ['launch-snapshot'] },
       { measured: { ...MEASURED, snapshot: [SNAPSHOT, 'jev-1.14-20261101'], sources: { ...MEASURED.sources, snapshot_split: true } }, expect: [] },
       { measured: { ...MEASURED, sources: { ...MEASURED.sources, snapshot_split: true } }, expect: ['launch-snapshot'] },
-      { measured: { ...MEASURED, sources: { fast_check_usd_per_1k: { cost_source: 'reported' } } }, expect: ['latency-conditions'] },
+      { measured: { ...MEASURED, sources: { fast_check_usd_per_1k: { cost_source: 'reported' }, groundedness_ece: MEASURED.sources.groundedness_ece } }, expect: ['latency-conditions'] },
+    ],
+    expect: [],
+  },
+  {
+    name: 'launch: the held-out ECE is published with its method, unless the tape is uncalibrated (D206)',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE(REVIEWED_CELL),
+    read: LAUNCH_READY,
+    files: {},
+    variants: [
+      // The C1 card once passed the wrong make variable: measured.json came out without the ECE.
+      { measured: { ...MEASURED, values: { ...MEASURED.values, groundedness_ece_after: { ...MEASURED.values.groundedness_ece_after, value: null } } }, expect: ['launch-ece'] },
+      { measured: { ...MEASURED, sources: { fast_check_usd_per_1k: MEASURED.sources.fast_check_usd_per_1k, gate_latency: MEASURED.sources.gate_latency } }, expect: ['launch-ece'] },
+      {
+        measured: { ...MEASURED, values: { ...MEASURED.values, groundedness_ece_after: { ...MEASURED.values.groundedness_ece_after, value: null } } },
+        read: { ...LAUNCH_READY, [RECORDED_MANIFEST_PATH]: JSON.stringify({ ...RECORDED_TAPE, calibration: { snapshot: null, quality: 'none' } }) },
+        expect: [],
+      },
+      {
+        measured: { ...MEASURED, values: { ...MEASURED.values, groundedness_ece_after: { ...MEASURED.values.groundedness_ece_after, value: null } } },
+        read: { ...LAUNCH_READY, [RECORDED_MANIFEST_PATH]: JSON.stringify({ ...RECORDED_TAPE, calibration: { snapshot: SNAPSHOT, quality: 'measured' } }) },
+        expect: ['launch-ece'],
+      },
     ],
     expect: [],
   },

@@ -157,9 +157,11 @@ in-sample. Numbers from these runs replace the estimates on the landing page
 and in the dashboard only through `bench-publish`, which needs one named run
 (`RUN=`) and lists every refusal at once: mock output or a non-vendor host, a
 tree that was dirty at the start, more than 5% failures or fewer than 95%
-scored, more than one decision-model snapshot, an unknown cost source, or
-dataset text in the per-example records. `CHECK_ONLY=1` writes the would-be
-files into `tmp/bench-check/` only.
+scored, more than one decision-model snapshot, an unknown cost source,
+dataset text in the per-example records, or a usable `holdout-groundedness.json`
+from `calib-holdout` beside the run that was not passed as `HOLDOUT=` (the
+held-out ECE would go unpublished). `CHECK_ONLY=1` writes the would-be files
+into `tmp/bench-check/` only.
 
 ## Honest limitations
 

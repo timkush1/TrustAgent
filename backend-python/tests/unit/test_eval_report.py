@@ -28,6 +28,7 @@ from evals.judges import (
 )
 from evals.metrics import wilson_interval
 from evals.report import (
+    HOLDOUT_REPORT_NAME,
     LABEL_MEASURED,
     LABEL_SIMULATED,
     BenchmarkSchemaError,
@@ -558,7 +559,9 @@ def test_check_only_writes_no_would_be_files_for_a_simulated_run(
 # ---------------------------------------------------------------------------
 
 
-def _holdout(root: Path, run_file: Path, **changes: Any) -> Path:
+def _holdout(
+    root: Path, run_file: Path, name: str = "holdout.groundedness@1.json", **changes: Any
+) -> Path:
     calibration = root / "config" / "calibration" / "typesafe__jev-1.13-20260917.json"
     calibration.parent.mkdir(parents=True, exist_ok=True)
     calibration.write_text('{"schema": "trustagent.calibration/v1"}\n')
@@ -582,7 +585,7 @@ def _holdout(root: Path, run_file: Path, **changes: Any) -> Path:
         "warnings": [],
     }
     report.update(changes)
-    path = run_file.parent / "holdout.groundedness@1.json"
+    path = run_file.parent / name
     path.write_text(json.dumps(report))
     return path
 
@@ -632,6 +635,40 @@ def test_a_holdout_that_does_not_fit_is_refused(
 
     holdout = [problem.message for problem in refused.value.problems if problem.code == "holdout"]
     assert any(needle in message for message in holdout), holdout
+
+
+def test_a_held_out_check_left_beside_the_run_is_refused_until_passed(
+    tmp_path: Path, bench_paths: Dict[str, Path]
+) -> None:
+    # The C1 card once passed the wrong make variable: the held-out ECE silently went unpublished.
+    run_file = write_p6_run(tmp_path / "local")
+    report = _holdout(tmp_path, run_file, name=HOLDOUT_REPORT_NAME)
+
+    with pytest.raises(PublishRefused) as refused:
+        _publish(run_file, bench_paths, root=tmp_path)
+
+    assert _codes(refused.value) == ["holdout_not_passed"]
+    assert f"HOLDOUT={report}" in refused.value.problems[0].message
+    assert not bench_paths["index_path"].exists()
+
+    _publish(run_file, bench_paths, calibration_holdout=report, root=tmp_path)
+    measured = json.loads(bench_paths["measured_path"].read_text())
+    assert measured["values"]["groundedness_ece_after"]["value"] == 0.04
+
+
+def test_a_held_out_check_publish_would_refuse_does_not_stop_a_publish_without_it(
+    tmp_path: Path, bench_paths: Dict[str, Path]
+) -> None:
+    # D206: with a calibration that is not measured, publishing without the held-out ECE is the
+    # documented path.
+    run_file = write_p6_run(tmp_path / "local")
+    _holdout(tmp_path, run_file, name=HOLDOUT_REPORT_NAME, calibration_quality="provisional")
+
+    _publish(run_file, bench_paths, root=tmp_path)
+
+    measured = json.loads(bench_paths["measured_path"].read_text())
+    assert measured["values"]["groundedness_ece_after"]["value"] is None
+    assert "groundedness_ece" not in measured["sources"]
 
 
 # ---------------------------------------------------------------------------

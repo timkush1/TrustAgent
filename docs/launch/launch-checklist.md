@@ -78,8 +78,10 @@ paid runs and the release steps run from a Claude cloud session (D221).
 
 ## Release candidate (the lead, after "publish")
 
-- [ ] **C1 publish**: `make bench-publish RUN=…` (it refuses mock output and non-vendor hosts);
-      the run, `measured.json`, the calibration file, the captured fixtures and the recorded tape
+- [ ] **C1 publish**: `make bench-publish RUN=<abs run.json> HOLDOUT=<abs path to the
+      holdout-groundedness.json that make calib-holdout wrote beside it>` (it refuses mock output,
+      non-vendor hosts, and a usable held-out check left out, so the ECE before and after is
+      published); the run, `measured.json`, the calibration file, the captured fixtures and the recorded tape
       are committed (mode R: the subset in terms-check.md only).
       `python3 scripts/check_recording.py frontend-react/demo-data/recorded --require-recorded`
       passes.

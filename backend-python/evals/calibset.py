@@ -63,7 +63,7 @@ from .examples import (
 )
 from .datasets import ragtruth
 from .datasets.fetch import sha256_file
-from .report import run_snapshots, utc_now, vendor_hosts
+from .report import HOLDOUT_REPORT_NAME, run_snapshots, utc_now, vendor_hosts
 
 EVALS_DIR = Path(__file__).parent
 CALIBRATION_DIR = EVALS_DIR / "calibration"
@@ -675,7 +675,7 @@ def run_holdout(args: argparse.Namespace) -> int:
             if ref == GROUNDEDNESS:
                 code = EXIT_FAILED
     if code == EXIT_OK:
-        report = run_file.parent / "holdout-groundedness.json"
+        report = run_file.parent / HOLDOUT_REPORT_NAME
         print(
             f"  next (free): make bench-publish RUN={run_file} HOLDOUT={report} CHECK_ONLY=1",
             flush=True,
