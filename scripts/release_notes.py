@@ -31,8 +31,9 @@ at the top that their digests were not read from the registry.
 
 A measured agreement with RAGTruth's labels is followed by Arize's two figures for Jev (accuracy at
 a 0.5 threshold and at its tuned one), said not to be like for like (D212, D233): its caveat names
-the thresholds our bench flags at. Each figure with a 95% interval names it with n per class. A tape counts as recorded only when its fast-check, judge and generated-answer hosts are
-vendor hosts (D203); one that says "recorded" with another host is refused.
+the thresholds our bench flags at. Each figure with a 95% interval names it with n per class. A
+tape counts as recorded only when its fast-check, judge and generated-answer hosts are vendor hosts
+(D203); one that says "recorded" with another host is refused.
 
 Exit status: 0 notes printed, 1 refused, 2 usage error or an unreadable file.
 """

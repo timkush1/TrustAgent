@@ -23,7 +23,7 @@ document words that contradict it, and `<document>` that document's name.
 
 - **Nobody records it by hand** (D210). The stack beats (Studio, Policies, Savings) are taken by
   `make launch-video-stack` on the record stack of the attempt under review, which
-  `make record-demo ACCEPT=1 VIDEO=1` runs at B8, inside the record ledger (about $0.05). At C2,
+  `make record-demo ACCEPT=1 VIDEO=1` runs at B8, inside the record ledger and its cap. At C2,
   `make launch-video` takes the static beats from the recorded Pages build and joins them with
   those, with the captions below burned in. The static site has no Policies page and runs no paid
   dry-runs, which is why those beats come from the stack. There is no manual paid recording to
