@@ -17,13 +17,18 @@ Placeholders:
                        a phrase of 4 words or more, else the claim
   {featured.evidence}  the evidence that contradicts it (the document's words)
   {featured.source}    where that answer came from, said plainly (D227): a scripted answer is "a
-                       support-bot answer I wrote for the demo", a generated one names the model
+                       support-bot answer scripted for the demo", a generated one names the model
                        that wrote it; never "my support bot" (the owner runs no support bot)
   {featured.outcome}   what TrustAgent did with it: "flagged it", "blocked it", "replaced it with
                        a fallback answer"
   {gate.conditions}    how the gate latency was taken (D205): measured.json
                        sources.gate_latency.conditions (connection, requests at a time, where the
                        run ran, snapshot, n)
+  {cost.conditions}    what the fast check's cost was measured on (D229): measured.json
+                       sources.fast_check_usd_per_1k.conditions (the dataset, n, the input tokens
+                       per answer); a cost per answer grows with the documents' length
+  {same_checks.judge}  the LLM judge the same-checks ratio compares with, by name ("Claude Haiku
+                       4.5"), from measured.json sources.llm_same_checks_usd_per_1k.model
   {measured:KEY}       a value of contracts/claims/measured.json, formatted as the README shows it
                        (ms with " ms", USD with "$", a fraction as a percentage, a multiplier bare)
   {claim:ID}           a claim's display and label chip from value-claims.v1.json, e.g.
@@ -43,6 +48,8 @@ printed with a gap or a made-up figure.
 
 The post's first line must show before LinkedIn's "...see more" cut on a phone: it names
 TrustAgent and stays within OPENING_MAX characters once filled, or the script refuses (exit 2).
+The whole post stays within MAX_POST_CHARS (LinkedIn takes 3,000; the rest is room for a last
+edit in the composer), or the script refuses (exit 2): LinkedIn would refuse or cut it.
 
 Exit status: 0 printed (or copied), 1 a value is missing, 2 usage error or a malformed template.
 """
@@ -81,8 +88,13 @@ PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_.:]*)\}")
 ROLES_PREFIX = "{roles}"
 # What a phone shows before "...see more" (about 140-150 characters; LinkedIn does not publish it).
 OPENING_MAX = 150
+# LinkedIn takes at most 3,000 characters in a post; the filled post keeps 200 of them spare, so a
+# longer snapshot name or a last edit in the composer never pushes it over (D229).
+LINKEDIN_MAX_CHARS = 3000
+MAX_POST_CHARS = 2800
 # How each answer source is said (D227): a scripted demo answer is never presented as a real bot's.
-SCRIPTED_SOURCE = "a support-bot answer I wrote for the demo"
+# The scripted answers were written with the agents that built the demo, so "scripted", not "I wrote".
+SCRIPTED_SOURCE = "a support-bot answer scripted for the demo"
 GENERATED_SOURCE = "a support-bot answer that {model} wrote for the demo"
 OUTCOMES = {
     "flag": "flagged it",
@@ -296,6 +308,34 @@ def gate_conditions(src: Sources) -> Optional[str]:
     return text.strip() if isinstance(text, str) and text.strip() else None
 
 
+def cost_conditions(src: Sources) -> Optional[str]:
+    """measured.json sources.fast_check_usd_per_1k.conditions (D229), from a measured run only."""
+    if not measured_run(src):
+        return None
+    entry = (src.measured.get("sources") or {}).get("fast_check_usd_per_1k") or {}
+    text = entry.get("conditions")
+    return text.strip() if isinstance(text, str) and text.strip() else None
+
+
+def judge_name(model: str) -> str:
+    """A judge model as a reader knows it: "anthropic/claude-haiku-4.5" is "Claude Haiku 4.5";
+    any other model keeps its own id (without the vendor prefix)."""
+    bare = model.strip().split("/")[-1]
+    m = re.fullmatch(r"claude-([a-z]+)-(\d+)[.-](\d+)(?:-\d{8})?", bare)
+    if m:
+        return f"Claude {m.group(1).title()} {m.group(2)}.{m.group(3)}"
+    return bare
+
+
+def same_checks_judge(src: Sources) -> Optional[str]:
+    """The judge the same-checks ratio compares with (D229), from a measured run only."""
+    if not measured_run(src):
+        return None
+    entry = (src.measured.get("sources") or {}).get("llm_same_checks_usd_per_1k") or {}
+    model = entry.get("model")
+    return judge_name(model) if isinstance(model, str) and model.strip() else None
+
+
 def claim_text(src: Sources, claim_id: str) -> Optional[str]:
     claim = src.claims.get(claim_id)
     if not claim or claim.get("label") == "measured" or not claim.get("display"):
@@ -303,7 +343,8 @@ def claim_text(src: Sources, claim_id: str) -> Optional[str]:
     return f"{claim['display']} [{CHIPS.get(claim['label'], claim['label'])}]"
 
 
-def _interval(src: Sources, key: str, unit: str) -> Optional[str]:
+def _interval(src: Sources, key: str, unit: str) -> Optional[Tuple[str, Tuple[int, int]]]:
+    """(the 95% interval's words, (n hallucinated, n faithful)) of a measured value, or None."""
     entry = (src.measured.get("intervals") or {}).get(key)
     if not isinstance(entry, dict):
         return None
@@ -312,14 +353,16 @@ def _interval(src: Sources, key: str, unit: str) -> Optional[str]:
         isinstance(v, int) for v in (n_pos, n_neg)
     ):
         return None
-    return (
-        f"95% interval {show(lo, unit)} to {show(hi, unit)}, "
-        f"{n_pos} hallucinated and {n_neg} faithful answers"
-    )
+    return f"95% interval {show(lo, unit)} to {show(hi, unit)}", (n_pos, n_neg)
+
+
+def _answers(counts: Tuple[int, int]) -> str:
+    return f"{counts[0]} hallucinated and {counts[1]} faithful answers"
 
 
 def agreement(src: Sources) -> Tuple[Optional[str], List[str]]:
-    """(the paragraph, what is missing). D212: never alone, never beside the tuned figure."""
+    """(the paragraph, what is missing). D212: never alone, never beside the tuned figure, each
+    figure with its 95% interval and n per class (said once when both figures share the sample)."""
     missing = []
     accuracy = measured_value(src, "ragtruth_qa_accuracy")
     balanced = measured_value(src, "ragtruth_qa_agreement")
@@ -337,14 +380,21 @@ def agreement(src: Sources) -> Tuple[Optional[str], List[str]]:
             missing.append(name)
     if missing:
         return None, missing
-    assert accuracy is not None and balanced is not None  # for the type checker
+    # For the type checker: every part is present.
+    assert accuracy is not None and balanced is not None and acc_int and bal_int
+    if acc_int[1] == bal_int[1]:
+        sample = f"On a RAGTruth-QA sample ({_answers(acc_int[1])})"
+        acc_words, bal_words = acc_int[0], bal_int[0]
+    else:
+        sample = "On a RAGTruth-QA sample"
+        acc_words = f"{acc_int[0]}, {_answers(acc_int[1])}"
+        bal_words = f"{bal_int[0]}, {_answers(bal_int[1])}"
     text = (
-        f"On a RAGTruth-QA sample, at the default thresholds, the fast check agreed with the human "
-        f"labels on {show(accuracy, 'fraction')} of answers ({acc_int}) [measured]; balanced "
-        f"across the two classes, {show(balanced, 'fraction')} ({bal_int}) [measured]. Arize's "
-        f"RAGTruth test of Jev at the same default threshold: {like}. That is the same model on "
-        f"a different sample, so a difference between the two is not an improvement made by "
-        f"TrustAgent. RAGTruth is public, so the model may have seen it in training."
+        f"{sample}, at the default thresholds, the fast check matched the human labels on "
+        f"{show(accuracy, 'fraction')} ({acc_words}) [measured]; balanced accuracy "
+        f"{show(balanced, 'fraction')} ({bal_words}) [measured]. Arize's test of Jev at the same "
+        f"threshold: {like}. Same model, different sample, so any difference is not TrustAgent's "
+        f"doing. RAGTruth is public, so the model may have seen it in training."
     )
     return text, []
 
@@ -396,6 +446,10 @@ def fill(tpl: str, src: Sources, roles: bool) -> Tuple[str, List[str], List[str]
             return outcome
         if name == "gate.conditions":
             return gate_conditions(src)
+        if name == "cost.conditions":
+            return cost_conditions(src)
+        if name == "same_checks.judge":
+            return same_checks_judge(src)
         if name in facts:
             return facts[name]
         if name.startswith("measured:"):
@@ -451,9 +505,23 @@ def fill(tpl: str, src: Sources, roles: bool) -> Tuple[str, List[str], List[str]
     return text, missing, notes
 
 
+def post_length(text: str) -> int:
+    """The post's length as LinkedIn counts it (UTF-16 code units: a character outside the BMP,
+    an emoji, counts twice)."""
+    return len(text.encode("utf-16-le")) // 2
+
+
 def check_honesty(text: str, src: Sources) -> None:
-    """The filled post's opening shows before "...see more", and a demo answer is never presented
-    as the output of a support bot the owner runs (D213, D227). Raises UsageError."""
+    """The filled post fits LinkedIn (MAX_POST_CHARS), its opening shows before "...see more",
+    and a demo answer is never presented as the output of a support bot the owner runs (D213,
+    D227, D229). Raises UsageError."""
+    length = post_length(text)
+    if length > MAX_POST_CHARS:
+        raise UsageError(
+            f"the post is {length:,} characters: LinkedIn takes {LINKEDIN_MAX_CHARS:,} and this "
+            f"command keeps it within {MAX_POST_CHARS:,}, so a longer value or a last edit still "
+            f"fits; cut {length - MAX_POST_CHARS:,} or more from the template in {TEMPLATE_PATH}"
+        )
     opening = text.split("\n", 1)[0]
     if len(opening) > OPENING_MAX or "TrustAgent" not in opening:
         raise UsageError(
@@ -477,7 +545,8 @@ def build(root: Path, restricted: bool, roles: bool) -> Tuple[str, List[str], Li
     need_tape = any(n.startswith("featured.") for n in names)
     src = read_sources(root, need_tape=need_tape)
     if any(
-        n.startswith(("measured:", "run.", "gate.")) or n in ("snapshot", "agreement")
+        n.startswith(("measured:", "run.", "gate.", "cost.", "same_checks."))
+        or n in ("snapshot", "agreement")
         for n in names
     ):
         if not measured_run(src):

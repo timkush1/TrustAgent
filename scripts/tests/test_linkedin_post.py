@@ -35,6 +35,7 @@ CONDITIONS = (
     "warm connection, one request at a time, run on Linux, region cloud us-east, "
     "snapshot typesafe/jev-20260901, n=199"
 )
+COST_CONDITIONS = "RAGTruth-QA test split, n=200, about 640 input tokens per answer"
 
 MEASURED: Dict[str, Any] = {
     "schema": "trustagent.measured/v1",
@@ -54,6 +55,22 @@ MEASURED: Dict[str, Any] = {
         "ragtruth_qa_accuracy": {"value": 0.804, "unit": "fraction"},
     },
     "sources": {
+        "fast_check_usd_per_1k": {
+            "cost_source": "reported",
+            "dataset": "RAGTruth-QA test split",
+            "n": 200,
+            "input_tokens_per_answer": 640,
+            "conditions": COST_CONDITIONS,
+        },
+        "llm_same_checks_usd_per_1k": {
+            "cost_source": "reported",
+            "dataset": "RAGTruth-QA test split",
+            "n": 200,
+            "input_tokens_per_answer": 1590,
+            "model": "anthropic/claude-haiku-4.5",
+            "conditions": COST_CONDITIONS.replace("640", "1,590")
+            + ", judge anthropic/claude-haiku-4.5",
+        },
         "gate_latency": {
             "connection": "warm",
             "gate_concurrency": 1,
@@ -61,7 +78,7 @@ MEASURED: Dict[str, Any] = {
             "region": "cloud us-east",
             "n": 199,
             "conditions": CONDITIONS,
-        }
+        },
     },
     "intervals": {
         "ragtruth_qa_accuracy": {
@@ -190,33 +207,40 @@ class PostTest(unittest.TestCase):
         code, out, err = run(self.root)
         self.assertEqual(code, 0, err)
         opening, catch = out.split("\n\n", 2)[:2]
+        # D229: the opening says what was measured (the fast check alone, on a benchmark) and
+        # what TrustAgent is, before "...see more".
         self.assertEqual(
             opening,
-            "TrustAgent checks each LLM answer against the app's own documents, for $0.051 per "
-            "1,000 answers [measured].",
+            "TrustAgent, my open-source hallucination gateway: its fast check cost $0.051 per "
+            "1,000 answers on a public benchmark [measured].",
         )
         self.assertEqual(
             catch,
-            f"I gave it {lp.SCRIPTED_SOURCE}. It promised “{SENTENCE}”; the document it was "
-            f"checked against says “{REFUND_POLICY[:-1]}”. TrustAgent flagged it.",
+            f"I gave it {lp.SCRIPTED_SOURCE}: it promised “{SENTENCE}”, but its document "
+            f"says “{REFUND_POLICY[:-1]}”. TrustAgent flagged it.",
         )
+        # D229: what the cost was measured on, and the judge the ratio compares with, by name.
+        self.assertIn(f"The benchmark: {COST_CONDITIONS}; cost grows with document length.", out)
         # D205: the median is the benchmark's, with how it was taken; the ratio is rounded.
         self.assertIn(
-            f"took 241 ms at the median ({CONDITIONS}) and cost 27× less than an LLM judge", out
+            f"took 241 ms at the median ({CONDITIONS}) and was 27× cheaper than Claude Haiku 4.5 "
+            "asking the same questions [measured].",
+            out,
         )
-        self.assertIn("measured on 2026-10-24 with typesafe/jev-20260901", out)
+        self.assertIn("Our own figures above are from one benchmark run on 2026-10-24.", out)
+        self.assertIn("risky answers plus a small sample get a claim-by-claim LLM audit", out)
         self.assertNotRegex(out, r"\{[a-z][a-z0-9_.:]*\}", "every placeholder is filled")
 
     def test_a_scripted_answer_is_never_my_support_bot(self) -> None:
         """D227: the owner runs no support bot; a demo answer is said for what it is."""
         _, out, _ = run(self.root)
         self.assertNotRegex(out, r"(?i)\bmy (support )?bot\b")
-        self.assertIn("a support-bot answer I wrote for the demo", out)
+        self.assertIn("a support-bot answer scripted for the demo", out)
         root = make_root()
         self.addCleanup(shutil.rmtree, root, True)
         path = root / lp.TEMPLATE_PATH
         text = path.read_text(encoding="utf-8").replace(
-            "I gave it {featured.source}.", "My support bot answered.", 1
+            "I gave it {featured.source}:", "My support bot answered:", 1
         )
         path.write_text(text, encoding="utf-8")
         code, out, err = run(root)
@@ -231,7 +255,7 @@ class PostTest(unittest.TestCase):
         code, out, err = run(root)
         self.assertEqual(code, 0, err)
         self.assertIn(
-            "I gave it a support-bot answer that gpt-4o-mini wrote for the demo. It promised", out
+            "I gave it a support-bot answer that gpt-4o-mini wrote for the demo: it promised", out
         )
         self.assertIn("TrustAgent replaced it with a fallback answer.", out)
 
@@ -245,8 +269,8 @@ class PostTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, root, True)
         path = root / lp.TEMPLATE_PATH
         text = path.read_text(encoding="utf-8").replace(
-            "TrustAgent checks each LLM answer",
-            "Long words " * 15 + "TrustAgent checks each LLM answer",
+            "TrustAgent, my open-source hallucination gateway:",
+            "Long words " * 15 + "TrustAgent, my open-source hallucination gateway:",
             1,
         )
         path.write_text(text, encoding="utf-8")
@@ -256,10 +280,19 @@ class PostTest(unittest.TestCase):
 
     def test_jev_is_credited_to_its_maker_and_the_build_is_disclosed(self) -> None:
         _, out, _ = run(self.root)
-        self.assertIn("Jev, TypeSafe AI's decision model (through OpenRouter)", out)
-        self.assertIn("built with AI coding agents (Claude Code)", out)
+        # Jev is the subject of its own sentence: never "the documents ... sent the model by Jev".
+        self.assertIn(
+            "Jev, TypeSafe AI's decision model (through OpenRouter), checks every answer against "
+            "the documents the app already sent the model. One call answers every check",
+            out,
+        )
+        self.assertNotIn("sent the model by Jev", out)
+        self.assertIn(
+            "built with AI coding agents (Claude Code) to plans I approved and decisions I made",
+            out,
+        )
         self.assertIn("Jev's groundedness scores can invert", out)
-        self.assertIn("calibrate it with your own labels", out)
+        self.assertIn("watch it in shadow", out)
         self.assertNotIn("a few labels", out)
         _, restricted, _ = run(self.root, "--restricted")
         self.assertIn("a third-party decision model", restricted)
@@ -273,13 +306,13 @@ class PostTest(unittest.TestCase):
         root = make_root(trace=trace)
         self.addCleanup(shutil.rmtree, root, True)
         _, out, _ = run(root)
-        self.assertIn(f"It promised “{SENTENCE}”", out)
+        self.assertIn(f"it promised “{SENTENCE}”", out)
         # Without the answer text, a fragment gives way to the claim.
         del trace["body"]
         root = make_root(trace=trace)
         self.addCleanup(shutil.rmtree, root, True)
         _, out, _ = run(root)
-        self.assertIn("It promised “The customer can get a full refund within 60 days”", out)
+        self.assertIn("it promised “The customer can get a full refund within 60 days”", out)
         self.assertNotIn("“60 days”", out)
 
     def test_a_latency_without_its_conditions_is_missing(self) -> None:
@@ -302,23 +335,24 @@ class PostTest(unittest.TestCase):
 
     def test_the_agreement_stands_beside_the_like_for_like_figure(self) -> None:
         _, out, _ = run(self.root)
-        para = [p for p in out.split("\n\n") if "RAGTruth-QA" in p]
+        para = [p for p in out.split("\n\n") if "human labels" in p]
         self.assertEqual(len(para), 1)
         text = para[0]
-        self.assertIn("at the default thresholds", text)
-        self.assertIn(
-            "80.4% of answers (95% interval 75.2% to 84.8%, 120 hallucinated and 180 faithful answers) [measured]",
+        # n per class once, for the sample both figures come from (D212).
+        self.assertTrue(
+            text.startswith(
+                "On a RAGTruth-QA sample (120 hallucinated and 180 faithful answers), at the "
+                "default thresholds"
+            ),
             text,
         )
         self.assertIn(
-            "78.1% (95% interval 73.3% to 82.6%, 120 hallucinated and 180 faithful answers) [measured]",
-            text,
+            "matched the human labels on 80.4% (95% interval 75.2% to 84.8%) [measured]", text
         )
+        self.assertIn("balanced accuracy 78.1% (95% interval 73.3% to 82.6%) [measured]", text)
         self.assertIn("76% at 0.5 [third-party]", text)
         self.assertIn(
-            "That is the same model on a different sample, so a difference between the two is "
-            "not an improvement made by TrustAgent.",
-            text,
+            "Same model, different sample, so any difference is not TrustAgent's doing.", text
         )
         self.assertNotIn("87%", out, "never beside the tuned-threshold figure (D212)")
 
@@ -329,7 +363,8 @@ class PostTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, root, True)
         code, out, err = run(root)
         self.assertEqual(code, 0, err)
-        self.assertNotIn("RAGTruth", out)
+        self.assertNotIn("human labels", out)
+        self.assertNotIn("Arize", out)
         self.assertIn("the agreement paragraph is left out", err)
         self.assertIn("the interval of ragtruth_qa_agreement", err)
 
@@ -338,7 +373,78 @@ class PostTest(unittest.TestCase):
         _, with_roles, _ = run(self.root, "--roles")
         self.assertNotIn("open to", without)
         self.assertIn("I'm open to backend and AI-platform engineering roles", with_roles)
-        self.assertIn("Go, Python (LangGraph), React and TypeScript", without)
+        self.assertIn("Go, Python (LangGraph), React/TypeScript", without)
+
+    def test_the_post_fits_linkedin_with_room_to_spare(self) -> None:
+        """D229: realistic values (the real refund scenario, a long cloud region and snapshot)
+        leave the post well inside LinkedIn's 3,000 characters, roles line and agreement in."""
+        scenarios = json.loads((ROOT / "contracts/demo/scenarios.v1.json").read_text("utf-8"))
+        refund = next(s for s in scenarios["scenarios"] if s["id"] == "refund-contradiction-flag")
+        answer = refund["response"]
+        quote = refund["judge"]["claims"][0]["quote"]
+        trace = copy.deepcopy(TRACE)
+        trace["body"]["response_text"] = answer
+        claim = trace["audit_detail"]["claims"][2]
+        claim["quote"] = quote
+        claim["span"] = {"start": answer.index(quote), "end": answer.index(quote) + len(quote)}
+        claim["evidence_spans"] = [{"text": refund["judge"]["claims"][0]["evidence"][0]}]
+        measured = copy.deepcopy(MEASURED)
+        measured["snapshot"] = "typesafe/jev-1.13-20260917"
+        measured["sources"]["gate_latency"]["conditions"] = (
+            "warm connection, one request at a time, run on Linux, region cloud-europe-west4, "
+            "snapshot typesafe/jev-1.13-20260917, n=199"
+        )
+        measured["sources"]["fast_check_usd_per_1k"][
+            "conditions"
+        ] = "RAGTruth-QA test split, n=200, about 1,240 input tokens per answer"
+        root = make_root(measured=measured, trace=trace)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root, "--roles")
+        self.assertEqual(code, 0, err)
+        self.assertIn("matched the human labels", out, "the agreement paragraph is in")
+        self.assertIn(answer.rstrip("."), out)
+        self.assertLessEqual(lp.post_length(out), lp.MAX_POST_CHARS - 100, out)
+        self.assertLess(lp.MAX_POST_CHARS, lp.LINKEDIN_MAX_CHARS)
+
+    def test_a_post_longer_than_linkedin_takes_is_refused(self) -> None:
+        root = make_root()
+        self.addCleanup(shutil.rmtree, root, True)
+        path = root / lp.TEMPLATE_PATH
+        text = path.read_text(encoding="utf-8").replace(
+            "A new check can start", "Filler words. " * 60 + "A new check can start", 1
+        )
+        path.write_text(text, encoding="utf-8")
+        code, out, err = run(root, "--roles")
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("LinkedIn takes 3,000", err)
+        self.assertIn("cut ", err)
+        # Counted as LinkedIn counts: an emoji is two UTF-16 units.
+        self.assertEqual(lp.post_length("a\U0001F600"), 3)
+
+    def test_a_cost_without_what_it_was_measured_on_is_missing(self) -> None:
+        for key, placeholder in (
+            ("fast_check_usd_per_1k", "cost.conditions"),
+            ("llm_same_checks_usd_per_1k", "same_checks.judge"),
+        ):
+            measured = copy.deepcopy(MEASURED)
+            del measured["sources"][key]
+            root = make_root(measured=measured)
+            self.addCleanup(shutil.rmtree, root, True)
+            code, out, err = run(root)
+            self.assertEqual((code, out), (1, ""), placeholder)
+            self.assertIn(placeholder, err)
+
+    def test_the_judge_is_named_as_a_reader_knows_it(self) -> None:
+        self.assertEqual(lp.judge_name("anthropic/claude-haiku-4.5"), "Claude Haiku 4.5")
+        self.assertEqual(lp.judge_name("claude-haiku-4-5-20251001"), "Claude Haiku 4.5")
+        self.assertEqual(lp.judge_name("claude-sonnet-5-5"), "Claude Sonnet 5.5")
+        self.assertEqual(lp.judge_name("openai/gpt-4o-mini"), "gpt-4o-mini")
+
+    def test_the_roles_line_stands_apart(self) -> None:
+        _, with_roles, _ = run(self.root, "--roles")
+        self.assertIn("gRPC, Docker.\n\nI'm open to backend", with_roles)
+        _, without, _ = run(self.root)
+        self.assertNotIn("\n\n\n", without)
 
     def test_the_featured_claim_needs_a_span_and_falls_back_to_the_evidence_list(self) -> None:
         trace = copy.deepcopy(TRACE)
@@ -348,7 +454,7 @@ class PostTest(unittest.TestCase):
         code, out, err = run(root)
         self.assertEqual(code, 0, err)
         self.assertIn(
-            f"promised “{SENTENCE}”; the document it was checked against says “A fallback quote”.",
+            f"promised “{SENTENCE}”, but its document says “A fallback quote”.",
             out,
         )
 
@@ -452,6 +558,8 @@ class TemplateTest(unittest.TestCase):
                             "featured.source",
                             "featured.outcome",
                             "gate.conditions",
+                            "cost.conditions",
+                            "same_checks.judge",
                             "run.date",
                             "run.ids",
                             "snapshot",
@@ -612,7 +720,7 @@ class ClipTest(unittest.TestCase):
         self.assertEqual(out, "")
         self.assertIn("copied the post", err)
         copied = self.capture.read_bytes().decode("utf-16-le")
-        self.assertTrue(copied.startswith("TrustAgent checks each LLM answer"))
+        self.assertTrue(copied.startswith("TrustAgent, my open-source hallucination gateway"))
         self.assertIn("27×", copied)
 
     def test_linkedin_post_clip_without_clip_exe_prints(self) -> None:
@@ -620,7 +728,7 @@ class ClipTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, root, True)
         code, out, err = run(root, "--clip")
         self.assertEqual(code, 0, err)
-        self.assertTrue(out.startswith("TrustAgent checks each LLM answer"))
+        self.assertTrue(out.startswith("TrustAgent, my open-source hallucination gateway"))
         self.assertIn("no clip.exe here", err)
 
 
