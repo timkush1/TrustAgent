@@ -755,8 +755,8 @@ for r in r1a r1b; do (cd backend-python && poetry run python -m evals.bench publ
   make version-bump V=2.0.0 DRY_RUN=1 && make check-version
   make pages-build PAGES_DATASET=mock && make lint-workflows
   make release-notes TAG=v0.0.0-rehearsal RELEASE_NOTES_INSPECT=scripts/tests/fixtures/inspect.json
-  make check-claims; make check-claims-launch; echo "want the script's exit 1 (make reports Error 2) with: recorded, measured, compare review, og, reverify"
-  make linkedin-post; echo "want the script's exit 1 (make reports Error 2): values missing"
+  make check-claims; make check-claims-launch; echo "want the script's exit 1 (make prints Error 1 and exits 2) with: recorded, measured, compare review, og, reverify"
+  make linkedin-post; echo "want the script's exit 1 (make prints Error 1 and exits 2): values missing"
   (cd frontend-react && npm audit --omit=dev --audit-level=high)
   ```
 
