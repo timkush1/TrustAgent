@@ -1,6 +1,6 @@
 package main
 
-// The knowledge add-on in process (D131; the Docker run is P6). config/policies.knowledge.yaml is
+// The knowledge add-on in process (D131; ci-knowledge.yml runs it in Docker). config/policies.knowledge.yaml is
 // the policy of a stack with the add-on: generated from config/policies.yaml and the handbook
 // route of config/policies.pending.yaml, which the stacks without the add-on cannot load.
 

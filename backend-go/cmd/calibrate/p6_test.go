@@ -15,7 +15,7 @@ import (
 	"github.com/truthtable/backend-go/internal/decision"
 )
 
-// The P6 calibration flow (D206): fit on RAGTruth-QA train lines from one warm gate-eval process,
+// The held-out calibration flow (D206): fit on RAGTruth-QA train lines from one warm gate-eval process,
 // merge both evaluators into one file, then measure ECE and Brier on held-out test labels. Risks
 // from a stand-in host are refused (D203).
 
@@ -234,7 +234,7 @@ func TestCalibrateRefusesRisksFromAStandInHost(t *testing.T) {
 		t.Errorf("a stand-in calibration was written: %v", entries)
 	}
 
-	// A non-mock line that names no host (a gate-eval from before P6, or a host the stamp dropped)
+	// A non-mock line that names no host (a gate-eval from before D203, or a host the stamp dropped)
 	// is no proof that a vendor answered: refused as well (D203).
 	hostless := calibLines(300, 11, "")
 	code, out, stderr = runCLI(t, hostless, testEnv(), "--evaluator", "groundedness@1", "--out", dir, "--write")

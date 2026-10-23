@@ -21,7 +21,7 @@
  * respondThenGate). The deep audit follows the engine: no evidence means NOT_ASSESSED with no judge
  * call; a judge that finds no claims means NO_CLAIMS. The manifest mirrors
  * backend-go/internal/recording (Build, events, the pending and decided summaries of the stream),
- * so P6 can swap this file set for `export-replay` output without touching the replay.
+ * so a recorded tape can swap this file set for `export-replay` output without touching the replay.
  *
  * Every recording this module writes is kind `mock` with the fixed label "Simulated (mock checks +
  * mock judge): not model output", answer_source `scripted`, and costs with cost_source

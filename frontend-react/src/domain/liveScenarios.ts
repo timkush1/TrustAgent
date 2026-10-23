@@ -32,7 +32,7 @@ export const PKCE_FROM_BROWSER = true;
 export const ERRORS_READABLE = true;
 /**
  * Which consent action is primary: `connect` (PKCE) or `paste`. From the CORS result alone, never
- * from D88; the P6 Pages PKCE check may flip it to `paste` (§23 CO-14). Paste is always offered.
+ * from D88; the Pages PKCE check may flip it to `paste` (§23 CO-14). Paste is always offered.
  */
 export const STATIC_CONNECT_PRIMARY: 'connect' | 'paste' = 'connect';
 /** The decisions endpoint under https://openrouter.ai/api/, chosen at build time (never a runtime fallback). */

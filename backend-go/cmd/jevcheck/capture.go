@@ -868,9 +868,10 @@ func marshalNoEscape(v any) ([]byte, error) {
 	return bytes.TrimRight(b.Bytes(), "\n"), nil
 }
 
-// ---------- the P6 result line ----------
+// ---------- the paid-step result line ----------
 
-// p6Result is the TRUSTAGENT_P6_RESULT line every paid P6 command ends with (P6 plan §0.6).
+// p6Result is the TRUSTAGENT_P6_RESULT line every paid measurement command ends with, which
+// make p6-ledger sums.
 type p6Result struct {
 	Step                 string   `json:"step"`
 	RunID                string   `json:"run_id"`

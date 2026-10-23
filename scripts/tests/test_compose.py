@@ -469,7 +469,7 @@ def caddy_covers(patterns: Sequence[str], path: str) -> bool:
 
 
 class PublicDemoTest(unittest.TestCase):
-    """D218 (P6 CL-1, CL-2): the always-on public demo's overlay, its edge and its targets."""
+    """D218 (CL-1, CL-2): the always-on public demo's overlay, its edge and its targets."""
 
     DEMO_STACK = ("proxy", "engine", "postgres", "dashboard", "trafficgen")
 

@@ -202,7 +202,7 @@ func (in *labelsInput) readGateEval(b []byte, opt readOptions) error {
 	if err := in.setModel(snapshot, backend, opt); err != nil {
 		return err
 	}
-	// A gate-eval line that names no host (a build from before P6 stamped none, and the stamp drops
+	// A gate-eval line that names no host (a build from before D203 stamped none, and the stamp drops
 	// an over-long host) counts as an unknown host: nothing shows a vendor answered it (D203).
 	host := ""
 	if l.EndpointHost != nil {

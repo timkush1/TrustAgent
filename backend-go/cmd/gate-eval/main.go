@@ -1,7 +1,7 @@
 // Command gate-eval runs the gateway's fast check (SPEC §3.1) over a JSONL file of examples, the
 // way the proxy gates a response: Tier-0 detectors, compile, the decision-model call, and decide()
 // (which normalizes the answers). The Python eval harness uses it as the `gate` system (SPEC §3.2
-// evals/judges.py, P6 bench-lite).
+// evals/judges.py, make bench-lite).
 //
 // Each input line is an example:
 //

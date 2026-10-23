@@ -19,7 +19,7 @@ import (
 	"github.com/truthtable/backend-go/internal/policy"
 )
 
-// The P6 additions to gate-eval (D203 endpoint host, D204 built-in policy, D205 warm connection and
+// The measurement additions to gate-eval (D203 endpoint host, D204 built-in policy, D205 warm connection and
 // one-at-a-time evaluation), against an in-process mock-upstream: no vendor, no key, no spend.
 
 // countingVendor serves mock-upstream over TLS (HTTP/2, like the vendor) and counts the TCP
