@@ -164,14 +164,19 @@ Details are under *Build log by phase* (*Breaking changes (P3)* and
 - **Launch tooling**: `make linkedin-post` prints the launch post from the measured run and the
   recorded tape and exits 1 on any missing value; the launch checks, the release notes and the
   post count a tape as recorded only when the hosts it names are vendor hosts, never
-  mock-upstream; `make clip FILE=…` copies text to the Windows
-  clipboard from WSL without garbling it; `make compare-review` re-reads every comparison source
+  mock-upstream; the post says where its example answer came from (written for the demo, or the
+  model that generated it), never "my support bot", and names Jev's maker; `make clip FILE=…` (or
+  a pipe into `make clip`) copies text to the Windows clipboard from WSL without garbling it; `make compare-review` re-reads every comparison source
   and prints each cell beside its source's own words; `make hygiene-check` (in `make check`) and
   `make gitleaks-history` keep local paths, personal emails and keys out of the repository.
 - **Measurement tools**: `make gate-eval`, `make calibrate`, `make bench-lite`
-  and `make bench-publish` (each paid run is a dry run with an estimate unless
-  `CONFIRM=1`, and publishing refuses mock output), the Tier-0 benchmarks and k6
-  gateway-overhead runs.
+  and `make bench-publish` (each paid run, `make eval-compare` included, is a dry
+  run with an estimate unless `CONFIRM=1`, and publishing refuses mock output),
+  the Tier-0 benchmarks and k6 gateway-overhead runs. A published fast-check
+  latency always says how it was taken: the connection, how many calls ran at
+  once, where the run ran, the snapshot and n.
+- **A sourced Claude Sonnet 5.5 price** (Anthropic and OpenRouter, read
+  2026-10-23) in the price table, so the cost calculator offers it as a judge.
 - **Developer experience**: `make check` runs every CI gate, `make doctor`
   diagnoses a running stack, `make configure WITH_SECRETS=1` asks for keys at
   hidden prompts, the onboarding and e2e stacks run every vendor on
@@ -203,8 +208,8 @@ Details are under *Build log by phase* (*Breaking changes (P3)* and
 - **Pages on a release tag** ships the recorded tape; the repository variable
   `PAGES_TAG_DATASET` = `simulated` ships the simulated one instead, for a release that may not
   publish recorded model output.
-- **Toolchains**: Go 1.25, Vite 8, TypeScript 6, React 19.3; the Makefile is
-  split into `mk/*.mk` fragments.
+- **Toolchains**: Go 1.26, Vite 8, TypeScript 6, React 19.3, LangGraph 1.x; the
+  Makefile is split into `mk/*.mk` fragments.
 - `SubmitAudit` and `GetAuditResult` are deprecated in favour of `Evaluate`.
 
 ### Fixed
@@ -260,6 +265,9 @@ Details are under *Build log by phase* (*Breaking changes (P3)* and
 - **Figures from others**: the comparison table and the vendor and third-party
   figures are as of the date beside each one; measured figures are only those
   listed with this release's measured run.
+- **No production deployments or users yet**: one developer, a public benchmark
+  and scripted demo traffic. TrustAgent was built with AI coding agents (Claude
+  Code) working to written plans, tests and reviews (README, "How it was built").
 
 ### Build log by phase
 

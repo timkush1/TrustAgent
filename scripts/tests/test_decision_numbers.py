@@ -117,7 +117,9 @@ class CheckTests(unittest.TestCase):
 
     def test_p6_number_outside_its_block_fails(self) -> None:
         report = cdn.check([self.d("D173", "P6", "p6:1")])
-        self.assertTrue(any("outside D200-D219" in e for e in report.errors))
+        self.assertTrue(any("outside D200-D239" in e for e in report.errors))
+        report = cdn.check([self.d("D240", "P6", "p6:2")])
+        self.assertTrue(any("outside D200-D239" in e for e in report.errors))
 
     def test_ranges(self) -> None:
         self.assertEqual(cdn.ranges([3, 1, 2, 7], ["D76b"]), "D1-D3, D7, D76b")

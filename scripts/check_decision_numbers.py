@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """List every lead decision number (D<n>) the v2 plans define and check that none is defined twice.
 
-P5 defined one number twice (CO-1). P6 therefore took a block of its own (D200-D219) instead of
-the next free number, and Step 0 of the P6 plan (docs/v2/P6-PLAN.md section 2.1) runs this check:
+P5 defined one number twice (CO-1). P6 therefore took a block of its own (D200-D239: D200-D219
+at planning, D220 onward for the owner's later decisions) instead of the next free number, and
+Step 0 of the P6 plan (docs/v2/P6-PLAN.md section 2.1) runs this check:
 
 * every ``D<n>`` defined in the P3-P6 plans (a table row whose first cell is the number);
 * every ``D<n>`` defined in SPEC Appendices E-H (a ``- **D<n> (...)**`` bullet or a table row);
@@ -40,7 +41,7 @@ PLANS: Tuple[Tuple[str, str], ...] = (
 APPENDICES: Dict[str, str] = {"E": "P3", "F": "P4", "G": "P5", "H": "P6"}
 # The P5 integration merges: after the P4 merge into feat/v2-jev-gateway, up to the P5 merge.
 DEFAULT_MERGES = "a03ecb3..b39e61c"
-P6_BLOCK = (200, 219)
+P6_BLOCK = (200, 239)
 
 NUM = r"D(\d+)([a-z]?)"
 ROW_RE = re.compile(r"^\|\s*\**\s*" + NUM + r"\s*\**\s*\|")

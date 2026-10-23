@@ -3,7 +3,10 @@
 May this project publish figures about the Jev decision model, and redistribute its outputs (the
 recorded demo tape, the captured vendor fixtures, the social card)? This page records what the
 owner read, when, and what it means for the launch (D200). It is filled in at sitting S1 and
-finished at step C3; until then every **TO FILL** below stays as it is, and nothing is pushed.
+finished at step C3; until then every **TO FILL** below stays as it is, and nothing Jev-derived
+is pushed (D222). `main` itself has been public with v2 phases P0 to P5 since 2026-10-21, by the
+owner's decision (D220): the third-party and vendor Jev figures quoted there, with their sources,
+are already public, and in mode R the owner decides in H-R whether they stay.
 
 **Status: TO FILL** (one of: mode A, mode W, mode R)
 
@@ -42,8 +45,8 @@ prompts and says nothing about benchmarks.
   courtesy note (an FYI, whether TypeSafe may be tagged in the post, the results shared three days
   before posting). Note the date it was sent and any reply here.
 - **Mode W** (a clause found, or unsure): the owner sends the permission request; paid Jev runs
-  wait unless the owner chooses to measure privately (the outputs then stay in ignored paths), and
-  nothing is pushed. After seven days without a reply the owner chooses mode R or keeps waiting.
+  wait (the cloud session has no private place to keep their outputs, D222), and nothing
+  Jev-derived is pushed. After seven days without a reply the owner chooses mode R or keeps waiting.
 - **Mode R** (a clause and no permission): no Jev-derived figure, recorded tape or captured Jev
   response is committed or pushed. The site replays the simulated tape (`PAGES_TAG_DATASET` =
   `simulated`), the post is the mode-R variant (`make linkedin-post RESTRICTED=1`), and

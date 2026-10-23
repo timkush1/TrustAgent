@@ -3338,6 +3338,13 @@ no number is defined twice (`scripts/check_decision_numbers.py`; P5 used up to D
 | H-12 | §2.13 | `make bench-lite`, `bench-smoke`, `calib-pass`, `eval-live`, `jev-capture` and `record-demo` are dry runs unless `CONFIRM=1`; `bench-publish` requires `RUN=` and refuses a run with more than 5% failed, fewer than 95% scored, several decision-model snapshots, a dirty tree at its start, a non-vendor host, dataset text in `per_example`, or `cost_source: unknown`. `measured.json` discloses `sources.attempts` | D204 |
 | H-13 | §4.2 P6 step 5 | The record preflight does not run `doctor --only decision_model,judge`: the record stack publishes no host port, so `scripts/record_demo.py` reads the same `GET /api/status` fields, plus `GET /health`, from inside the proxy container | D208 |
 | H-14 | §8.1 | OpenRouter's faithfulness figures (95.5% accuracy, 171 ms median) are withdrawn: their source page no longer shows them (read 2026-10-21 and 2026-10-23). The landing shows that block only while the claims exist. The simulated hero latency claim is removed with the hero card's time (P5C-2) | D212 |
+| H-15 | §4.2 P6, §8 | `main` has been public with P0–P5 since 2026-10-21 (merge `a582549`, the owner's decision); Claude pushes branches, `main` moves only through pull requests the owner merges; the push guard and the token sitting are dropped | D220 |
+| H-16 | §4.2 P6 | The paid runs and the release steps run from a Claude cloud session: the key is a cloud environment variable, the owner's GitHub release makes the `v2.0.0` tag, and the localhost Connect check runs on the laptop or is skipped | D221 |
+| H-17 | §4.2 P6 step 0 (H-1) | Before G0 says mode A, no measured Jev figure, recorded Jev tape or captured Jev response is committed to a pushed branch; quoted vendor and third-party figures are not measurements | D222 |
+| H-18 | §8.1 | A measured gate latency always carries how it was taken: measured.json `sources.gate_latency` (connection, requests at a time, platform and region from the run, snapshot, n), shown wherever the figure is; publish refuses a latency without it (`latency_conditions`) | D205, D225 |
+| H-19 | §8.2 | The launch post says where its example answer came from (scripted for the demo, or the model that generated it), names Jev's maker, gives the latency as the benchmark median with its conditions, and says the project was built with AI coding agents; so do the README and the release PR | D227 |
+| H-20 | §2.13 | A simulated (kind mock) tape never names a vendor host for the mock fast check or the mock judge: `recording.Build` and `check_recording.py` refuse it. The hosts a caller passes for a recorded tape are still taken on trust beyond that; storing each call's host on the trace is a P7 item | D203 |
+| H-21 | §4.2 P6 (R-3) | An attempt cannot be recorded on mocks, so the vendor rehearsal proves featured, drift, `ACCEPT` and the video's ffmpeg path through a simulated export, attempts that exist and a static ffmpeg | D226, D228 |
 | H-R | §8 | Reserved for mode R (D200): which Jev-derived figures stay unpublished, and whether third-party and vendor Jev figures already public elsewhere stay with their source links. Written only if the owner's G0 answer is mode R, and approved by the owner before launch | D200 |
 
 Appendix D rows get dated results during P6: the Step 0 free checks (2026-10-10) are recorded there, and
@@ -3359,6 +3366,21 @@ Each P5C row is fixed before Gate A, or rejected or changed here with its reason
 - **P5C-16** (fixed at Step 0): `validate.mjs` enforces D169 as written (a compare cell's text names no
   vendor of its row); three texts are reworded without changing what they say.
 - **P5C-26** (fixed at Step 0): Appendix G's opening sentence names D142-D172.
+- **The sourced Sonnet price pair, D149** (done in fix round 1): Claude Sonnet 5.5, $2 / $10 per
+  million input / output tokens, from Anthropic's pricing page and OpenRouter's public model list,
+  both read 2026-10-23; `prices.v1.json` version 2026-10-23. The landing calculator offers it as one
+  judge (the same price on both providers).
+- **The live Playground text in `copy.playground_live.ui.*`, D163** (deferred to v2.0.x in fix
+  round 1): the copy contract is bundled whole into the app entry and the landing's first load, so moving
+  the live surfaces' 55 strings there would add about 1.4 kB gzip to both, when the app entry had
+  1.8 kB of its budget left, for no visible change. `liveText.ts` keeps them beside the lazy live
+  components; the move waits for a copy contract split per surface.
+- **Notes from the P6a integration review** (no change needed): the public-demo overlay sets
+  `TRUTHTABLE_RETENTION_DAYS=7` on the proxy only, because only the proxy reads that key (D218 said
+  proxy and engine); `scripts/record_demo.py` keeps its own `GET /api/v1/key` reader instead of
+  importing `evals/vendor_key.py`, because it runs on the system `python3` without the engine's
+  packages; the R-2 holdout on the R-1b run stopped at the missing calibration file, so its own
+  non-vendor-host warning is covered by the Go tests only.
 - **P5C-21** (fixed at Step 0 in the contract): `load-run.v1` records `environment.image_revision` (the
   proxy image's revision label) and `environment.concurrent_load` (other compose projects running, the load
   average and the memory available), and the GATEWAY.md block names both when a run has them. The quiet

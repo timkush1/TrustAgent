@@ -1,15 +1,22 @@
 # Launch checklist
 
-Nothing is pushed, deployed, published or posted until the boxes before it are ticked. The list
-follows the owner's sittings of the [P6 plan](../v2/P6-PLAN.md) in order (S1, Gate A, S2, the
-release candidate, S3a, S3b, S3c); each item names the command or page that proves it. The plain
-step-by-step guides for each sitting are in the plan's §10, and the money rules (one paid card at a
+Nothing is deployed, published or posted until the boxes before it are ticked. The list follows
+the owner's sittings of the [P6 plan](../v2/P6-PLAN.md) in order (S1, Gate A, S2, the release
+candidate, S3a, S3b, S3c); each item names the command or page that proves it. The plain
+step-by-step guides for each sitting are in the plan's §10 (with a table of what runs on the
+laptop, in the Claude cloud session and in GitHub's web UI), and the money rules (one paid card at a
 time, a dry run first, the key limit) in its §0.6.
+
+`main` has been public with v2 phases P0 to P5 since 2026-10-21, by the owner's decision (D220).
+Claude pushes branches; `main` moves only through pull requests the owner merges on GitHub. The
+paid runs and the release steps run from a Claude cloud session (D221).
 
 **Two rules override everything else.**
 
-1. **No push of anything until the terms check is answered** ([terms-check.md](terms-check.md)):
-   pushing to the public repository is publishing. Mode W stops before the first push.
+1. **Nothing Jev-derived is pushed until the terms check says mode A** ([terms-check.md](terms-check.md)):
+   no measured Jev figure, recorded Jev tape or captured Jev response on any pushed branch, since
+   every branch is public (D222). Vendor and third-party figures quoted from public pages, with
+   their labels, are not measurements. Mode W stops the paid Jev steps.
 2. **No post while the site would replay a simulated tape** (mode A). A simulated tape is honest
    on the site (it says Simulated everywhere), but a launch post invites people to judge real model
    output. In mode R the post is the mode-R variant and names no fast-check figure.
@@ -27,11 +34,12 @@ time, a dry run first, the key limit) in its §0.6.
       third-party scripts (they would share an origin with the demo and could read a visitor's key
       from `sessionStorage`); otherwise the demo moves to its own domain first.
 - [ ] **Choices recorded:** the "open to roles" line (`make linkedin-post ROLES=1`), the interview
-      talking points public or private, the launch day, the audience.
+      talking points public or private, the "built with AI coding agents" wording (D227), the
+      launch day, the audience.
 - [ ] **OpenRouter account** ready, no credit yet; the privacy settings let Jev's provider
       (TypeSafe) be reached (plan §10, G1 step 4).
-- [ ] **Push guard** in the main checkout: `git config remote.origin.pushurl DISABLED` and
-      `git config credential.useHttpPath true`.
+- [ ] **The cloud environment** (D221): network access allows `openrouter.ai`, GitHub, the package
+      registries and `ghcr.io`; the setup script installs `ffmpeg`; no key yet.
 
 ## Gate A: ready to spend (the lead, before S2)
 
@@ -43,13 +51,18 @@ time, a dry run first, the key limit) in its §0.6.
       `make release-notes TAG=v0.0.0-rehearsal RELEASE_NOTES_INSPECT=scripts/tests/fixtures/inspect.json`
       prints rehearsal notes.
 - [ ] **Hygiene**: `make hygiene-check` prints nothing, and `make gitleaks-history` finds no leak.
+- [ ] **Containment**: no worktree `.env` on the laptop holds a key; the key goes into the cloud
+      environment's variables only.
+- [ ] **Handoff**: `docs/v2/STATUS.md` rewritten for the cloud session; int7 merged into
+      `feat/v2-jev-gateway` and both pushed.
 
 ## S2: the measured run and the recording (owner in the loop)
 
-- [ ] **G2 localhost Connect check** before any credit, recorded in SPEC Appendix D (accepted or
-      refused), and the key it made deleted.
-- [ ] **G3 credit and the measurement key** with its fixed limit, entered with
-      `make configure WITH_SECRETS=1`, never pasted into a chat.
+- [ ] **G2 localhost Connect check** (on the laptop, optional) before any credit, recorded in SPEC
+      Appendix D (accepted, refused or skipped), and the key it made deleted.
+- [ ] **G3 credit and the measurement key** with its fixed limit, entered as the cloud
+      environment variable `OPENROUTER_API_KEY` (on the laptop, `make configure WITH_SECRETS=1`),
+      never pasted into a chat.
 - [ ] **B3 to B8**, one approved card at a time, each ending with its `TRUSTAGENT_P6_RESULT` line:
       `make jev-check`, `make jev-capture`, `make bench-smoke`, `make calib-pass` and the free
       `make calibrate` fits, `make bench-lite` (with the held-out ECE), `make record-demo` (drift
@@ -60,7 +73,8 @@ time, a dry run first, the key limit) in its §0.6.
 - [ ] **G6 Gate B**: the owner has read every figure with its label, n, interval and snapshot, the
       featured trace and the filled opening lines of the post, and answered "publish". Nothing is
       re-run to improve a number.
-- [ ] **G7 close the key**: deleted (or limited to its usage plus a little) and removed from `.env`.
+- [ ] **G7 close the key**: deleted (or limited to its usage plus a little) and removed from the
+      cloud environment's variables (and any `.env`).
 
 ## Release candidate (the lead, after "publish")
 
@@ -70,8 +84,9 @@ time, a dry run first, the key limit) in its §0.6.
       `python3 scripts/check_recording.py frontend-react/demo-data/recorded --require-recorded`
       passes.
 - [ ] **C2 fill and look**: `make claims-write`; `make og`; `make hero-gif`; `make screenshots`;
-      `make launch-video`; `make linkedin-post`. The owner opens the card, the GIF, the video and
-      the post text and says "looks good" (or names a change).
+      `make launch-video`; `make linkedin-post`; the README Roadmap and Known limits brought up to
+      date. The session sends the card, the GIF, the video and the post text; the owner opens them
+      and says "looks good" (or names a change).
 - [ ] **C3 records**: the dated SPEC Appendix D rows (PKCE, vendor shapes, prices, licences,
       market signals), Appendix H, the JEV-ACCESS PKCE status, [terms-check.md](terms-check.md),
       the licence name.
@@ -79,22 +94,21 @@ time, a dry run first, the key limit) in its §0.6.
       day; `make check-version RELEASE_TAG=v2.0.0`; the phase grep; `make check`;
       `make check-claims-launch`; `make pages-build PAGES_DATASET=recorded`;
       `make gitleaks-history`; `make hygiene-check`;
-      `npm audit --omit=dev --audit-level=high` in `frontend-react`; the local `v1.0.0` tag on
-      `d709df3`.
+      `npm audit --omit=dev --audit-level=high` in `frontend-react`. Optional, on the laptop: the
+      `v1.0.0` tag on `d709df3`, pushed with the owner's OK (the cloud session cannot push tags).
 - [ ] **The re-verification is current**: every comparison cell's source re-read and dated, no
       claim with an open `reverify`, the market lines in
       [interview-talking-points.md](interview-talking-points.md) dated or deleted.
 
-## S3a: first push and the pull request
+## S3a: settings and the pull request
 
-- [ ] **G8 token**: a fine-grained token for this repository only, stored for its path only;
-      `git push --dry-run https://github.com/timkush1/TrustAgent.git feat/v2-jev-gateway` passes.
 - [ ] **G9 settings**: merge commits allowed; Pages source GitHub Actions; the `github-pages`
       environment allows `main` and the tag rule `v*`; the minimal `main` ruleset (no deletion,
-      no force push, a pull request required) from [ruleset.md](ruleset.md).
-- [ ] **"go push"**: the `v1.0.0` tag and the branch, to the explicit URL.
-- [ ] **The PR** `feat/v2-jev-gateway` → `main`, with the body from
-      `make clip FILE=docs/launch/release-pr.md`.
+      no force push, a pull request required, the admin bypass for pull requests only) from
+      [ruleset.md](ruleset.md). These can be set any time before.
+- [ ] **The branch is pushed** by Claude (D220): the P6b work merged into `feat/v2-jev-gateway`.
+- [ ] **The PR** `feat/v2-jev-gateway` → `main`, with the body of
+      [release-pr.md](release-pr.md); the owner merges it, Claude never does.
 - [ ] **CI loop**: every required check green, `pages.yml` and `release-images.yml` green as
       build-only runs.
 
@@ -102,14 +116,15 @@ time, a dry run first, the key limit) in its §0.6.
 
 - [ ] **G10**: the Actions variable `PAGES_ENABLED` = `true` (mode R also
       `PAGES_TAG_DATASET` = `simulated`); the PR merged with **Create a merge commit**; the three
-      GHCR packages (`truthtable-proxy`, `-engine`, `-dashboard`) made public; `GHCR_PUBLIC` =
-      `true`.
+      GHCR packages (`truthtable-proxy`, `-engine`, `-dashboard`), public since 2026-10-21 (D224),
+      still public; `GHCR_PUBLIC` = `true`.
 - [ ] **G11 Pages Connect check** on `https://timkush1.github.io/TrustAgent/app/playground/#live`:
       the result recorded in SPEC Appendix D; if OpenRouter refused the callback, the Paste-first
       fix is merged before the tag; the key it made deleted.
-- [ ] **"go push" for `v2.0.0`**, after `python3 scripts/check_version.py --tag v2.0.0` on the
-      merge commit. The tag run deploys Pages from the tag, pushes the semver images, and runs
-      `first-run` and `anonymous-pull`.
+- [ ] **The tag**: `python3 scripts/check_version.py --tag v2.0.0` passes on the merge commit; the
+      owner publishes the release `v2.0.0` as a **pre-release** in the web UI, which creates the
+      tag on `main` (D221). The tag run deploys Pages from the tag, pushes the semver images, and
+      runs `first-run` and `anonymous-pull`.
 - [ ] **Images**: `docker buildx imagetools inspect ghcr.io/timkush1/truthtable-proxy:2.0.0` lists
       `linux/amd64` and `linux/arm64`, and
       `gh attestation verify oci://ghcr.io/timkush1/truthtable-proxy:2.0.0 -R timkush1/TrustAgent`
@@ -117,24 +132,28 @@ time, a dry run first, the key limit) in its §0.6.
 
 ## S3c: the release page, then the post
 
-- [ ] **G12 the Release**: tag `v2.0.0`, title "TrustAgent 2.0.0 — Jev gateway", the notes from
-      `make release-notes TAG=v2.0.0` (it refuses a missing digest), the MP4s attached, set as
-      **Latest**; the release badge shows v2.0.0.
+- [ ] **G12 the Release**: the `v2.0.0` pre-release edited: the notes from
+      `make release-notes TAG=v2.0.0` (it refuses a missing digest), the MP4s attached, pre-release
+      unticked and set as **Latest**; the release badge shows v2.0.0.
 - [ ] **About and presentation**: the description, website and 16 topics from
       [github-metadata.md](github-metadata.md); the social preview `docs/launch/og.png`.
 - [ ] **The ruleset's required checks**, typed from [ruleset.md](ruleset.md).
 - [ ] **Code security**: private vulnerability reporting on (the [security policy](../SECURITY.md#reporting),
       the code of conduct and the issue forms point at it), Dependabot alerts on.
-- [ ] **Housekeeping**: the stale Dependabot PRs closed as superseded, their branches deleted, the
-      repository pinned on the profile.
+- [ ] **Housekeeping**: the stale Dependabot PRs (#21, #23, #24, #28, #30) closed as superseded;
+      the stale branches deleted (`copilot/check-insecurities`, every `dependabot/*`,
+      `fix/deps-security` once PR #45 is closed or merged); the repository pinned on the profile.
 - [ ] **G13 the stranger check**: the site in a private window and on a phone at 400 px, in both
       themes: the banner says Recorded (mode A), the first-visit guide reaches the caught answer, a
       live check with a small-limit key works and Forget key clears it, the network panel shows only
       the site and openrouter.ai, and every README badge and link opens.
 - [ ] **Post Inspector** shows the card from `og.png` for the site URL.
-- [ ] **The post**: `make linkedin-post CLIP=1` (it exits 1 on any missing value; nothing is typed
-      by hand), read through: every figure has its label, the agreement stands beside the
-      like-for-like third-party figure or is left out. Posted with the 4:5 video as its media,
-      the Haqq link as the first comment ([linkedin-post.md](linkedin-post.md)).
-- [ ] **Afterwards**: the push token deleted or its expiry noted; every measurement key deleted or
-      limited to its usage plus a little.
+- [ ] **The post**: `make linkedin-post` (with `ROLES=1` if the owner chose the roles line,
+      `RESTRICTED=1` in mode R; `CLIP=1` on the laptop). It exits 1 on any missing value and
+      refuses a first line that would hide behind "…see more"; nothing is typed by hand. Read
+      through: every figure has its label, the example says where its answer came from, Jev is
+      credited to TypeSafe AI, the agreement stands beside the like-for-like third-party figure or
+      is left out, and the "built with AI coding agents" line is the owner's. Posted with the 4:5
+      video as its media, the Haqq link as the first comment ([linkedin-post.md](linkedin-post.md)).
+- [ ] **Afterwards**: every measurement key deleted or limited to its usage plus a little, and gone
+      from the cloud environment; the laptop's push token kept or deleted, as the owner chooses.

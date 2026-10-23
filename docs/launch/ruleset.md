@@ -1,8 +1,9 @@
 # The `main` ruleset
 
-The branch ruleset on `main` is created in two steps (D215). At sitting S3a, before the first
-push, it is minimal: **Restrict deletions**, **Block force pushes** and **Require a pull request**
-(0 approvals), with Repository admin as the only bypass. At sitting S3c, after these checks have
+The branch ruleset on `main` is created in two steps (D215, D220). As soon as the owner can (`main`
+is public and Claude pushes branches), it is minimal: **Restrict deletions**, **Block force
+pushes** and **Require a pull request** (0 approvals), with Repository admin as the only bypass,
+in the bypass mode **For pull requests only**, so a direct push to `main` is refused for everyone. At sitting S3c, after these checks have
 run on `main` at least once (GitHub offers a check name only after it has seen it), **Require
 status checks to pass** is added with exactly the names below. Type each one into the search box
 and pick it; the source is "any source" (GitHub Actions).

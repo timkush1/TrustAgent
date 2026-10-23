@@ -18,6 +18,19 @@ I checked this plan read-only on 2026-10-10 (git show/log/grep only; nothing was
 | `feat/v2-w6-dxdocs` | `ff0108f` | DD-1 (`check-claims`), DD-5 and DD-6 (the `docs/launch/*.md` drafts) are committed. |
 | `feat/v2-w6-{wland,wlive,wrep,wsst}` | `e7edb0f` | No commits yet (still the int6 Step 0b head). |
 
+**Re-baseline, 2026-10-23 (fix round 1 of P6a).** Three things changed after this plan was written,
+by the owner's decision; D220–D226 (§1, "After planning") record them and win where an older line
+says otherwise:
+- `main` has been **public with v2 P0–P5 since 2026-10-21** (merge `a582549`, pushed directly by
+  the owner's decision), and Claude may push branches. `main` moves only through pull requests the
+  owner merges on GitHub. The push guard, the G8 token sitting and the "go push" rule are dropped
+  (D220).
+- **P6b and P6c run from a Claude cloud session** (claude.ai/code), not the laptop: Docker there,
+  the key as a cloud environment variable, no tag pushes (the owner creates `v2.0.0` through a
+  GitHub release), no `$ORCH` paths (D221).
+- The GHCR `:edge` images are already public (D224). D200 still binds for Jev measurements and the
+  recorded tape (D222); the latency wording names where a run really ran (D225).
+
 **How to read references**
 - A bare `file:line` means int6 at `ac87b86`.
 - A file that exists only on a P5 stream is written `<stream> path`, for example `dxdocs docs/launch/linkedin-post.md:40`.
@@ -51,8 +64,8 @@ I checked this plan read-only on 2026-10-10 (git show/log/grep only; nothing was
 | Part | Who | Money | Pushes | Ends with |
 |---|---|---|---|---|
 | **P6a: automated preparation** | lead + 4 agent streams | **$0**. Mocks only: httptest, mock-upstream, fake keys. | none | **Gate A**: the "ready to spend" report to the owner (§7) |
-| **P6b: owner-in-the-loop runs** | owner + lead | Real key, every step capped. Expected **$3.1–5.9** [estimate]. All tool caps together $9.61. The key limit is **$8**. | none | **Gate B**: the owner has reviewed the results (§8) |
-| **P6c: finish and release** | lead + owner | ≤ $0.001 (the Pages PKCE check) | yes, each one only after the owner's "go push" | **Gate C**: the definition of done (§13). The LinkedIn post comes after it. |
+| **P6b: owner-in-the-loop runs** | owner + lead, from the cloud session (D221) | Real key, every step capped. Expected **$3.1–5.9** [estimate]. All tool caps together $9.61. The key limit is **$8**. | branches only; nothing Jev-derived before G0 says mode A (D222) | **Gate B**: the owner has reviewed the results (§8) |
+| **P6c: finish and release** | lead + owner | ≤ $0.001 (the Pages PKCE check) | Claude pushes branches (D220); `main` only through the owner's merge of the PR; the `v2.0.0` tag through the owner's GitHub release (D221) | **Gate C**: the definition of done (§13). The LinkedIn post comes after it. |
 
 - **Entry condition.** The P5 gate has passed (P5-PLAN §18), and P5 I-10 has merged int6 into `feat/v2-jev-gateway`.
 - **Exception.** The owner's sitting S1 (§0.2) does not depend on code and starts **now**. The TypeSafe terms question may take days to answer, so it must start first.
@@ -61,11 +74,11 @@ I checked this plan read-only on 2026-10-10 (git show/log/grep only; nothing was
 
 | Sitting | When | Active time | Money | What |
 |---|---|---|---|---|
-| **S1** | now | about 45 min | $0 | • G0 terms check and the email<br>• G1 one-time setup: legal name, other github.io sites, choices, OpenRouter account and privacy setting, ffmpeg, power settings, push guard |
-| **S2** | one day after Gate A | about 2.5 h, mostly waiting | about $3–6 | • G2 localhost PKCE check (before any credit)<br>• G3 credit and key<br>• G4 approve B3–B8<br>• G5 comparison review during the bench run<br>• G6 Gate B review<br>• G7 close the key |
-| **S3a** | release day | about 30 min, then hours of CI | $0 | • G8 GitHub token<br>• G9 settings, minimal ruleset, "go push", open the PR |
-| **S3b** | when CI is green | about 20 min, then a 90 min tag build | ≈ $0.0002 | • G10 Pages variable, merge, packages public<br>• G11 Pages Connect check<br>• "go push" for the tag |
-| **S3c** | after the tag build | about 45 min | $0 | • G12 Release, About, ruleset checks, presentation<br>• G13 stranger check, then **post** |
+| **S1** | now | about 45 min | $0 | • G0 terms check and the email<br>• G1 one-time setup: legal name, other github.io sites, choices (including the "built with AI agents" wording, D227), OpenRouter account and privacy setting, the cloud environment (D221) |
+| **S2** | one day after Gate A (mode A, D222) | about 2.5 h, mostly waiting | about $3–6 | From the cloud session (D221):<br>• G2 localhost PKCE check (laptop, before any credit; optional)<br>• G3 credit and key (a cloud environment variable)<br>• G4 approve B3–B8<br>• G5 comparison review during the bench run<br>• G6 Gate B review<br>• G7 close the key |
+| **S3a** | release day | about 20 min, then hours of CI | $0 | • G9 settings and the minimal ruleset (if not set already, D220)<br>• the PR (Claude pushes the branch; the owner opens or reviews the PR) |
+| **S3b** | when CI is green | about 20 min, then a 90 min tag build | ≈ $0.0002 | • G10 Pages variable, merge, packages checked (public since 2026-10-21, D224)<br>• G11 Pages Connect check<br>• the GitHub release as a pre-release, which creates the `v2.0.0` tag (D221) |
+| **S3c** | after the tag build | about 45 min | $0 | • G12 the release notes and videos, Latest, About, ruleset checks, presentation<br>• G13 stranger check, then **post** |
 
 - **Ending a sitting.** Each sitting ends with an exact phrase the owner says back.
 - **Owner time.** About 4.5 h over 3–4 days. A TypeSafe reply, if one is needed, can take up to 7 days, and that wait runs in parallel.
@@ -128,11 +141,11 @@ I checked this plan read-only on 2026-10-10 (git show/log/grep only; nothing was
 - **Readings.** The lead reads `free -m` before every start or restart.
 - **Parking.** A waiting stream commits and ends its session.
 - **Step 0 reading (2026-10-10, P5 agents gone, the owner's demo stack up):** `free -m` showed 3,416 MB available and 3,953 of 4,096 MB swap used (142 MB free). That allows the 3 heavy slots and the light slots (≥ 1.5 GB available). Swap is below the 1 GB the lead's Docker runs need, so before any Docker run the lead reads again and, if it is still short, asks the owner for `make demo-down` for the duration.
-- **During P6b nothing else runs.** Every stream is parked. The owner's demo is down from B3 to B8, for memory and so the latency figures are honest (D205).
+- **During P6b nothing else runs.** Every stream is parked. The owner's demo is down from B3 to B8, for memory and so the latency figures are honest (D205). In the cloud session (D221) no other stack runs there from B3 to B8, and `docker stats` is read before B5 and B7.
 
 ### 0.6 How a paid step runs (P6b)
 
-1. **One open card at a time.** The lead posts a card from §8: the command, the cap, the expected cost, the stop rule and "used so far $X of $8" (read with the free `/api/v1/key` call).
+1. **One open card at a time.** The lead posts a card from §8: the command, the cap, the expected cost, the stop rule and "used so far $X of $8" (read with the free `/api/v1/key` call). In the cloud session (D221) the key comes from the environment variable `OPENROUTER_API_KEY`; no card names a `$ORCH` path or a laptop path.
 2. **The owner's go.** An affirmative reply that contains "go" approves **only the open card**. "go be five" counts as "go B5". Posting a new card cancels the old one. Anything ambiguous means the lead asks again. The owner may instead run the command in their own terminal.
 3. **The key never goes into the chat.** No command prints the key or its OpenRouter label (D211).
 4. **Dry run first.** Every paid target prints its plan and estimate and exits 0 unless `CONFIRM=1` is given (D204).
@@ -155,9 +168,9 @@ I checked this plan read-only on 2026-10-10 (git show/log/grep only; nothing was
 
 | # | Question | Decision | Owner |
 |---|---|---|---|
-| D200 | When the publishing terms are checked, and the three modes | **Trigger.** A third-party write-up ([wunderlandmedia, 2026-09-18](https://wunderlandmedia.com/typesafe-ai-jev-terms-of-service-gdpr)) says TypeSafe's Master Customer Agreement §2.3(f) bans publishing "benchmarks or performance information about the Services". It calls a breach material (§10.2(a)) with uncapped liability (§12.3(b)).<br>• I could not read the primary text.<br>• TypeSafe's public [Terms](https://typesafe.ai/legal/terms) (2026-09-19) and [AUP](https://typesafe.ai/legal/acceptable-use-policy) (2026-09-23), and [OpenRouter's Terms](https://openrouter.ai/terms) (2026-08-31), have no such clause.<br>• But OpenRouter §5.1 binds users to each model's terms.<br>• SPEC P6 step 6 also covers "redistributing outputs": the tape, the captured fixtures and the OG image.<br>**Rule.** SPEC P6 step 6 becomes step 0 (H-1). There is **no paid Jev run and no push of anything** until G0 returns. Pushing to the public repo is publishing, and the branch already carries third-party Jev figures.<br>**Record.** G0 goes into `docs/launch/terms-check.md`: date, URLs and the quoted clauses (or "none found in X, Y, Z"), plus the dataset licences (§2.2).<br>**Mode A** (no clause, or written permission): the full plan runs. The owner sends a **courtesy note**, not a permission request: an FYI, "may we tag TypeSafe in the post?", and the results shared 3 days before posting.<br>**Mode W** (a clause found, or unsure): the owner sends the **permission request**. P6a, Gate A, G2 and all non-Jev preparation continue. Paid Jev steps wait unless the owner explicitly chooses to measure privately; the outputs then stay gitignored. **P6c stops before C5: nothing is pushed.** After 7 days without a reply, the owner chooses R or keeps waiting.<br>**Mode R** (a clause and no permission):<br>• Never committed or pushed: the Jev-derived `measured.json` values (`fast_check_usd_per_1k`, `gate_latency_*`, `ragtruth_qa_*`, `same_checks_cost_ratio`, ECE), the real-snapshot calibration file, the recorded tape and captured Jev responses.<br>• Published: the load run (mock vendors), the Tier-0 benchmarks, `llm_same_checks_usd_per_1k` and `llm_full_audit_usd_per_1k` (Haiku judge), and the captured non-Jev shapes.<br>• Pages ships the simulated tape plus "Try it live with your key" (S-10).<br>• The owner decides in **H-R** whether third-party and vendor Jev figures that are already public elsewhere stay (with source links) or go.<br>• Launching needs H-R approved by the owner, because §8.2 forbids posting while the manifest is mock. The gate is `check-claims --launch --restricted`, and the post is the mode-R variant with no Jev figures.<br>**The email drafts live in `$ORCH`**, never in the repo. | owner, lead |
+| D200 | When the publishing terms are checked, and the three modes | **Amended by D220 and D222 (2026-10-23):** `main` has been public since 2026-10-21, so "no push of anything" is now "nothing Jev-derived is committed to a pushed branch before mode A"; the rest stands.<br>**Trigger.** A third-party write-up ([wunderlandmedia, 2026-09-18](https://wunderlandmedia.com/typesafe-ai-jev-terms-of-service-gdpr)) says TypeSafe's Master Customer Agreement §2.3(f) bans publishing "benchmarks or performance information about the Services". It calls a breach material (§10.2(a)) with uncapped liability (§12.3(b)).<br>• I could not read the primary text.<br>• TypeSafe's public [Terms](https://typesafe.ai/legal/terms) (2026-09-19) and [AUP](https://typesafe.ai/legal/acceptable-use-policy) (2026-09-23), and [OpenRouter's Terms](https://openrouter.ai/terms) (2026-08-31), have no such clause.<br>• But OpenRouter §5.1 binds users to each model's terms.<br>• SPEC P6 step 6 also covers "redistributing outputs": the tape, the captured fixtures and the OG image.<br>**Rule.** SPEC P6 step 6 becomes step 0 (H-1). There is **no paid Jev run and no push of anything** until G0 returns. Pushing to the public repo is publishing, and the branch already carries third-party Jev figures.<br>**Record.** G0 goes into `docs/launch/terms-check.md`: date, URLs and the quoted clauses (or "none found in X, Y, Z"), plus the dataset licences (§2.2).<br>**Mode A** (no clause, or written permission): the full plan runs. The owner sends a **courtesy note**, not a permission request: an FYI, "may we tag TypeSafe in the post?", and the results shared 3 days before posting.<br>**Mode W** (a clause found, or unsure): the owner sends the **permission request**. P6a, Gate A, G2 and all non-Jev preparation continue. Paid Jev steps wait unless the owner explicitly chooses to measure privately; the outputs then stay gitignored. **P6c stops before C5: nothing is pushed.** After 7 days without a reply, the owner chooses R or keeps waiting.<br>**Mode R** (a clause and no permission):<br>• Never committed or pushed: the Jev-derived `measured.json` values (`fast_check_usd_per_1k`, `gate_latency_*`, `ragtruth_qa_*`, `same_checks_cost_ratio`, ECE), the real-snapshot calibration file, the recorded tape and captured Jev responses.<br>• Published: the load run (mock vendors), the Tier-0 benchmarks, `llm_same_checks_usd_per_1k` and `llm_full_audit_usd_per_1k` (Haiku judge), and the captured non-Jev shapes.<br>• Pages ships the simulated tape plus "Try it live with your key" (S-10).<br>• The owner decides in **H-R** whether third-party and vendor Jev figures that are already public elsewhere stay (with source links) or go.<br>• Launching needs H-R approved by the owner, because §8.2 forbids posting while the manifest is mock. The gate is `check-claims --launch --restricted`, and the post is the mode-R variant with no Jev figures.<br>**The email drafts live in `$ORCH`**, never in the repo. | owner, lead |
 | D201 | Spending envelope | **Credit.** Add **$10**. The card is charged about **$10.80** [vendor: 5.5% fee, minimum $0.80]. Auto Top-Up stays **off**; unused credit may expire after a year [vendor]. The credit is bought in S2 **after** G2, so the Connect key G2 creates cannot spend anything.<br>**Key.** One measurement key, `trustagent-p6`, with a **limit of $8, set once and never reset**. There is no raise in the middle of a run.<br>**Tool caps (hard):**<br>• capture $0.01;<br>• smoke $0.30;<br>• `calib-pass` $0.30 (one re-run on a new card, $0.30 more);<br>• `bench-lite` $5 (ledger across sessions);<br>• `record-demo` **$4 in total across attempts**, covering the upstream answers and the video's stack beats.<br>The caps add up to **$9.61**.<br>**Key-limit awareness.** Each paid tool's preflight reads the free `GET /api/v1/key` and lowers its own cap to `limit_remaining − $0.10`. If that is below the step's minimum, it refuses. The $8 limit therefore ends a step cleanly, never as a 402 in the middle of a run.<br>**Expected:** capture < $0.005, smoke $0.05–0.15, calib $0.06–0.25, bench $2–3.5, record $1–2. Total **$3.1–5.9** [estimate].<br>**Connect keys** from G2 and G11 are deleted, or limited to $1, the same day.<br>**Minimum plan** (if the owner adds only $5; card about $5.80):<br>• key limit $4.70;<br>• `BENCH_MAX_COST_USD=2 BENCH_ARGS="--systems gate,llm_same_checks"` (the Savings full audit stays "published assumption");<br>• `RECORD_PASSES=1 RECORD_MAX_TOTAL_USD=1.5`;<br>• no video stack beats (H-6).<br>Caps $4.11.<br>**Close (G7):** after Gate B says "publish", the key is deleted or limited to usage + $1 and removed from `.env`. | owner, lead |
-| D202 | Where P6b runs; key and push containment | **One checkout.** At Gate A the lead merges int7 into `feat/v2-jev-gateway` **locally, with no push**. P6b and P6c run only in the main checkout `~/projects/TrustAgent`, and `RUN=` paths are absolute.<br>**One `.env`.** The real key lives only in the main checkout's `.env`. Two things make a copied `.env` dangerous:<br>• the Go config reads the `.env` next to `VERSION` (`internal/config/dotenv.go:14-17`);<br>• compose reads the project directory's `.env`.<br>A copied `.env` would spread the key into "mocks-only" worktrees. Before every card, `grep -l '^OPENROUTER_API_KEY=.\+' ~/projects/TrustAgent*/.env` must list only the main checkout.<br>**Push guard (S1, the owner runs it):**<br>• `git config remote.origin.pushurl DISABLED` makes `git push origin` fail;<br>• `git config credential.useHttpPath true` makes the old path-less `~/.git-credentials` entry (scope unknown) stop matching this repo.<br>Worktrees share this config. Until G8, no credential works for this repo.<br>**Fix-forward work** during P6b and P6c happens in worktrees without keys. The lead merges it into the main checkout. | lead, owner |
+| D202 | Where P6b runs; key and push containment | **Superseded by D220 and D221 (2026-10-23):** P6b and P6c run from the cloud session with the key as a cloud environment variable, and the push guard is dropped. On the laptop the `.env` rule still holds: no worktree `.env` holds a key.<br>**One checkout.** At Gate A the lead merges int7 into `feat/v2-jev-gateway` **locally, with no push**. P6b and P6c run only in the main checkout `~/projects/TrustAgent`, and `RUN=` paths are absolute.<br>**One `.env`.** The real key lives only in the main checkout's `.env`. Two things make a copied `.env` dangerous:<br>• the Go config reads the `.env` next to `VERSION` (`internal/config/dotenv.go:14-17`);<br>• compose reads the project directory's `.env`.<br>A copied `.env` would spread the key into "mocks-only" worktrees. Before every card, `grep -l '^OPENROUTER_API_KEY=.\+' ~/projects/TrustAgent*/.env` must list only the main checkout.<br>**Push guard (S1, the owner runs it):**<br>• `git config remote.origin.pushurl DISABLED` makes `git push origin` fail;<br>• `git config credential.useHttpPath true` makes the old path-less `~/.git-credentials` entry (scope unknown) stop matching this repo.<br>Worktrees share this config. Until G8, no credential works for this repo.<br>**Fix-forward work** during P6b and P6c happens in worktrees without keys. The lead merges it into the main checkout. | lead, owner |
 
 ### Measurement
 
@@ -165,7 +178,7 @@ I checked this plan read-only on 2026-10-10 (git show/log/grep only; nothing was
 |---|---|---|---|
 | D203 | What makes a run "measured" or a tape "recorded" | **Problem.** Today the label is decided by the backend **name** alone (`evals/report.py:147,320,360`; `judges.py:696`; `internal/recording/recording.go:179-200`). A run pointed at mock-upstream through `TRUTHTABLE_OPENROUTER_BASE_URL` would be labelled measured.<br>**Fix: the vendor host is part of the evidence.**<br>• `measured.v1` gets `$defs/vendor_host`, an enum of `openrouter.ai`, `api.typesafe.ai` and `api.anthropic.com`.<br>• gate-eval lines carry `endpoint_host`, resolved from `TRUTHTABLE_OPENROUTER_BASE_URL` **or** `TRUTHTABLE_JEV_BASE_URL`; both are registered keys.<br>• Judge records carry the provider host.<br>• `benchmark-run.v1` gets `vendor{decision_host, judge_host}`.<br>• `recording.v1` gets `decision_model.host`, `judge.host` and `answer_sources.generated.host`. These are **bare hostnames, never URLs**, because `recording/sanitize.go:31` scrubs hosts inside URLs. A test checks that a sanitized manifest keeps them.<br>• A host outside the enum makes the run `simulated`, with the reason `non_vendor_host`. `publish`, `recording.go` and `check_recording.py --require-recorded` refuse it.<br>**Regression tests:**<br>• a bench run through mock-upstream is simulated, and publish refuses it;<br>• a tape recorded through mock-upstream is not `recorded`. | lead (contract), MEAS, VEND |
 | D204 | Dry-run default, bench robustness, publish rules | **Dry run by default.** Today `bench-lite` (`mk/py.mk:90`) and `eval-live` (`:101`, caps $40 + $20) spend as soon as they run. `bench-lite`, `bench-smoke`, `calib-pass` and `eval-live` now print their plan and **exit 0 unless `CONFIRM=1`** is given. The plan shows:<br>• n and the systems;<br>• the price-table estimate and the effective cap (D201);<br>• the resume key and the ledger spent so far;<br>• the resolved hosts and the snapshot (from the free `/key` and models calls; "no key: plan only" when there is none).<br>JEV-ACCESS and the README commands are updated.<br>**Inputs:**<br>• `BENCH_ARGS` is passed through;<br>• `RAGTRUTH_REVISION` defaults to the commit SHA pinned at Step 0 (today `main`, `py.mk:66`);<br>• `bench-publish` **requires `RUN=`**, because `--latest` picks by mtime (`bench.py:388-391`).<br>**Fixed resume keys:** `BENCH_RESUME_KEY ?= lite-p6` and `smoke-p6`. Date-based keys would start a new ledger and a new cap on another day. Cards print the literal key.<br>**gate-eval is built once, at B5.** Its sha256 goes into `run.json` `inputs`. A resume with a different binary is refused, because the cache key includes the binary's sha and the run would pay twice.<br>**Stop rule:** `--stop-after-failures 5`, counted per system on consecutive failures. It prints the failure kind (402, 404 `data_policy`, 401, parse error, timeout) with the JEV-ACCESS fix, and exits 3. Examples it never reached are not cached. The same command with `BENCH_ARGS="--retry-failed"` continues.<br>**Policy:** gate-eval runs with `--policy builtin`. `TRUTHTABLE_POLICY_FILE` is removed from the subprocess environment, and `inputs.policy_source` is recorded.<br>**Publish refuses:**<br>• `failure_rate > 0.05` or `scored < 0.95·n`;<br>• more than one gate snapshot (today `describe()` takes the most common one, `judges.py:744-748`);<br>• a dirty tree at run start (`git status --porcelain --untracked-files=no`);<br>• a non-vendor host;<br>• dataset text in `per_example` (ids, labels and scores only; the QA passages are MS MARCO, research-only);<br>• `cost_source: unknown`.<br>A measured cost needs `cost_source: reported`; `computed` is labelled "measured tokens × vendor price".<br>**Attempts are disclosed** in `measured.json` `sources.attempts{bench_runs, refused_run_ids}`, counted from the lite runs since Step 0.<br>There is no override flag. `bench publish --check-only` runs every refusal check into scratch for Gate B. | MEAS |
-| D205 | Gate latency | **Today:**<br>• each example is a fresh process, so TCP and TLS setup is inside `latency_ms` (`cmd/gate-eval/eval.go:64-65`);<br>• `BENCH_CONCURRENCY ?= 4` (`py.mk:63`; semaphore at `runner.py:127`) runs gate calls alongside judge calls.<br>**`gate-eval --warm`** (on by default in the bench and in `calib-pass`) first makes the free `GET /api/v1/key` on the same client. The line then carries `connection:"warm"`; other backends get `cold`.<br>**`--gate-concurrency 1`.** The gate system runs alone first, one example at a time: the same calls and cost, about 2–4 min. Then the LLM systems run at 4.<br>**Conditions are recorded:** `run.json` `inputs.host_env{mem_available_mb, loadavg, platform:"WSL2", region}`. The demo is down from B3 to B8.<br>**Wording:** "gate latency p50/p95: warm connection, one request at a time, from the owner's laptop (WSL2, {region}), snapshot {s}, n={n}" [measured]. | MEAS |
+| D205 | Gate latency | **Wording amended by D225 (2026-10-23):** it names where the run really ran, from `inputs.host_env`, never an assumed laptop.<br>**Today:**<br>• each example is a fresh process, so TCP and TLS setup is inside `latency_ms` (`cmd/gate-eval/eval.go:64-65`);<br>• `BENCH_CONCURRENCY ?= 4` (`py.mk:63`; semaphore at `runner.py:127`) runs gate calls alongside judge calls.<br>**`gate-eval --warm`** (on by default in the bench and in `calib-pass`) first makes the free `GET /api/v1/key` on the same client. The line then carries `connection:"warm"`; other backends get `cold`.<br>**`--gate-concurrency 1`.** The gate system runs alone first, one example at a time: the same calls and cost, about 2–4 min. Then the LLM systems run at 4.<br>**Conditions are recorded:** `run.json` `inputs.host_env{mem_available_mb, loadavg, platform:"WSL2", region}`. The demo is down from B3 to B8.<br>**Wording:** "gate latency p50/p95: warm connection, one request at a time, run on {platform} (region {region}), snapshot {s}, n={n}" [measured] (D225: from the run's host_env, never an assumed laptop). | MEAS |
 | D206 | Calibration: input, labels, honest "ECE after" | **Today:**<br>• `make calibrate` needs `EVALUATOR`/`IN` (`mk/go.mk:70-75`), and nothing produces labelled input;<br>• the bench file is not valid gate-eval input (`example.go:52-56`);<br>• `ece_after` has no producer (`report.py:436-441`) and would be in-sample.<br>**Fit on the train split; measure on the test split.**<br>**`make calib-pass`:**<br>• takes a **natural (unstratified)** RAGTruth-QA **train** sample;<br>• `CALIB_N` is fixed at Step 0 from the free download, so that conflict positives are ≥ 40 and each `label_hallucinated` class is ≥ 60, with `CALIB_N ≤ 1000`;<br>• it **asserts that no `source_id` is shared** with the bench's test sample (RAGTruth has about 6 responses per source);<br>• labels: `groundedness@1` = `label_hallucinated`; `contradiction@1` = "has a conflict span". A baseless-only answer counts as 0, because it is unsupported, not contradicted;<br>• `label_source: public_dataset`;<br>• **one** warm gate-eval process with `--max-cost-usd 0.30`.<br>**Fit.** `make calibrate EVALUATOR=… IN=<gate.jsonl> LABEL_SOURCE=public_dataset DATASET=ragtruth:qa-train@<sha>`, dry run first, then `WRITE=1`. The second evaluator merges into the same `config/calibration/<snapshot>.json`.<br>**Held out.** `make calib-holdout RUN=<abs run.json>` (free) feeds `cmd/calibrate --holdout`, which gives ECE and Brier before and after. `bench publish --calibration-holdout` folds `groundedness_ece_before/after` with `method: holdout` and the calibration file's sha256.<br>**Quality:**<br>• `groundedness@1` must reach `measured` (n ≥ 200, ≥ 30 per class; `decision/calibrate_file.go:25-29`);<br>• `contradiction@1` is committed at whatever quality it reaches. If it is provisional, it cannot drive blocking or fallback (`policy/readiness.go:180`), so payments-faq falls back through groundedness only, and the tape shows that;<br>• if groundedness is not `measured`, the owner chooses: a larger `CALIB_N` re-run (≤ $0.30, new card), or `ALLOW_UNCALIBRATED=1` at B8.<br>**Caveat.** The contamination caveat from `value-claims.v1.json:158` also goes on our RAGTruth agreement and ECE claims. | MEAS, owner at B6 |
 | D207 | One snapshot across calibration, bench and recording | • Each result line prints the snapshot.<br>• The `record-demo` preflight refuses a snapshot without `config/calibration/<snapshot>.json`, unless `ALLOW_UNCALIBRATED=1`.<br>• Publish refuses mixed snapshots.<br>• `measured.json` names the snapshot.<br>• `check-claims --launch` requires `measured.json` and the recorded manifest to share a snapshot.<br>**Rule:** B6, B7 and B8 run on the same day.<br>**If OpenRouter rolls the snapshot between B7 and B8,** the lead posts a choice:<br>• (a) re-run `calib-pass`, and the bench if it fits under the key's remaining limit, on new cards;<br>• (b) keep both, set `sources.snapshot_split: true`, and every surface names both snapshots.<br>The owner picks. | lead, owner |
 
@@ -189,10 +202,10 @@ I checked this plan read-only on 2026-10-10 (git show/log/grep only; nothing was
 
 | # | Question | Decision | Owner |
 |---|---|---|---|
-| D214 | Pushing and credentials | **Token.** A fine-grained PAT for `timkush1/TrustAgent` only, expiring in 30 days, created at S3a (not earlier). Permissions:<br>• **Contents** read and write;<br>• **Workflows** read and write;<br>• **Actions** read;<br>• Metadata read (automatic).<br>No Pull requests permission: the PR is opened in the web UI.<br>**Storage.** It is stored for this repo only: `useHttpPath` (S1) plus `path=timkush1/TrustAgent.git` in `git credential approve`. **There is no global `git credential reject`**, which would remove the owner's credential for their other repos.<br>**Dry run.** `git push --dry-run <url>` comes first. It checks authentication but **not** the Workflows permission. If the first real push is refused, the owner edits the token's permissions; no new token is needed.<br>**Push rules:**<br>• `pushurl` stays `DISABLED`; approved pushes use the explicit URL `https://github.com/timkush1/TrustAgent.git`;<br>• each push of a branch or tag needs "go push";<br>• during the PR, the owner may grant a window for `feat/v2-jev-gateway` only, for CI fixes;<br>• never `main`, never a force push, never deleting a remote ref;<br>• the `STATIC_CONNECT_PRIMARY` flip, if needed, goes through branch `fix/static-connect-paste` and a one-commit PR the owner merges in the UI.<br>**CI status.** Read through the public, unauthenticated API (60 calls an hour). Logs come from `$ORCH/ci_logs.py RUN_ID`, which gets the PAT through `git credential fill` inside a pipe, never prints it, and only GETs `/actions/` endpoints. It lives outside the repo.<br>**`gh` is optional** and not installed. | lead, owner |
-| D215 | Merge, tags, Release, GHCR and Pages, in order | **Merge.** The PR uses **"Create a merge commit"**. Squash and rebase are forbidden: 1,072 commits and 98 merges stay. "Require linear history" stays off.<br>**v1 tag.** `v1.0.0` at `d709df3` ("Phase 7: portfolio polish + v1.0.0"). There are no local tags; Step 0 confirms with `ls-remote` that none exists remotely. The v1 workflows trigger only on `branches:[main]`, so the tag runs nothing.<br>**Order:**<br>1. **S3a.** Allow merge commits; Pages Source = Actions; the `github-pages` environment gets the tag rule `v*`; a **minimal ruleset** on `main` (block force pushes and deletion, require a PR, no required checks yet). Then "go push": `v1.0.0` and the branch. Open the PR.<br>2. CI loop. `pages.yml` and `release-images.yml` run build-only.<br>3. **S3b.** The shared-origin check is clear (G1) and the recorded tape is on the branch (mode A), so set `PAGES_ENABLED=true`. Merge: `main` deploys `auto`, which means recorded. The first `release-images` run creates the 3 packages as **private**.<br>4. Packages public, plus `GHCR_PUBLIC=true`.<br>5. G11, the Pages PKCE check. If it is refused, the fix PR (D214) is merged **before** the tag.<br>6. `check_version.py --tag v2.0.0` on the merge commit, then "go push" for `v2.0.0`. That runs the Pages tag deploy (recorded) and the semver images (no cache, ≤ 90 min), plus `first-run` and `anonymous-pull`.<br>7. **S3c.** The Release in the UI, set as **Latest** (the D127 badge needs a Release, not just a tag). Then the ruleset's required checks, now that they have run on `main`.<br>**Optional early draft PR** (mode A or R only). At Gate A the owner may choose to push early and open a draft PR, so CI is shaken out during P6b. Fixes that touch measured code (`backend-go/internal`, `backend-go/cmd/gate-eval`, `backend-python/src`, `backend-python/evals`, `config/`) wait until after B8. The default is one push at S3a. | lead, owner |
-| D216 | Version, CHANGELOG, licence, community files, public-repo hygiene | **Bump at Gate A, before B8**, so the tape stamps 2.0.0 (`frontend-react/scripts/build-demo-recording.ts:65`, `recording.go:54`). `make version-bump V=2.0.0` is committed as `chore(release): 2.0.0` in the main checkout.<br>• At C4 the CHANGELOG heading date is set to the planned tag date (a one-line edit; `bump_version.py` refuses the same version), then `make check-version RELEASE_TAG=v2.0.0` runs.<br>• After the bump, local builds are tagged `:2.0.0`. That is acceptable; `docker compose pull` replaces them after the release.<br>**CHANGELOG.** One `2.0.0 "Jev gateway"` section with Highlights, Upgrading from 1.x, Added, Changed, Fixed, Security and Known limits. The phase-labelled sections go under "Build log by phase". The second Unreleased heading (`CHANGELOG.md:510`) is retitled.<br>**Licence.** `LICENSE:3` says "Tim Kushnir" and `backend-python/pyproject.toml:5` says "Tim Kushmaro". The **owner gives the legal name at S1**. `package.json` gets `"license": "MIT"`, and the authors are made consistent.<br>**Community files.** `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1, contact through GitHub private vulnerability reporting, not an email), `.github/ISSUE_TEMPLATE/{bug,feature}.yml` and `.github/pull_request_template.md`. `docs/SECURITY.md` "Reporting" points at private reporting.<br>**Hygiene gate** (each pattern ends in a one-letter class, so this file does not match itself). `git grep -n -E '/home/timkushma[r]\|\.cache/trustagent-or[c]h\|timandga[l]\|mail\.tau\.ac\.i[l]' -- ':!docs/archive'` prints nothing. Today 9 tracked files have local paths and 5 have the university email.<br>• Commit author emails stay as they are: they are already public on `main`, and the 1,072 commits are not rewritten. The owner is told at S1.<br>• `interview-talking-points.md` stays public or moves private (into the interview kit artifact; erratum H-7), as the owner chooses at S1. | SHIP, lead, owner |
-| D217 | Owner sittings and approvals | • Four sittings (§0.2), each ending with a say-back phrase.<br>• One open card at a time (§0.6).<br>• Waiting time is used: G5 (comparison review) runs while B7's bench runs.<br>• Files reach Windows through `explorer.exe <dir>` (drag and drop); every paste goes through `make clip FILE=…`.<br>• The owner approves the visuals (OG, GIF, video, post text) at C2, **before** any push. | lead |
+| D214 | Pushing and credentials | **Superseded by D220 and D221 (2026-10-23):** Claude pushes branches (the laptop's repo-scoped token since 2026-10-21, the Claude GitHub app in the cloud); `main` only through the owner's PR merge; no G8 sitting, no `pushurl DISABLED`, no `$ORCH/ci_logs.py`. Never a force push; never `main` by Claude. The text below is the history.<br>**Token.** A fine-grained PAT for `timkush1/TrustAgent` only, expiring in 30 days, created at S3a (not earlier). Permissions:<br>• **Contents** read and write;<br>• **Workflows** read and write;<br>• **Actions** read;<br>• Metadata read (automatic).<br>No Pull requests permission: the PR is opened in the web UI.<br>**Storage.** It is stored for this repo only: `useHttpPath` (S1) plus `path=timkush1/TrustAgent.git` in `git credential approve`. **There is no global `git credential reject`**, which would remove the owner's credential for their other repos.<br>**Dry run.** `git push --dry-run <url>` comes first. It checks authentication but **not** the Workflows permission. If the first real push is refused, the owner edits the token's permissions; no new token is needed.<br>**Push rules:**<br>• `pushurl` stays `DISABLED`; approved pushes use the explicit URL `https://github.com/timkush1/TrustAgent.git`;<br>• each push of a branch or tag needs "go push";<br>• during the PR, the owner may grant a window for `feat/v2-jev-gateway` only, for CI fixes;<br>• never `main`, never a force push, never deleting a remote ref;<br>• the `STATIC_CONNECT_PRIMARY` flip, if needed, goes through branch `fix/static-connect-paste` and a one-commit PR the owner merges in the UI.<br>**CI status.** Read through the public, unauthenticated API (60 calls an hour). Logs come from `$ORCH/ci_logs.py RUN_ID`, which gets the PAT through `git credential fill` inside a pipe, never prints it, and only GETs `/actions/` endpoints. It lives outside the repo.<br>**`gh` is optional** and not installed. | lead, owner |
+| D215 | Merge, tags, Release, GHCR and Pages, in order | **Amended by D220, D221 and D224 (2026-10-23):** `main` already holds P0–P5 (merge `a582549`), so the PR brings P6 and 2.0.0; the merge-commit rule stands; `v2.0.0` is created by the owner's GitHub release (a pre-release first, Latest after the notes); `v1.0.0` is optional, from the laptop; the packages are already public. The order is §9 as amended.<br>**Merge.** The PR uses **"Create a merge commit"**. Squash and rebase are forbidden: 1,072 commits and 98 merges stay. "Require linear history" stays off.<br>**v1 tag.** `v1.0.0` at `d709df3` ("Phase 7: portfolio polish + v1.0.0"). There are no local tags; Step 0 confirms with `ls-remote` that none exists remotely. The v1 workflows trigger only on `branches:[main]`, so the tag runs nothing.<br>**Order:**<br>1. **S3a.** Allow merge commits; Pages Source = Actions; the `github-pages` environment gets the tag rule `v*`; a **minimal ruleset** on `main` (block force pushes and deletion, require a PR, no required checks yet). Then "go push": `v1.0.0` and the branch. Open the PR.<br>2. CI loop. `pages.yml` and `release-images.yml` run build-only.<br>3. **S3b.** The shared-origin check is clear (G1) and the recorded tape is on the branch (mode A), so set `PAGES_ENABLED=true`. Merge: `main` deploys `auto`, which means recorded. The first `release-images` run creates the 3 packages as **private**.<br>4. Packages public, plus `GHCR_PUBLIC=true`.<br>5. G11, the Pages PKCE check. If it is refused, the fix PR (D214) is merged **before** the tag.<br>6. `check_version.py --tag v2.0.0` on the merge commit, then "go push" for `v2.0.0`. That runs the Pages tag deploy (recorded) and the semver images (no cache, ≤ 90 min), plus `first-run` and `anonymous-pull`.<br>7. **S3c.** The Release in the UI, set as **Latest** (the D127 badge needs a Release, not just a tag). Then the ruleset's required checks, now that they have run on `main`.<br>**Optional early draft PR** (mode A or R only). At Gate A the owner may choose to push early and open a draft PR, so CI is shaken out during P6b. Fixes that touch measured code (`backend-go/internal`, `backend-go/cmd/gate-eval`, `backend-python/src`, `backend-python/evals`, `config/`) wait until after B8. The default is one push at S3a. | lead, owner |
+| D216 | Version, CHANGELOG, licence, community files, public-repo hygiene | **Amended by D223 (2026-10-23):** history is not rewritten; the hygiene grep holds for the current tree of every pushed branch and of `main` after the release merge.<br>**Bump at Gate A, before B8**, so the tape stamps 2.0.0 (`frontend-react/scripts/build-demo-recording.ts:65`, `recording.go:54`). `make version-bump V=2.0.0` is committed as `chore(release): 2.0.0` in the main checkout.<br>• At C4 the CHANGELOG heading date is set to the planned tag date (a one-line edit; `bump_version.py` refuses the same version), then `make check-version RELEASE_TAG=v2.0.0` runs.<br>• After the bump, local builds are tagged `:2.0.0`. That is acceptable; `docker compose pull` replaces them after the release.<br>**CHANGELOG.** One `2.0.0 "Jev gateway"` section with Highlights, Upgrading from 1.x, Added, Changed, Fixed, Security and Known limits. The phase-labelled sections go under "Build log by phase". The second Unreleased heading (`CHANGELOG.md:510`) is retitled.<br>**Licence.** `LICENSE:3` says "Tim Kushnir" and `backend-python/pyproject.toml:5` says "Tim Kushmaro". The **owner gives the legal name at S1**. `package.json` gets `"license": "MIT"`, and the authors are made consistent.<br>**Community files.** `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1, contact through GitHub private vulnerability reporting, not an email), `.github/ISSUE_TEMPLATE/{bug,feature}.yml` and `.github/pull_request_template.md`. `docs/SECURITY.md` "Reporting" points at private reporting.<br>**Hygiene gate** (each pattern ends in a one-letter class, so this file does not match itself). `git grep -n -E '/home/timkushma[r]\|\.cache/trustagent-or[c]h\|timandga[l]\|mail\.tau\.ac\.i[l]' -- ':!docs/archive'` prints nothing. Today 9 tracked files have local paths and 5 have the university email.<br>• Commit author emails stay as they are: they are already public on `main`, and the 1,072 commits are not rewritten. The owner is told at S1.<br>• `interview-talking-points.md` stays public or moves private (into the interview kit artifact; erratum H-7), as the owner chooses at S1. | SHIP, lead, owner |
+| D217 | Owner sittings and approvals | **Amended by D221 (2026-10-23):** in the cloud session files reach the owner as messages from the session (else from the laptop), and `make clip` prints to stdout (it also reads a pipe).<br>• Four sittings (§0.2), each ending with a say-back phrase.<br>• One open card at a time (§0.6).<br>• Waiting time is used: G5 (comparison review) runs while B7's bench runs.<br>• Files reach Windows through `explorer.exe <dir>` (drag and drop); every paste goes through `make clip FILE=…`.<br>• The owner approves the visuals (OG, GIF, video, post text) at C2, **before** any push. | lead |
 
 ### Cloud and deferrals
 
@@ -200,6 +213,20 @@ I checked this plan read-only on 2026-10-10 (git show/log/grep only; nothing was
 |---|---|---|---|
 | D218 | Always-on cloud demo | **Status.** Optional and **not part of v2.0.0's definition of done**. The recipe is built in P6a as a queued, cut-line light stream. The deploy happens only after v2.0.0, with the owner's go.<br>**Why it is still worth having.** Pages is already an always-on recorded demo for $0. The VM adds the live dashboard (Traffic, Studio, Savings) with simulated vendors, labelled "Simulated" everywhere.<br>**Target.** Hetzner CX23 (2 vCPU, 4 GB, x86) from €5.99 a month excl. VAT including IPv4, about €72 a year [vendor price page, read 2026-10-21; re-check at deploy]. Oracle Always Free is not recommended for always-on: it reclaims idle VMs, A1 capacity is scarce, and its iptables block 80/443.<br>**Hostname.** The owner's domain, or `<ip-with-dashes>.sslip.io` (free) for Caddy and Let's Encrypt.<br>**Images are pulled, not built:** `TRUSTAGENT_VERSION=2.0.0 … pull`, then `up --no-build`. `apt-get install git make python3`.<br>**Stack.** `docker-compose.yml` + `docker-compose.demo.yml` (mock Jev and judge, vendor keys `!reset null`) + the new `docker-compose.public.yml`:<br>• `TRUTHTABLE_READONLY=true`, `TRUTHTABLE_RETENTION_DAYS=7`;<br>• host ports 80 and 443 only;<br>• `BIND_ADDR` stays 127.0.0.1;<br>• engine memory limit 1g in the overlay (the base `4g` at `docker-compose.yml:345` is the whole VM), measured at R-5 with `docker stats`.<br>**Real client IPs.** Caddy sends `/api/*`, `/ws` and `/health*` **directly to `proxy:8080`**. Otherwise nginx overwrites XFF (`nginx/templates/snippets/proxy.conf.template:16`), and every visitor shares one IP: 10 WebSockets (`hub.go:440`) and 120 requests a minute (`ratelimit.go:157`) for everyone. `TRUTHTABLE_TRUSTED_PROXIES` defaults to `172.16.0.0/12` (`docker-compose.yml:264`). `/v1*` answers 404 at the edge.<br>**For interviews:** `make demo` plus a Cloudflare quick tunnel, for $0 (`docs/WALKTHROUGH.md:903-906`; one viewer, so the shared IP does not matter). | CLOUD, owner |
 | D219 | Deferrals | **v2.0.x:**<br>• the knowledge Docker run (`ci-knowledge.yml` dispatch after the merge; if it is red, the docs say "CI proof pending");<br>• the `eval-live` environment and an AggreFact run;<br>• `doctor --expect public`;<br>• the cloud deploy, if not done at C14.<br>**P7:**<br>• nginx `set_real_ip_from` behind a new registered key;<br>• the P5 §19 P7 list (multi-replica PKCE store and shared caps, the keyed verify limiter, label re-scoring, the #66 bundle, cosign, a recorded Studio session, native arm runners, `SECRET_KEY_PREVIOUS`, engine-side Jev, `JudgeConfig.base_url`). | lead |
+
+### After planning: owner decisions of 2026-10-21 to 2026-10-23, and fix round 1 (binding)
+
+| # | Question | Decision | Owner |
+|---|---|---|---|
+| D220 | `main` is public; who pushes | **Fact.** On 2026-10-21 the owner authorized Claude to push branches and to merge into `main`, and v2 P0–P5 went public on `main` that day (merge `a582549`, then the CI fixes up to `7e901cd`), pushed directly rather than through a PR. It was the owner's decision, not a violation: history is never rewritten and nothing is force-pushed.<br>**From now on.** Claude pushes branches (`feat/v2-*`, `fix/*`) without a per-push "go push". `main` moves only through pull requests the owner merges on GitHub with "Create a merge commit" (Claude's permission checks refuse merging into `main`).<br>**Dropped.** The push guard (`pushurl DISABLED`, G1 step 7), the G8 token sitting (the laptop has held a repo-scoped token since 2026-10-21; the cloud session pushes through the Claude GitHub app) and `$ORCH/ci_logs.py` (CI status from the public API; logs through the GitHub app in the cloud or the web UI).<br>**Ruleset.** The minimal `main` ruleset (G9 step 4) is set as soon as the owner can, with the admin bypass **for pull requests only**, so a direct push to `main` is refused for everyone.<br>**Today's public `main`** fails the D216 hygiene grep in its tree (the university email, a gmail address, local and `$ORCH` paths), its README "Live demo" badge and "Try the demo" link point at a Pages site that is not on yet (404), and its measured block still reads "not yet measured [measured]". int7 fixes all three; they reach `main` with the release PR, or sooner through a small PR if the owner asks (Gate A report). | owner, lead |
+| D221 | Where P6b and P6c run | The owner continues P6b and P6c from a **Claude cloud session** (claude.ai/code).<br>**It has:** Docker with about 16 GB of RAM; branch pushes through the Claude GitHub app; the OpenRouter key as the environment variable `OPENROUTER_API_KEY` in the cloud environment's settings (never the chat, never a file); network access that must allow `openrouter.ai` (and GitHub, `raw.githubusercontent.com` for RAGTruth, the package registries and `ghcr.io`); a setup script that installs `ffmpeg` (D226).<br>**It lacks:** tag pushes (the owner creates `v2.0.0` through a GitHub release in the web UI, C10); `$ORCH` paths (no card names one); `clip.exe` and `explorer.exe` (`make clip` prints to stdout; files reach the owner as messages from the session); a browser that reaches its localhost (G2 runs on the laptop, or is skipped: G11 on Pages settles Connect anyway).<br>**Replaces D202 there.** The key lives only in the cloud environment's variables; every paid tool reads it from the environment (`make jev-check`, `jev-capture`, `bench-*`, `calib-pass`, `record-demo` already do). On the laptop no worktree `.env` may hold a key.<br>**What stays on the laptop:** G2 (optional) and the owner's own demo. Everything on GitHub's web UI (G9–G12) works from any device.<br>**Handoff:** `docs/v2/STATUS.md`, rewritten by the lead at Gate A. | owner, lead |
+| D222 | What may be published before G0 (keeps D200) | D200 still binds for what matters: **no measured Jev figure, no recorded Jev tape and no captured Jev response is committed to a pushed branch** (every branch is public, D220) before G0 says mode A or the owner has written permission. Vendor and third-party figures quoted from public pages, with their labels and links, are not measurements; those already public stay unless mode R and the owner's H-R decide otherwise. The cloud session has no private place for Jev outputs (its files go when it ends), so **in mode W the paid Jev steps (B3–B8) wait**; non-Jev work goes on. | owner |
+| D223 | Personal data in git history | It stays: the university email in commit metadata, a gmail address and local paths in old revisions of design notes. No history rewrite. D216's hygiene grep applies to the current tree: of every branch Claude pushes, and of `main` after the release merge. | owner |
+| D224 | GHCR | The three packages have been public since 2026-10-21 (an anonymous `docker pull ghcr.io/timkush1/truthtable-proxy:edge` works). G10 no longer makes them public: it checks they still are and name "Repository: TrustAgent", and sets the Actions variable `GHCR_PUBLIC=true` if it is missing. | owner |
+| D225 | Where a latency was measured (amends D205) | The measured gate latency may come from a cloud VM. Every surface names where the run really ran, from its `inputs.host_env`, never an assumed laptop: bench publish writes measured.json `sources.gate_latency{connection, gate_concurrency, platform, region, n, conditions}` from the run (and refuses a published latency without it: rule `latency_conditions`), and the latency claims' caveat `{gate_conditions}` is filled from it in the README block, on the landing (hero and Cost), in the release notes and in the post. Example: "warm connection, one request at a time, run on Linux (region cloud-us), snapshot typesafe/jev-1.13-20260917, n=199". The card sets `BENCH_REGION` to a readable place: `israel` on the laptop, `cloud-<region>` in the cloud when the session can say where it runs, else `cloud`. | owner, lead |
+| D226 | ffmpeg | No sudo on the laptop: a rehearsal uses a static ffmpeg (`pip install imageio-ffmpeg` in a scratch venv; its bundled binary first on `PATH` for that one command). In the cloud the environment's setup script installs it (`apt-get install -y ffmpeg`). G1 step 5 says so. | owner |
+| D227 | Honest launch copy (fix round 1) | (a) The post's example says where its answer came from (`{featured.source}`): the recorded demo's answers are scripted (written for the demo) or generated (a named model wrote them), never "my support bot"; the filled post is refused if it says "my bot". (b) The latency in the post is the benchmark median with its conditions (`{gate.conditions}`), not the time of the one catch. (c) The post names Jev's maker: "Jev, TypeSafe AI's decision model (through OpenRouter)"; mode R "a third-party decision model"; the agreement paragraph says Arize's 76% is the same model on a different sample, so a difference is not an improvement made by TrustAgent. (d) Every public text says the project was built with AI coding agents (Claude Code) working to the owner's plans, tests and reviews: both post variants, a README section, the release PR body and a talking-points story. **The owner settles that wording at S1** (it is in the say-back). (e) The post's first line names TrustAgent within 150 characters, so a phone shows it before "…see more". | lead, owner |
+| D228 | R-3 cannot record a mock attempt (erratum) | `record_demo.py` cannot record an attempt on mocks, by design: `trafficgen --record` refuses mock-upstream, and `export-replay` refuses to call a stack recorded when its judge is the mock or its hosts are not vendor hosts (on the e2e stack it writes no manifest at all). **What replaces the end-to-end attempt in R-3** (run 2026-10-23, `$ORCH/p6-scratch/lead/fix1/`): (1) drift from `trafficgen --expect --report-only` on the stack; (2) a real stack export with the simulated label on the zero-key demo configuration: kind mock, `featured` computed by `recording.Build` (rule scripted, the refund trace), `check_recording` exit 0, `--require-recorded` exit 1; (3) the same export told the stand-in hosts are vendor hosts is refused (fixed in this round: a simulated tape never names a vendor host for the mock fast check or judge); (4) `ACCEPT` refused for attempts that exist: one still running, one under review whose tape is simulated; (5) the ffmpeg path with a static ffmpeg (D226): `VIDEO_ALLOW_MOCK=1 make launch-video PAGES_ONLY=1` wrote both MP4s (45 s, 16:9 and 4:5) in `tmp/launch/rehearsal/`, every frame stamped "Simulated rehearsal". A full attempt and the stack beats are proven at B8 with the owner's key; `scripts/tests/test_record_demo.py` covers the attempt logic on fakes. | lead |
 
 ---
 
@@ -709,6 +736,8 @@ for r in r1a r1b; do (cd backend-python && poetry run python -m evals.bench publ
      - `ACCEPT` is refused;
      - `make launch-video` refuses;
      - `VIDEO_ALLOW_MOCK=1` writes a scratch video, which proves the ffmpeg path.
+
+     **Erratum D228:** an attempt cannot be recorded on mocks by design, so R-3 proves these through a simulated-label export on the zero-key demo configuration, `ACCEPT` on attempts that exist (one running, one under review with a simulated tape), and a static ffmpeg (D226). Done 2026-10-23.
   4. `down -v`, and remove the `p6local` images.
 - **R-4. Release rehearsal.**
 
@@ -721,7 +750,7 @@ for r in r1a r1b; do (cd backend-python && poetry run python -m evals.bench publ
   (cd frontend-react && npm audit --omit=dev --audit-level=high)
   ```
 
-- **R-5 (optional). Cloud.** `make public-demo-up` with `TRUTHTABLE_PUBLIC_URL=http://localhost:28443`, project `truthtable-p6pub`.
+- **R-5 (optional). Cloud.** `make public-demo-up` with `TRUTHTABLE_PUBLIC_URL=http://localhost:28443`, project `truthtable-p6pub`. Not run in P6a; the cloud session (16 GB, D221) is the better place for it, before C14.
   - A request through Caddy reaches the proxy with the client's IP.
   - Record `docker stats --no-stream` [measured, laptop].
   - Then bring it down.
@@ -729,22 +758,22 @@ for r in r1a r1b; do (cd backend-python && poetry run python -m evals.bench publ
 ### Release candidate on the main checkout
 
 - **A-1.** The phase grep (D213) prints nothing.
-- **A-2.** Merge int7 into `feat/v2-jev-gateway` in `~/projects/TrustAgent` (local; no push). The owner's demo keeps running from its images.
+- **A-2.** Merge `feat/v2-jev-gateway` into int7 first if it moved, then int7 into `feat/v2-jev-gateway`, and push both (D220). The owner's demo keeps running from its images.
 - **A-3.** `make version-bump V=2.0.0`, then commit `chore(release): 2.0.0` (D216).
 - **A-4.** `make check` on the main checkout.
 - **A-5.** With the owner's OK: `make demo-down && make demo`. This rebuilds the owner's images on the new head, so G2's `make up` reuses them.
-- **A-6.** Containment:
-  - the `.env` grep lists only the main checkout;
-  - `git config --get remote.origin.pushurl` prints `DISABLED`;
-  - `git config --get credential.useHttpPath` prints `true`;
-  - `$ORCH/ci_logs.py` works unauthenticated on a public run.
+- **A-6.** Containment (D220, D221):
+  - on the laptop, `grep -l '^OPENROUTER_API_KEY=.\+' ~/projects/TrustAgent*/.env` lists nothing (the key goes into the cloud environment, never a worktree);
+  - the pushed branches pass the hygiene grep and gitleaks;
+  - CI status reads through the public API (no token).
+- **A-7.** `docs/v2/STATUS.md` is rewritten for the cloud session (D221): what is done, the cards, the owner steps, nothing local.
 
 ### Gate A
 
 **What passes:**
 - `make check`;
-- R-1 to R-4 as expected;
-- A-1 to A-6;
+- R-1 to R-4 as expected (R-3 as amended by D228);
+- A-1 to A-7;
 - `git status` clean.
 
 **The report to the owner (one screen):**
@@ -753,7 +782,9 @@ for r in r1a r1b; do (cd backend-python && poetry run python -m evals.bench publ
 - the legal name, if missing;
 - the P6b card list with caps (§8);
 - owner time (S2 about 2.5 h);
-- the early-PR option (D215);
+- the early-PR option (D215): pushes are allowed now (D220), so the PR can open at Gate A and CI runs during P6b;
+- what public `main` shows today (D220: the hygiene grep, the 404 demo link, the old measured block) and whether the owner wants a small PR for it before the release;
+- the wording of the "built with AI coding agents" line (D227);
 - anything that slipped.
 
 ---
@@ -761,23 +792,26 @@ for r in r1a r1b; do (cd backend-python && poetry run python -m evals.bench publ
 ## 8. P6b: owner-in-the-loop runs (sitting S2, one day)
 
 **Before starting:**
-- Every P6a session is parked.
-- `make down; make demo-down` before B1 and again before B3. Nothing else runs until B8 ends.
+- **Mode A only** (D222): B3–B8 commit Jev-derived outputs to a public branch, so they wait for G0 = mode A or written permission. In mode W they wait; in mode R only the non-Jev parts run.
+- **Where (D221).** B3–B8 run in the Claude cloud session, on a branch cut from `feat/v2-jev-gateway` after Gate A. Its environment has `OPENROUTER_API_KEY` set as a cloud environment variable (G3), network access to `openrouter.ai`, GitHub, `raw.githubusercontent.com`, the package registries and `ghcr.io`, and `ffmpeg` from the setup script. One-time setup there: `python3 scripts/configure.py --ensure`, `make install`, `make proto-tools proto`, then `make check` once. No card names a `$ORCH` path.
+- Every P6a session is parked. In the cloud nothing else runs; on the laptop, `make down; make demo-down` if a step runs there. Nothing else runs until B8 ends.
 - Cards B6–B8 run on the same day and never cross 03:00 Israel time (D207, D208).
+- `BENCH_REGION` names where the session runs (D225): `cloud-<region>` when the session can say it, else `cloud`; `israel` on the laptop.
 
 | Step | Who | Exact command | Cap | Expected | Stop if | Send back |
 |---|---|---|---|---|---|---|
-| **B1** | owner (G2) | localhost PKCE check, **before any credit** | — | $0 (no credit) | — | "accepted" or "refused" |
-| **B2** | owner (G3) | $10 credit (Auto Top-Up off), key `trustagent-p6` with **limit 8**, `make configure WITH_SECRETS=1` | — | card ≈ $10.80 [vendor] | — | "key added" |
-| **B3** | Claude on `go B3` | `make down; make demo-down; make jev-check`. No stack may be running, because `jev-check` would run inside its proxy container (`mk/go.mk:95-100`). | — | ≈ $0.00001 | not ready, `data_policy`, no snapshot | result line (snapshot, "limit 8") |
-| **B4** | Claude on `go B4` | `make jev-capture`, then `make jev-capture CONFIRM=1` | $0.01 | < $0.005 | any non-200 apart from the planned 401 | result line |
-| **B5** | Claude on `go B5` | `make gate-eval` (built once; sha printed); `make bench-smoke BENCH_REGION=il`, then `make bench-smoke BENCH_REGION=il CONFIRM=1` (key `smoke-p6`; the region defaults to `local`) | $0.30 | $0.05–0.15 | any failed record; label ≠ measured; host ≠ openrouter.ai | result line |
+| **B1** | owner (G2), on the laptop | localhost PKCE check, **before any credit**; optional (D221: G11 on Pages settles Connect) | — | $0 (no credit) | — | "accepted", "refused" or "skipped" |
+| **B2** | owner (G3) | $10 credit (Auto Top-Up off), key `trustagent-p6` with **limit 8**; the key goes into the cloud environment's variables as `OPENROUTER_API_KEY` (D221), never the chat | — | card ≈ $10.80 [vendor] | — | "key added" |
+| **B3** | Claude on `go B3` | `make jev-check` with no stack running (otherwise it runs inside that stack's proxy container, `mk/go.mk`): one probe, ≈ $0.00001 | — | ≈ $0.00001 | not ready, `data_policy`, no snapshot | result line (snapshot, "limit 8") |
+| **B4** | Claude on `go B4` | `make jev-capture`, then `make jev-capture CONFIRM=1`; then `go -C backend-go test ./cmd/jevcheck -run TestCommittedCapturesDecode -v -args -require-captures` (fails on an empty capture directory) | $0.01 | < $0.005 | any non-200 apart from the planned 401 | result line; the decode test passes |
+| **B5** | Claude on `go B5` | `make gate-eval` (built once; sha printed); `make bench-smoke BENCH_REGION=<where>`, then the same with `CONFIRM=1` (key `smoke-p6`; `<where>` per D225, e.g. `cloud-us`; the default `local` says nothing) | $0.30 | $0.05–0.15 | any failed record; label ≠ measured; host ≠ openrouter.ai | result line |
 | **B6** | Claude on `go B6` | `make calib-pass`, then `make calib-pass CONFIRM=1`. Then free: `make calibrate EVALUATOR=groundedness@1 IN=<printed gate.jsonl> LABEL_SOURCE=public_dataset DATASET=ragtruth:qa-train@<sha>`, then the same with `WRITE=1`, and the same for `contradiction@1` | $0.30 | $0.06–0.25 | groundedness quality ≠ measured, so the owner picks (D206) | result line; both quality lines |
-| **B7** | Claude on `go B7` | `make bench-lite BENCH_REGION=il`, then `make bench-lite BENCH_REGION=il CONFIRM=1` (key `lite-p6`). The dry run's own estimate, from the judge prompt sizes, is about $1.16 [estimate]; the $2–3.5 planning range stays the budget figure and the $5 cap the guard. Then free: `make calib-holdout RUN=$PWD/backend-python/evals/results/<run_id>/run.json` and `bench publish --check-only` into scratch. **The owner does G5 while it runs.** | $5 (ledger) | $2–3.5, 10–20 min | exit 3 (stop rule); failure rate > 5%; mixed snapshot; snapshot ≠ B6 | result line; ECE before/after; check-only refusals (expect none) |
-| **B8** | Claude on `go B8` | `make record-demo`, then `make record-demo CONFIRM=1`. Review the drift table and the featured trace. Then `make record-demo ACCEPT=1 ATTEMPT=<id> VIDEO=1`, then `make demo`. | $4 total (≤ $0.50 + $3 per attempt) | $1–2, 25–40 min | snapshot ≠ B6 without a calibration file; exit 4 (no featured trace); a budget-skipped trace | result line; drift table; accept / retry / accept the best flagged trace |
+| **B7** | Claude on `go B7` | `make bench-lite BENCH_REGION=<where>`, then the same with `CONFIRM=1` (key `lite-p6`; the same `<where>` as B5). The dry run's own estimate, from the judge prompt sizes, is about $1.16 [estimate]; the $2–3.5 planning range stays the budget figure and the $5 cap the guard. Then free: `make calib-holdout RUN=$PWD/backend-python/evals/results/<run_id>/run.json` and `bench publish --check-only` into scratch. **The owner does G5 while it runs.** | $5 (ledger) | $2–3.5, 10–20 min | exit 3 (stop rule); failure rate > 5%; mixed snapshot; snapshot ≠ B6 | result line; ECE before/after; check-only refusals (expect none) |
+| **B8** | Claude on `go B8` | `make record-demo`, then `make record-demo CONFIRM=1`. Review the drift table and the featured trace. Then `make record-demo ACCEPT=1 ATTEMPT=<id> VIDEO=1` (ffmpeg from the setup script, D226). **Calibration first:** payments-fallback falls back only on a calibrated route (D207); without the B6 file written (`make calibrate ... WRITE=1`) or `ALLOW_UNCALIBRATED=1`, the gate flags it instead and it shows as drift. | $4 total (≤ $0.50 + $3 per attempt) | $1–2, 25–40 min | snapshot ≠ B6 without a calibration file; exit 4 (no featured trace); a budget-skipped trace | result line; drift table; accept / retry / accept the best flagged trace |
 
 - **Total.** Expected $3.1–5.9 [estimate]. Tool caps $9.61. The $8 key limit stops anything beyond that cleanly (D201).
-- **Mode W, or mode R when the owner chooses private measurement.** B3–B8 run, nothing Jev-derived is committed, and the outputs stay in gitignored paths (§2.2 item 7).
+- **Mode W, or mode R when the owner chooses private measurement.** B3–B8 run, nothing Jev-derived is committed, and the outputs stay in gitignored paths (§2.2 item 7). In the cloud session those paths go when the session ends (D222), so private measurement there means the owner keeps the result lines only; the default in mode W is to wait.
+- **What leaves the cloud session.** Committed outputs are pushed on the P6b branch (mode A). Files that are never committed (the MP4s, `tmp/launch/*`) reach the owner as messages from the session; if that fails, the laptop makes the H-6 take from the pushed tape (`make launch-video PAGES_ONLY=1`, $0).
 - **Gate B (G6, about 20 min).** The lead posts:
   - a table of every figure with its label, n, interval, snapshot, scored and failed;
   - the calibration quality and the held-out ECE before and after;
@@ -795,19 +829,19 @@ for r in r1a r1b; do (cd backend-python && poetry run python -m evals.bench publ
 
 | Step | Who | What (exact) | Gate |
 |---|---|---|---|
-| **C1** | lead | **Publish** (main checkout; mode A):<br>`make bench-publish RUN=$PWD/backend-python/evals/results/<run_id>/run.json CALIBRATION_HOLDOUT=$PWD/backend-python/evals/calibration/<run_id>/holdout.json`<br>Commit:<br>• `docs/benchmarks/results/<run_id>.json` and `docs/benchmarks/index.json`;<br>• `contracts/claims/measured.json`;<br>• `config/calibration/<snapshot>.json`;<br>• `contracts/fixtures/vendor/captured/*`;<br>• `frontend-react/demo-data/recorded/**`.<br>Mode R: only the non-Jev keys, the load run and the non-Jev captures (D200). | `python3 scripts/check_recording.py frontend-react/demo-data/recorded --require-recorded`; `make contracts-check` |
-| **C2** | lead, then owner | **Fill and look:**<br>• `make claims-write`;<br>• `npm run og` → `docs/launch/og.png`;<br>• `make hero-gif` → `docs/images/hero.gif` and `tmp/launch/hero.mp4`;<br>• `make screenshots`;<br>• `make launch-video` → `tmp/launch/video-{4x5,16x9}.mp4` (or H-6);<br>• `make linkedin-post`;<br>• fix any D212 divergence (a contract edit).<br>Then `explorer.exe docs/launch` and `explorer.exe tmp/launch`: the owner opens the OG image, the GIF, the video and the post text, and says "looks good" or names a change. | `make check-claims-launch` passes; the owner has said "looks good" |
+| **C1** | lead | **Publish** (the cloud session's P6b branch, D221; mode A, D222):<br>`make bench-publish RUN=$PWD/backend-python/evals/results/<run_id>/run.json CALIBRATION_HOLDOUT=$PWD/backend-python/evals/calibration/<run_id>/holdout.json`<br>Commit:<br>• `docs/benchmarks/results/<run_id>.json` and `docs/benchmarks/index.json`;<br>• `contracts/claims/measured.json`;<br>• `config/calibration/<snapshot>.json`;<br>• `contracts/fixtures/vendor/captured/*`;<br>• `frontend-react/demo-data/recorded/**`.<br>Mode R: only the non-Jev keys, the load run and the non-Jev captures (D200). | `python3 scripts/check_recording.py frontend-react/demo-data/recorded --require-recorded`; `make contracts-check` |
+| **C2** | lead, then owner | **Fill and look:**<br>• `make claims-write`;<br>• `npm run og` → `docs/launch/og.png`;<br>• `make hero-gif` → `docs/images/hero.gif` and `tmp/launch/hero.mp4`;<br>• `make screenshots`;<br>• `make launch-video` → `tmp/launch/video-{4x5,16x9}.mp4` (or H-6);<br>• `make linkedin-post`;<br>• fix any D212 divergence (a contract edit).<br>• the README Roadmap says what the release delivered (the measured benchmark, the recorded tape, 2.0.0) and what is next.<br>Then the session sends the OG image, the GIF, the videos and the post text to the owner (D221; on the laptop `explorer.exe docs/launch` and `explorer.exe tmp/launch`): the owner opens them and says "looks good" or names a change. | `make check-claims-launch` passes; the owner has said "looks good" |
 | **C3** | lead | **Records:**<br>• dated Appendix D rows (PKCE localhost, `/key` shape, `usage.cost`, decision-path parity, 32k, ZDR, the Haiku price, licences, market signals);<br>• Appendix H;<br>• JEV-ACCESS `:84-88` PKCE status;<br>• `docs/launch/terms-check.md`;<br>• the LICENSE name. | `make check` |
-| **C4** | lead | **Release candidate checks:**<br>• the CHANGELOG heading date set to the planned tag date;<br>• `make check-version RELEASE_TAG=v2.0.0`;<br>• the phase grep;<br>• `make check`;<br>• `make pages-build PAGES_DATASET=recorded`;<br>• full-history gitleaks;<br>• the hygiene grep;<br>• `npm audit --omit=dev --audit-level=high`;<br>• `git tag -a v1.0.0 d709df3 -m "TrustAgent 1.0.0 (async auditor)"` (local). | clean tree; every command green |
-| **C5** | owner (G8), then Claude on `go push` | `git push https://github.com/timkush1/TrustAgent.git v1.0.0`<br>`git push https://github.com/timkush1/TrustAgent.git feat/v2-jev-gateway` | both pushes accepted |
-| **C6** | owner (G9) | Settings, the minimal ruleset, then open the PR with the body from `make clip FILE=docs/launch/release-pr.md` | — |
-| **C7** | lead (push window) | **CI loop:**<br>• status from the public API; logs via `$ORCH/ci_logs.py`;<br>• fix forward in a key-less worktree, merge into the main checkout, push on the owner's window;<br>• likely failures: npm advisories of the day, `TestTier0Budget` under `CI=true`, the arm64 engine timeout, runner disk, gitleaks on the v1 history. | every PR check is green, `pages.yml` and `release-images.yml` included (build-only) |
+| **C4** | lead | **Release candidate checks:**<br>• the CHANGELOG heading date set to the planned tag date;<br>• `make check-version RELEASE_TAG=v2.0.0`;<br>• the phase grep;<br>• `make check`;<br>• `make pages-build PAGES_DATASET=recorded`;<br>• full-history gitleaks;<br>• the hygiene grep;<br>• `npm audit --omit=dev --audit-level=high`;<br>• the README Roadmap and Known limits match the release. | clean tree; every command green |
+| **C5** | Claude (D220) | Push the P6b branch and merge it into `feat/v2-jev-gateway`, push that (no "go push" needed; never `main`). **Optional, on the laptop:** the `v1.0.0` tag at `d709df3` (`git tag -a v1.0.0 d709df3 -m "TrustAgent 1.0.0 (async auditor)" && git push origin v1.0.0`), with the owner's OK; the cloud session cannot push tags (D221). | the branch is on GitHub |
+| **C6** | owner (G9) | Settings and the minimal ruleset if not set yet (D220); the PR `feat/v2-jev-gateway` → `main` with the body of `docs/launch/release-pr.md` (Claude may open it through the GitHub app; else the owner opens it and pastes the body, `make clip FILE=docs/launch/release-pr.md` on the laptop) | — |
+| **C7** | lead | **CI loop:**<br>• status from the public API, logs through the GitHub app (cloud) or the web UI;<br>• fix forward on a branch and push it (D220);<br>• likely failures: npm advisories of the day, `TestTier0Budget` under `CI=true`, the arm64 engine timeout, runner disk, gitleaks on the v1 history. | every PR check is green, `pages.yml` and `release-images.yml` included (build-only) |
 | **C8** | owner (G10) | `PAGES_ENABLED=true` (mode A; the shared-origin check is clear), then merge with **Create a merge commit**. `main` runs `ci-*`, deploys Pages (recorded) and pushes `edge`. | the main runs are green |
-| **C9** | owner (G10, G11) | Packages public; `GHCR_PUBLIC=true`; the Pages PKCE check. If PKCE is refused, the `fix/static-connect-paste` PR (`frontend-react/src/domain/liveScenarios.ts:37` and its test) is merged in the UI. | `docker buildx imagetools inspect ghcr.io/timkush1/truthtable-proxy:edge` lists amd64 and arm64 |
-| **C10** | lead, then `go push` | `git fetch origin && git switch main && git merge --ff-only origin/main && python3 scripts/check_version.py --tag v2.0.0 && git tag -a v2.0.0 -m "TrustAgent 2.0.0"`, then `git push https://github.com/timkush1/TrustAgent.git v2.0.0` | tag runs green: Pages deploy (recorded), semver images, `first-run`, `anonymous-pull` |
-| **C11** | lead + owner (G12) | `make release-notes TAG=v2.0.0 \| make clip`. The Release goes up with `video-16x9.mp4` and `hero.mp4`, set as Latest. Then About, topics, social preview; the ruleset's required checks (`docs/launch/ruleset.md`); code security; close Dependabot PRs #21, #23, #24, #28 and #30; delete the stale bot branches (in the UI); pin the repo; LinkedIn Featured. | the release badge shows v2.0.0 |
+| **C9** | owner (G10, G11) | The packages are already public (D224): check each still is, and set `GHCR_PUBLIC=true` if missing; the Pages PKCE check. If PKCE is refused, the `fix/static-connect-paste` PR (`frontend-react/src/domain/liveScenarios.ts:37` and its test) is merged in the UI. | `docker buildx imagetools inspect ghcr.io/timkush1/truthtable-proxy:edge` lists amd64 and arm64 |
+| **C10** | lead, then owner | `python3 scripts/check_version.py --tag v2.0.0` on the merge commit (`git fetch origin && git checkout --detach origin/main`). Then the owner creates the release in the web UI as a **pre-release** (G12 step 1): it creates the `v2.0.0` tag on `main` (D221). If the tag's workflows have not started within 5 minutes, run `pages.yml` (deploy) and `release-images.yml` (push) by "Run workflow" on the tag. | tag runs green: Pages deploy (recorded), semver images, `first-run`, `anonymous-pull` |
+| **C11** | lead + owner (G12) | `make release-notes TAG=v2.0.0 > tmp/release-notes.md` once the tag's images exist (it reads their digests); the session sends it (laptop: `make clip FILE=tmp/release-notes.md`). The owner edits the pre-release: the notes, `video-16x9.mp4` and `hero.mp4`, then unticks pre-release and sets it as Latest. Then About, topics, social preview; the ruleset's required checks (`docs/launch/ruleset.md`); code security; close Dependabot PRs #21, #23, #24, #28 and #30; delete the stale remote branches in the UI (Branches page): `copilot/check-insecurities`, every `dependabot/*` branch, and `fix/deps-security` once PR #45 is merged or closed; pin the repo; LinkedIn Featured. | the release badge shows v2.0.0 |
 | **C12** | owner (G13) | The stranger check, Post Inspector, then **the owner posts** with `video-4x5.mp4`. | §13 all true |
-| **C13** | lead | Afterwards:<br>• update `TrustAgent-CV-context.md` and the interview kit artifact (same URL);<br>• memory notes;<br>• remind the owner: delete the PAT, check that every P6 key is deleted or ≤ $1. | — |
+| **C13** | lead | Afterwards:<br>• update `TrustAgent-CV-context.md` and the interview kit artifact (same URL);<br>• memory notes;<br>• remind the owner: every P6 key deleted or ≤ $1 and removed from the cloud environment's variables; the laptop's push token (stored 2026-10-21) kept or deleted, as the owner chooses. | — |
 | **C14 (optional)** | owner + lead | `ci-knowledge.yml` dispatch; the cloud demo (G14); the `eval-live` environment. | — |
 
 **Mode notes**
@@ -822,6 +856,16 @@ for r in r1a r1b; do (cd backend-python && poetry run python -m evals.bench publ
 ---
 
 ## 10. Owner guides (plain words, by sitting)
+
+**Where each step runs (D221).**
+
+| Where | Steps |
+|---|---|
+| **Your laptop** (browser and terminal) | G2, the localhost Connect check (optional); the optional `v1.0.0` tag; your own `make demo` |
+| **The Claude cloud session** (claude.ai/code) | B3–B8 (the paid cards), C1–C5, C7, the release notes; Claude pushes its branches there |
+| **GitHub's web UI, any device** | G9–G12: settings, the ruleset, the PR merge, Pages, packages, the release and its tag, About |
+| **OpenRouter's site, any device** | G3 (credit and key) and G7 (closing the key) |
+| **Anywhere** | G0, G1, G5, G6, G13 and the post |
 
 ### Sitting S1 (now, about 45 min, $0)
 
@@ -852,24 +896,21 @@ for r in r1a r1b; do (cd backend-python && poetry run python -m evals.bench publ
    - Make sure "TypeSafe" is not on any list of ignored or blocked providers on that page.
    - If the page has a setting that allows only Zero Data Retention (ZDR) endpoints, leave it **off**: TypeSafe's ZDR status is not published, and with it on every Jev call can fail with a 404 `data_policy` error.
    - The settings page needs a signed-in account, so Step 0 could not read its exact labels. Read them out to Claude if anything looks different from this.
-5. **ffmpeg.** In your Ubuntu terminal: `sudo apt-get install -y ffmpeg`.
-6. **Power.** Windows Settings → System → Power & battery → Screen and sleep → "When plugged in, put my device to sleep after": **Never**, for the P6 days.
-7. **Push guard.** In your own terminal:
+5. **The cloud environment** (D221). In claude.ai/code, open the environment settings of the session that continues P6:
+   - **Network access:** allow `openrouter.ai`, plus GitHub (`github.com`, `raw.githubusercontent.com`), the package registries (PyPI, npm, the Go proxy) and `ghcr.io`.
+   - **Setup script:** add `sudo apt-get install -y ffmpeg` (or `apt-get install -y ffmpeg` if it runs as root). ffmpeg makes the launch video (D226).
+   - **Environment variables:** nothing yet. The OpenRouter key goes in at G3, as `OPENROUTER_API_KEY`, never in the chat.
+6. **Power.** Only if a step runs on your laptop: Windows Settings → System → Power & battery → Screen and sleep → "When plugged in, put my device to sleep after": **Never**, for the P6 days.
+7. **How it was built.** The post, the README and the release say TrustAgent was built with AI coding agents (D227). The default line is: "Designed and directed by me, built with AI coding agents (Claude Code) working to the plans, tests and reviews I set." Keep it, or give your own words.
+8. Notes, nothing to do:
+   - your university email is in the commit history; it is already public on `main` and stays as it is (D223);
+   - pushes no longer need your "go push" (D220): Claude pushes branches, and `main` changes only when you merge a pull request on GitHub.
 
-   ```bash
-   cd ~/projects/TrustAgent
-   git config remote.origin.pushurl DISABLED
-   git config credential.useHttpPath true
-   ```
-
-   This stops any accidental push from this project until you approve one.
-8. Note: your university email is in the commit history. It is already public on `main` and stays as it is.
-
-Say back: **"S1 done: mode A/W/R, name …, sites none/…, roles yes/no, talking points public/private, launch <day>"**.
+Say back: **"S1 done: mode A/W/R, name …, sites none/…, roles yes/no, talking points public/private, AI line default/<words>, launch <day>"**.
 
 ### Sitting S2 (after Gate A, one day, about 2.5 h, mostly waiting)
 
-**G2. Localhost Connect check (5 min, $0).**
+**G2. Localhost Connect check (5 min, $0; on your laptop; optional, D221).** The cloud session has no browser of yours, so this one runs on the laptop. Skip it if you like: G11 checks the same Connect flow on the public site.
 1. Run `make demo-down`. Your demo is kept; this only frees port 3000.
 2. Run `make up`. The first start can take 10–25 minutes. Open the setup link it prints, or get it with `make setup-url`. On a first claim, save the admin key in a password manager.
 3. Click **Connect OpenRouter** (setup step 2, or Settings → Connections), sign in, and click **Authorize**.
@@ -885,10 +926,8 @@ Say back: **"S1 done: mode A/W/R, name …, sites none/…, roles yes/no, talkin
    - name `trustagent-p6`;
    - **credit limit 8**, never resets;
    - Create. The key is shown only once.
-3. **Do not paste the key into the chat.** In your own terminal:
-   1. run `cd ~/projects/TrustAgent && make configure WITH_SECRETS=1`;
-   2. paste the key at the first prompt (nothing appears while you paste; that is normal) and press Enter;
-   3. press Enter three more times to skip TypeSafe, Anthropic and OpenAI.
+3. **Do not paste the key into the chat.** Put it where the cloud session reads it (D221): in claude.ai/code, the environment settings of the P6 session → **Environment variables** → add `OPENROUTER_API_KEY` = the key → save. Start (or restart) the session so it sees the variable.
+   - Only if a paid step runs on your laptop instead: `cd ~/projects/TrustAgent && make configure WITH_SECRETS=1`, paste the key at the first prompt (nothing appears while you paste; that is normal), then press Enter three times.
 4. Say **"key added"**.
 
 **G4. Approving a paid step.**
@@ -906,77 +945,59 @@ Say back: **"S1 done: mode A/W/R, name …, sites none/…, roles yes/no, talkin
 
 **G7. Close the key (5 min, after "publish").**
 1. At https://openrouter.ai/settings/keys, delete `trustagent-p6`, or set its limit to the shown usage + 1.
-2. In your terminal, run `make configure WITH_SECRETS=1`, type `-` at the OpenRouter prompt, then press Enter three times. Your local `make up` stack stops checking without a key; `make demo` is unaffected.
+2. In claude.ai/code, remove `OPENROUTER_API_KEY` from the environment's variables. (If the key was on your laptop too: `make configure WITH_SECRETS=1`, type `-` at the OpenRouter prompt, then press Enter three times.) `make demo` is unaffected.
 3. Optional: undo the privacy change from G1 step 4.
 
-### Sitting S3a (release day, about 30 min, then hours of CI)
+### Sitting S3a (release day, about 20 min, then hours of CI)
 
-**G8. GitHub token (10 min).**
-1. Go to github.com → avatar → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**.
-2. Fill in the form:
-   - name `trustagent-p6-push`, expiration **30 days**, owner **timkush1**;
-   - **Only select repositories** → `TrustAgent`;
-   - permissions: **Contents** read and write, **Workflows** read and write, **Actions** read-only.
-   - Generate, and copy the `github_pat_…` value.
-3. In your own terminal:
+**G8. GitHub token: dropped (D220).** Claude pushes branches already (the laptop has your repo-scoped token since 2026-10-21; the cloud session uses the Claude GitHub app). Nothing to do. Never paste a token into the chat.
 
-   ```bash
-   cd ~/projects/TrustAgent
-   read -rsp 'Paste token, then Enter: ' T; echo
-   printf 'protocol=https\nhost=github.com\npath=timkush1/TrustAgent.git\nusername=timkush1\npassword=%s\n\n' "$T" | git credential approve; unset T
-   git push --dry-run https://github.com/timkush1/TrustAgent.git feat/v2-jev-gateway
-   ```
-
-   This saves the token for this repository only. Your other repositories keep their own login.
-4. If the dry run shows no error, say **"token ready"**. If the first real push is refused because of "workflow", edit the token, tick Workflows read and write, and save. No new token is needed.
-
-**G9. Settings, the minimal ruleset and the PR (15 min).**
+**G9. Settings, the minimal ruleset and the PR (15 min; GitHub web UI, any device).** Steps 1–4 can be done any time before; they are listed here so nothing is missed.
 1. Repo **Settings → General → Pull Requests**: tick **Allow merge commits**.
 2. **Settings → Pages → Source: GitHub Actions**.
 3. **Settings → Environments → github-pages.** If it is not listed, choose **New environment** and name it exactly `github-pages`. Then go to **Deployment branches and tags** → Selected → add `main`, and add a **Tag** rule `v*`.
 4. **Settings → Rules → Rulesets → New branch ruleset:**
    - name `main`, Active, target the default branch;
    - tick **Restrict deletions**, **Block force pushes** and **Require a pull request** (0 approvals);
-   - bypass: Repository admin;
+   - bypass: Repository admin, with the bypass mode **For pull requests only**, so nobody (Claude included) can push to `main` directly;
    - Save.
-5. Say **"go push"**. Claude pushes the tag `v1.0.0` and the branch.
-6. Open https://github.com/timkush1/TrustAgent/compare/main...feat/v2-jev-gateway → **Create pull request**. Claude has copied the text; press **Ctrl+V** → Create.
+5. Claude says the release branch is pushed. Open https://github.com/timkush1/TrustAgent/compare/main...feat/v2-jev-gateway → **Create pull request** (or open the PR Claude made). The body is `docs/launch/release-pr.md`: Claude sends it as a message; paste it in.
 
 ### Sitting S3b (when Claude says CI is green, about 20 min)
 
 **G10. Pages, merge and packages.**
 1. **Settings → Secrets and variables → Actions → Variables** → New: `PAGES_ENABLED` = `true`. In mode R, also add `PAGES_TAG_DATASET` = `simulated`.
 2. On the PR: **Merge pull request** → choose **Create a merge commit** → Confirm.
-3. When Claude says the images are built, go to github.com/timkush1?tab=packages. For each of `truthtable-proxy`, `truthtable-engine` and `truthtable-dashboard`:
-   - **Package settings** → at the bottom, Danger Zone → **Change visibility** → **Public** → type the name to confirm;
-   - check that "Repository: TrustAgent" is shown. If it is not, use Manage Actions access → add the repo.
-4. Add the Actions variable `GHCR_PUBLIC` = `true`.
-5. Say **"packages public"**.
+3. The packages have been public since 2026-10-21 (D224). Check that github.com/timkush1?tab=packages shows `truthtable-proxy`, `truthtable-engine` and `truthtable-dashboard` as **Public**, each with "Repository: TrustAgent" (if not: Package settings → Manage Actions access → add the repo).
+4. If the Actions variable `GHCR_PUBLIC` is missing, add it with the value `true`.
+5. Say **"packages checked"**.
 
 **G11. Pages Connect check (5 min, ≈ $0.0002).**
 1. Open https://timkush1.github.io/TrustAgent/app/playground/#live → accept → **Connect OpenRouter** → Authorize.
 2. You should land back on the playground with "Live · your key". Run **one** example, then click **Forget key**.
 3. At https://openrouter.ai/settings/keys, delete the new key.
 4. Say **"accepted"** or **"refused"**.
-5. Then Claude asks **"go push"** for the `v2.0.0` tag. The tag build takes up to 90 minutes.
+
+**The tag (5 min; GitHub web UI).** The cloud session cannot push tags (D221), so the release makes the tag. When Claude says the merge commit passed `check_version.py --tag v2.0.0`:
+1. **Releases → Draft a new release** → **Choose a tag** → type `v2.0.0` → **Create new tag: v2.0.0 on publish**; target `main`.
+2. Title "TrustAgent 2.0.0 — Jev gateway"; body: "Release notes follow once the images are built."
+3. Tick **Set as a pre-release** (not Latest yet) → **Publish release**. This creates the tag, and the tag build starts (up to 90 minutes). If nothing starts within 5 minutes, tell Claude: the tag's workflows can be started by hand.
 
 ### Sitting S3c (after the tag build, about 45 min)
 
 **G12. Release and presentation.**
-1. **Releases → Draft a new release:**
-   - tag `v2.0.0`;
-   - title "TrustAgent 2.0.0 — Jev gateway";
-   - Ctrl+V the notes Claude copied;
-   - drag in `video-16x9.mp4` and `hero.mp4` from the folder Claude opened (`tmp/launch`);
-   - tick **Set as the latest release** → Publish.
+1. **Releases → the v2.0.0 pre-release → Edit:**
+   - replace the body with the notes Claude sends (from `make release-notes TAG=v2.0.0`, which reads the images' digests);
+   - drag in `video-16x9.mp4` and `hero.mp4` (Claude sends them; or make the H-6 take on the laptop);
+   - untick **Set as a pre-release**, tick **Set as the latest release** → **Update release**.
 2. **The About gear** on the repo page:
-   - Ctrl+V the description;
+   - paste the description;
    - Website `https://timkush1.github.io/TrustAgent/`;
    - the 16 topics from `docs/launch/github-metadata.md`.
 3. **Settings → General → Social preview** → upload `docs/launch/og.png`.
 4. **Settings → Rules → the `main` ruleset** → **Require status checks** → type each name from `docs/launch/ruleset.md`, one by one → Save.
 5. **Settings → Code security:** turn on Private vulnerability reporting and Dependabot alerts.
-6. Close PRs #21, #23, #24, #28 and #30 with the comment "superseded by 2.0". Delete the old bot branches on the Branches page.
+6. Close PRs #21, #23, #24, #28 and #30 with the comment "superseded by 2.0". On the Branches page delete `copilot/check-insecurities`, every `dependabot/...` branch, and `fix/deps-security` once PR #45 is merged or closed.
 7. On your GitHub profile, **pin** TrustAgent. On LinkedIn, add it under **Featured** and **Projects**.
 
 **G13. The stranger check, then post.**
@@ -985,9 +1006,9 @@ Say back: **"S1 done: mode A/W/R, name …, sites none/…, roles yes/no, talkin
    - the first-visit guide reaches the caught answer;
    - every README link and badge opens.
 2. Paste the site link into https://www.linkedin.com/post-inspector/ and check that the card shows the OG image.
-3. Claude copies the post text (`make linkedin-post CLIP=1`). Read it: every number has a label.
+3. Claude sends the post text: `make linkedin-post`, with `ROLES=1` if you said yes to the roles line at S1, and `RESTRICTED=1` in mode R (on the laptop, `CLIP=1` copies it). Read it: every number has a label, and the "built with AI coding agents" line is the one you chose.
 4. Post, with `video-4x5.mp4` as the post's video.
-5. Afterwards, delete the GitHub token (Settings → Personal access tokens), or note its expiry date.
+5. Afterwards, keep or delete the laptop's push token as you prefer (Settings → Personal access tokens).
 
 ### Optional
 
@@ -1022,7 +1043,7 @@ To remove it: `make public-demo-clean` (it also deletes the Caddy volumes), then
 
 | Risk | Effect | Mitigation |
 |---|---|---|
-| TypeSafe's terms forbid publishing performance numbers (third-party report; primary text unread) | A breach claim; launch blocked or reworked | D200: G0 first; modes A, W and R; nothing pushed before G0; the email; the 7-day rule |
+| TypeSafe's terms forbid publishing performance numbers (third-party report; primary text unread) | A breach claim; launch blocked or reworked | D200: G0 first; modes A, W and R; nothing Jev-derived pushed before G0 (D222; `main` itself is public since 2026-10-21, D220); the email; the 7-day rule |
 | P5 integration keeps adding D numbers | Numbers defined twice (CO-1 again) | P6 uses D200+; the Step 0 script checks |
 | "Measured" decided by the backend name | Mock output published as measured | D203 host stamp and allow-list; R-1b and R-3 regressions; the sanitizer keeps the hosts |
 | A paid target spends on a plain `make` | Unplanned spend | D204 `CONFIRM=1` default for every paid target |
@@ -1038,20 +1059,20 @@ To remove it: `make public-demo-clean` (it also deletes the Caddy volumes), then
 | Estimate and measured claims disagree | Contradictory figures | `measured_pair` plus the `--launch` divergence error |
 | The tape shows version 1.0.0 | An inconsistent site | D216: bump at Gate A; the version check in `check_recording` and `check-claims` |
 | The real key spreads to worktrees | A key in "mocks-only" sessions | D202: one checkout; `.env` grep before every card; `configure --ensure` only |
-| An agent pushes early | Unapproved publishing | D202 and D214: `useHttpPath` disables the old credential; pushurl `DISABLED`; the PAT exists only from S3a |
+| An agent pushes something it should not | Unapproved publishing (every branch is public, D220) | D222: nothing Jev-derived before mode A; the hygiene grep and gitleaks before every push; `main` only through the owner's PR merge, with the ruleset's admin bypass for pull requests only |
 | Paid outputs not ignored | Dataset text or Jev outputs committed | §2.2 item 7: gitignore plus the `check-ignore` test |
 | Shared github.io origin | A visitor's `sessionStorage` key exposed to another site | G1 item 2 before `PAGES_ENABLED`; custom domain if needed; DoD item 2 |
-| First GitHub run of every v2 workflow | A red PR | S-7 local checks; the push window; `ci_logs.py`; optional early draft PR; Trivy and path-filtered jobs not required |
-| The token lacks the Workflows permission | Push refused | G8 permissions; the dry run does not test it, so the guide says how to fix it |
+| First GitHub run of every v2 workflow | A red PR | S-7 local checks; pushes allowed (D220); logs through the GitHub app or the web UI; optional early draft PR; Trivy and path-filtered jobs not required |
+| The cloud session cannot push tags or reach the owner's browser | No tag; no localhost Connect check | D221: the owner's GitHub release makes the tag; G2 runs on the laptop or is skipped (G11 decides) |
 | GHCR packages private at the tag | `anonymous-pull` skipped | D215 order: public before the tag; `GHCR_PUBLIC` |
 | Pages tag deploy blocked | Tag deploy fails | The `v*` environment rule in G9 |
 | Pages ships simulated after the merge | A simulated site at launch | `PAGES_ENABLED` set only once the recorded tape is committed (mode A) |
 | Mode R tag build fails (`pages.yml:56` forces recorded) | No Pages | S-10 `PAGES_TAG_DATASET` |
 | Connect keys have no spending limit | Unbounded spend | G2 with zero credit; G11 deletes its key the same day |
-| The 8 GB laptop | OOM in rehearsal, recording or video | 3 heavy slots; Docker only with ≥ 2.5 GB free; everything parked and the demo down in S2 |
-| The laptop sleeps | A stalled run | The S1 power setting |
+| The 8 GB laptop | OOM in rehearsal, recording or video | 3 heavy slots; Docker only with ≥ 2.5 GB free; everything parked and the demo down in S2; P6b and P6c run in the cloud session (about 16 GB, D221) |
+| The laptop sleeps | A stalled run | The S1 power setting, for steps that still run on the laptop |
 | ffmpeg or Playwright missing | No GIF, OG or video | ffmpeg at S1; V-6 and V-7 tool checks; H-6 fallback |
-| A personal path or email in tracked docs | Embarrassment in a public repo | The D216 hygiene grep is a gate (C4) |
+| A personal path or email in tracked docs | Embarrassment in a public repo | The D216 hygiene grep is a gate (C4) on the current tree; history stays (D223) |
 | Licence name mismatch | Legal ambiguity | The owner gives the name at S1 |
 | The public cloud demo shares one IP | The 10-viewer cap | D218: Caddy straight to the proxy; the nginx fix in P7 |
 
@@ -1088,10 +1109,10 @@ To remove it: `make public-demo-clean` (it also deletes the Caddy volumes), then
    - The CHANGELOG has `## v2.0.0 — <tag date> "Jev gateway"`.
    - `check_version.py --tag v2.0.0` passes on `main`.
 10. **Repository.**
-    - The PR was merged as a merge commit.
+    - The PR was merged by the owner as a merge commit (D220).
     - Every required check is green on `main`.
-    - The ruleset is active with its required checks.
-    - The tags `v1.0.0` and `v2.0.0` are pushed.
+    - The ruleset is active with its required checks, the admin bypass for pull requests only.
+    - The tag `v2.0.0` exists (made by the release, D221); `v1.0.0` is optional.
     - The Release v2.0.0 is Latest, with notes, digests and the MP4s.
     - The release badge shows v2.0.0.
 11. **Images.**
@@ -1107,10 +1128,10 @@ To remove it: `make public-demo-clean` (it also deletes the Caddy volumes), then
     - The community files and private vulnerability reporting are on.
     - The repo is pinned on the profile.
 14. **Hygiene and secrets.**
-    - The hygiene grep prints nothing.
+    - The hygiene grep prints nothing on `main`'s tree after the merge (history stays as it is, D223).
     - Full-history gitleaks is green on the PR.
-    - Every P6 OpenRouter key is deleted or limited to ≤ $1, and the key is gone from `.env`.
-    - The PAT has a deletion date.
+    - Every P6 OpenRouter key is deleted or limited to ≤ $1, and gone from the cloud environment's variables and from any `.env`.
+    - The laptop's push token is kept or deleted, as the owner chose.
 15. **The stranger check (G13)** passes, Post Inspector shows the card, and the owner has approved the post.
 
 The cloud demo, the knowledge CI run and `eval-live` are **not** required (D219).
@@ -1267,5 +1288,5 @@ Also open from P5 (owner or P6): the 20 comparison cells need the owner's review
 - the 20 comparison cells: SHIP S-5, then the owner at G5 (same as P5C-28);
 - the OG card and README hero from a recorded tape: VEND V-6 (consumers of `featured`), captured after B8;
 - the `github-pages` environment's `v*` tag rule: the owner at S3a (D215 step 1);
-- a sourced Sonnet price pair (D149): lead, before Gate A. Step 0's free read lists Sonnet entries on `/api/v1/models`; adding one is a dated pricing contract edit that also changes the landing calculator's judge list, so it lands with SHIP's landing check;
-- the live Playground's text into `copy.playground_live.ui.*` (D163): lead, before Gate A (contract copy plus `src/components/replay/live/liveText.ts`).
+- a sourced Sonnet price pair (D149): lead, before Gate A. Step 0's free read lists Sonnet entries on `/api/v1/models`; adding one is a dated pricing contract edit that also changes the landing calculator's judge list, so it lands with SHIP's landing check. **Done in fix round 1:** Claude Sonnet 5.5 at $2 / $10 per million tokens, Anthropic and OpenRouter, read 2026-10-23 (`prices.v1.json` version 2026-10-23);
+- the live Playground's text into `copy.playground_live.ui.*` (D163): lead, before Gate A (contract copy plus `src/components/replay/live/liveText.ts`). **Deferred to v2.0.x in fix round 1** (SPEC Appendix H): the copy contract is bundled whole into the app entry and the landing's first load, so the move would add about 1.4 kB gzip to both budgets (the app entry had 1.8 kB left) for no visible change.
