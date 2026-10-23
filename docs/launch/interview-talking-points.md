@@ -88,9 +88,12 @@ No benchmark run of our own is published yet, so there are no measured results h
   <!-- claim:arize_ragtruth_jev_accuracy --> 87% [third-party] at its best, which shows why
   thresholds must be calibrated per question and snapshot. That best was reached only at a tuned
   0.80 threshold on a differently framed question; possible training contamination. Not directly
-  transferable to our questions. Our own calibration error, before and after, held out on the
-  bench's test sample, is the "groundedness calibration error (ECE)" row of *Numbers to quote* once
-  a run is published; until then it is not measured yet, and so say it.
+  transferable to our questions. TrustAgent's groundedness default, 0.8, started from that tuned
+  cutoff (contradiction flags at 0.7), so the bench's RAGTruth accuracy is like for like with
+  neither figure and may be flattered by it: say so whenever you quote it. The calibration error,
+  before and after, held out on the bench's test sample, is the "groundedness calibration error
+  (ECE)" row of *Numbers to quote* once a run is published; until then it is not measured yet,
+  and so say it.
 - **What went wrong.** Labels carry no route, so a calibration fit filtered by route loses the
   labels whose traces retention already deleted. Documented as a known gap for v2.1.
 
@@ -196,7 +199,8 @@ No benchmark run of our own is published yet, so there are no measured results h
 ## What is most impressive, and do people value it?
 
 - **Not "integrated Jev".** It is:
-  1. a cost, accuracy and latency trade-off measured on our own benchmark, with calibration error
+  1. a cost, accuracy and latency trade-off measured on my own run of the public RAGTruth-QA
+     benchmark (no proprietary data set), with calibration error
      and confidence intervals: the harness is built, but say "measured" only after a published
      benchmark run (today every measured row says "not yet measured");
   2. a fail-safe hot path whose overhead is published once the release load run is in
@@ -228,5 +232,8 @@ No benchmark run of our own is published yet, so there are no measured results h
   <!-- claim:arize_ragtruth_jev_cost_per_1k --> $0.05 / 1,000 [third-party] for Jev against
   <!-- claim:arize_ragtruth_opus_cost_per_1k --> $14.30 / 1,000 [third-party] for Claude Opus 5;
   reached only at a tuned 0.80 threshold on a differently framed question; possible training
-  contamination. Not directly transferable to our questions. We found no open-source gateway that
-  ships inline groundedness gating; that gap is the niche.
+  contamination. Not directly transferable to our questions. Inline groundedness checks exist in
+  open source too (NeMo Guardrails' fact-checking rail runs inline; see the comparison table), so
+  the difference is the shape: a drop-in OpenAI/Anthropic proxy that makes one cheap
+  decision-model call per answer, takes its evidence from the request itself and applies a policy
+  per route, where a guardrails library adds an extra LLM call inside your application.

@@ -17,9 +17,10 @@ paid runs and the release steps run from a Claude cloud session (D221).
    no measured Jev figure, recorded Jev tape or captured Jev response on any pushed branch, since
    every branch is public (D222). Vendor and third-party figures quoted from public pages, with
    their labels, are not measurements. Mode W stops the paid Jev steps.
-2. **No post while the site would replay a simulated tape** (mode A). A simulated tape is honest
+2. **In mode A, no post while the site would replay a simulated tape.** A simulated tape is honest
    on the site (it says Simulated everywhere), but a launch post invites people to judge real model
-   output. In mode R the post is the mode-R variant and names no fast-check figure.
+   output. In mode R the site replays the simulated tape by design, and the post is the mode-R
+   variant, which names no fast-check figure and no recorded answer.
 
 ## S1: terms and one-time setup (no spending, no code needed)
 
@@ -157,14 +158,17 @@ paid runs and the release steps run from a Claude cloud session (D221).
       themes: the banner says Recorded (mode A), the first-visit guide reaches the caught answer,
       and every README badge and link opens (the live check with a key is G11's).
 - [ ] **Post Inspector** shows the card from `og.png` for the site URL.
+- [ ] **Mode A: the results went to TypeSafe** at least 3 days before the post, as the courtesy
+      note said they would (the measured figures, the link to the published run and the post's
+      text); the date is in [terms-check.md](terms-check.md). Tag TypeSafe only if they said yes.
 - [ ] **The post**: `make linkedin-post` (with `ROLES=1` if the owner chose the roles line,
       `RESTRICTED=1` in mode R; `CLIP=1` on the laptop). It exits 1 on any missing value and
       refuses a post over 2,800 characters or a first line that would hide behind "…see more";
       nothing is typed by hand. Read
       through: every figure has its label, the cost and the latency say what they were measured
       on, the example says where its answer came from, Jev is credited to TypeSafe AI, the ratio
-      names the judge, the agreement stands beside the like-for-like third-party figure or
-      is left out, and the "built with AI coding agents" line is the owner's. Posted with the 4:5
+      names the judge, the agreement names the thresholds the bench flags at and stands beside
+      Arize's two figures, said not to be like for like (D233), or is left out, and the "built with AI coding agents" line is the owner's. Posted with the 4:5
       video as its media, the Haqq link as the first comment ([linkedin-post.md](linkedin-post.md)).
 - [ ] **Afterwards**: every measurement key deleted or limited to its usage plus a little, and gone
       from the cloud environment; the laptop's push token kept or deleted, as the owner chooses.

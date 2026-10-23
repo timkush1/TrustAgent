@@ -29,9 +29,9 @@ service names (proxy, engine, dashboard) or the image references, and whose valu
 inspect command prints (the manifest list). Tests and rehearsals use it, and notes made from it say
 at the top that their digests were not read from the registry.
 
-A measured agreement with RAGTruth's labels is followed by the like-for-like third-party figure
-(accuracy at the default 0.5 threshold, D212), and each figure with a 95% interval names it with n
-per class. A tape counts as recorded only when its fast-check, judge and generated-answer hosts are
+A measured agreement with RAGTruth's labels is followed by Arize's two figures for Jev (accuracy at
+a 0.5 threshold and at its tuned one), said not to be like for like (D212, D233): its caveat names
+the thresholds our bench flags at. Each figure with a 95% interval names it with n per class. A tape counts as recorded only when its fast-check, judge and generated-answer hosts are
 vendor hosts (D203); one that says "recorded" with another host is refused.
 
 Exit status: 0 notes printed, 1 refused, 2 usage error or an unreadable file.
@@ -70,10 +70,14 @@ CLAIMS_PATH = "contracts/claims/value-claims.v1.json"
 RECORDED_MANIFEST = "frontend-react/demo-data/recorded/manifest.json"
 COMMON_SCHEMA = "contracts/schema/common.v1.schema.json"
 LOAD_RUNS_DIR = "docs/benchmarks/load"
-# Our agreement with RAGTruth's labels is read only beside the like-for-like third-party figure,
-# accuracy at the default 0.5 threshold, never alone or beside the tuned one (D212).
+# Our agreement with RAGTruth's labels is read only beside both of Arize's figures for Jev, at a
+# 0.5 threshold and at its tuned one, never alone; neither is like for like: Arize asks one
+# question, worded differently, and our bench flags at each evaluator's own warn_at (D212, D233).
 AGREEMENT_REFS = ("ragtruth_qa_agreement", "ragtruth_qa_accuracy")
-LIKE_FOR_LIKE_ID = "arize_ragtruth_accuracy_at_default_threshold"
+ARIZE_FIGURE_IDS = ("arize_ragtruth_accuracy_at_default_threshold", "arize_ragtruth_jev_accuracy")
+ARIZE_COMPARISON_LEAD = (
+    "Not like for like: Arize's RAGTruth test of Jev asks one question, worded differently."
+)
 CHIPS = {"estimate": "estimate", "third_party": "third-party", "vendor": "vendor"}
 INTERVAL_METHODS = {"wilson": "Wilson", "bootstrap": "bootstrap"}
 
@@ -264,11 +268,16 @@ def _round_half_up(x: float) -> float:
 
 
 def format_value(value: float, unit: str) -> str:
-    """Same formatting as scripts/check-claims.mjs and the landing page."""
+    """Same formatting as scripts/check-claims.mjs and the landing page: a multiple is whole from
+    10 up (27×, not 26.84×), one decimal below."""
     if unit == "fraction":
         return f"{_round_half_up(value * 1000) / 10:g}%"
     if unit == "usd_per_1k":
         return f"{value:.2f}" if value >= 1 else f"{value:.3f}"
+    if unit == "multiplier":
+        return (
+            f"{_round_half_up(value):g}" if value >= 10 else f"{_round_half_up(value * 10) / 10:g}"
+        )
     return f"{_round_half_up(value * 100) / 100:g}"
 
 
@@ -356,20 +365,25 @@ def figure_caveat(root: Path, measured: Dict[str, Any], claim: Dict[str, Any]) -
     return caveat
 
 
-def like_for_like(claims: List[Dict[str, Any]]) -> str:
-    """The third-party figure a measured agreement is read beside (D212); Refused without it."""
-    like = next((c for c in claims if c.get("id") == LIKE_FOR_LIKE_ID), None)
-    if not like or not like.get("display") or like.get("label") not in CHIPS:
-        raise Refused(
-            f"the RAGTruth agreement is measured, but {CLAIMS_PATH} has no {LIKE_FOR_LIKE_ID} "
-            "to show beside it: an agreement is never published alone (D212)"
+def arize_comparison(claims: List[Dict[str, Any]]) -> str:
+    """Arize's figures a measured agreement is read beside, each with its caveat, said not to be
+    like for like (D212, D233; check-claims writes the README's the same way). Refused without
+    them."""
+    said = [ARIZE_COMPARISON_LEAD]
+    for index, claim_id in enumerate(ARIZE_FIGURE_IDS):
+        claim = next((c for c in claims if c.get("id") == claim_id), None)
+        if not claim or not claim.get("display") or claim.get("label") not in CHIPS:
+            raise Refused(
+                f"the RAGTruth agreement is measured, but {CLAIMS_PATH} has no {claim_id} "
+                "to show beside it: an agreement is never published alone (D212, D233)"
+            )
+        lead = "Its accuracy" if index == 0 else "At its best"
+        caveat = str(claim.get("caveat") or "").strip()
+        said.append(
+            f"{lead}: {claim['display']} [{CHIPS[claim['label']]}]."
+            + (f" {caveat}" if caveat else "")
         )
-    words = re.sub(r":\s*", ", ", str(like.get("text") or ""))
-    line = (
-        f"Like for like (default thresholds): {words}: {like['display']} [{CHIPS[like['label']]}]."
-    )
-    caveat = str(like.get("caveat") or "").strip()
-    return f"{line} {caveat}".rstrip()
+    return " ".join(said)
 
 
 def vendor_hosts(root: Path) -> List[str]:
@@ -432,7 +446,7 @@ def numbers_section(root: Path) -> List[str]:
         snap_text = " and ".join(snap) if isinstance(snap, list) else snap
         lines += shown
         if agreement:
-            lines += ["", like_for_like(claims)]
+            lines += ["", arize_comparison(claims)]
         lines += [
             "",
             f"Measured runs: {', '.join(measured.get('runs') or [])}"

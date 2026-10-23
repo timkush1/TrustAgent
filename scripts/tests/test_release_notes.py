@@ -97,13 +97,21 @@ MEASURED: Dict[str, Any] = {
     },
 }
 
-LIKE_FOR_LIKE = {
+ARIZE_AT_HALF = {
     "id": "arize_ragtruth_accuracy_at_default_threshold",
     "text": "Arize RAGTruth test: Jev accuracy at a 0.5 threshold",
     "unit": "fraction",
     "display": "76% at 0.5",
     "label": "third_party",
     "caveat": "Thresholds need calibrating.",
+}
+ARIZE_TUNED = {
+    "id": "arize_ragtruth_jev_accuracy",
+    "text": "Arize RAGTruth test: Jev accuracy",
+    "unit": "fraction",
+    "display": "87%",
+    "label": "third_party",
+    "caveat": "Reached only at a tuned 0.80 threshold.",
 }
 
 RECORDED_TAPE: Dict[str, Any] = {
@@ -137,7 +145,7 @@ CLAIMS = {
         },
         {
             "id": "ragtruth_qa_agreement_measured",
-            "text": "Our RAGTruth-QA agreement",
+            "text": "Our RAGTruth-QA balanced accuracy",
             "unit": "fraction",
             "display": "{value}",
             "label": "measured",
@@ -158,7 +166,8 @@ CLAIMS = {
             "display": "~$0.21 / 1,000 answers",
             "label": "estimate",
         },
-        LIKE_FOR_LIKE,
+        ARIZE_AT_HALF,
+        ARIZE_TUNED,
     ],
 }
 
@@ -259,22 +268,31 @@ class ReleaseNotesTest(unittest.TestCase):
             "- Our measured fast-check cost: $0.213 / 1,000 answers [measured] (run 20261102T100000Z-abc1234)",
             out,
         )
-        # D212: the agreement with its interval and n per class, then the like-for-like figure.
+        # D212: the agreement with its interval and n per class, then Arize's two figures, said
+        # not to be like for like (D233).
         self.assertIn(
-            "- Our RAGTruth-QA agreement: 81.3% [measured] (run 20261102T100000Z-abc1234). "
+            "- Our RAGTruth-QA balanced accuracy: 81.3% [measured] (run 20261102T100000Z-abc1234). "
             "95% interval 75% to 86% (bootstrap, 2000 resamples); 40 answers with a "
             "hallucination and 160 without.",
             out,
         )
         self.assertIn(
-            "Like for like (default thresholds): Arize RAGTruth test, Jev accuracy at a 0.5 "
-            "threshold: 76% at 0.5 [third-party]. Thresholds need calibrating.",
+            "\n\nNot like for like: Arize's RAGTruth test of Jev asks one question, worded "
+            "differently. Its accuracy: 76% at 0.5 [third-party]. Thresholds need calibrating. "
+            "At its best: 87% [third-party]. Reached only at a tuned 0.80 threshold.\n",
             out,
         )
+        self.assertNotRegex(out, r"(?i)like for like \(|same threshold")
         self.assertNotIn("p50 fast-check latency", out)  # no value in this run: not listed
         self.assertNotIn("~$0.21", out)  # an estimate is not a measured figure
         self.assertIn(f"decision-model snapshot {SNAPSHOT}", out)
         self.assertIn("simulated tape", out)
+
+    def test_values_are_formatted_as_the_readme_and_the_post_say_them(self) -> None:
+        self.assertEqual(rn.format_value(26.84, "multiplier"), "27")
+        self.assertEqual(rn.format_value(3.14, "multiplier"), "3.1")
+        self.assertEqual(rn.format_value(0.8125, "fraction"), "81.3%")
+        self.assertEqual(rn.format_value(0.2134, "usd_per_1k"), "0.213")
 
     def test_a_measured_latency_names_how_it_was_taken(self) -> None:
         """D205, D225: connection, requests at a time, where it ran, snapshot and n."""
@@ -352,21 +370,23 @@ class ReleaseNotesTest(unittest.TestCase):
             self.assertNotIn("[measured]", out)
             self.assertIn("No measured benchmark run is published in this release", out)
 
-    def test_an_agreement_is_never_published_without_the_like_for_like_figure(self) -> None:
-        claims = dict(CLAIMS, claims=[c for c in CLAIMS["claims"] if c is not LIKE_FOR_LIKE])
-        root = make_root(claims_doc=claims)
-        self.addCleanup(shutil.rmtree, root, True)
-        code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
-        self.assertEqual(code, 1)
-        self.assertEqual(out, "")
-        self.assertIn("an agreement is never published alone (D212)", err)
-        # Without a measured agreement the like-for-like figure is not needed.
+    def test_an_agreement_is_never_published_without_both_arize_figures(self) -> None:
+        for gone in (ARIZE_AT_HALF, ARIZE_TUNED):
+            claims = dict(CLAIMS, claims=[c for c in CLAIMS["claims"] if c is not gone])
+            root = make_root(claims_doc=claims)
+            self.addCleanup(shutil.rmtree, root, True)
+            code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+            self.assertEqual(code, 1)
+            self.assertEqual(out, "")
+            self.assertIn(f"has no {gone['id']}", err)
+            self.assertIn("an agreement is never published alone (D212, D233)", err)
+        # Without a measured agreement Arize's figures are not needed.
         values = {k: v for k, v in MEASURED["values"].items() if k != "ragtruth_qa_agreement"}
         root = make_root(claims_doc=claims, measured=dict(MEASURED, values=values))
         self.addCleanup(shutil.rmtree, root, True)
         code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
         self.assertEqual(code, 0, err)
-        self.assertNotIn("Like for like", out)
+        self.assertNotIn("Not like for like", out)
 
     def test_a_recorded_tape_is_named(self) -> None:
         root = make_root(tape=RECORDED_TAPE)

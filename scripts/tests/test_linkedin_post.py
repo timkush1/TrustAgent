@@ -161,7 +161,13 @@ def make_root(
     tape: bool = True,
 ) -> Path:
     root = Path(tempfile.mkdtemp(prefix="linkedin-post-"))
-    for rel in (lp.TEMPLATE_PATH, lp.CLAIMS_PATH, "contracts/schema/common.v1.schema.json"):
+    evaluators = [lp.EVALUATOR_PATH.format(name=name) for name in lp.BENCH_EVALUATORS]
+    for rel in (
+        lp.TEMPLATE_PATH,
+        lp.CLAIMS_PATH,
+        "contracts/schema/common.v1.schema.json",
+        *evaluators,
+    ):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / rel, root / rel)
     (root / lp.MEASURED_PATH).write_text(json.dumps(measured or MEASURED), encoding="utf-8")
@@ -227,7 +233,9 @@ class PostTest(unittest.TestCase):
             "asking the same questions [measured].",
             out,
         )
-        self.assertIn("Our own figures above are from one benchmark run on 2026-10-24.", out)
+        # First person throughout: the post never hints at a team.
+        self.assertIn("Mine above come from one benchmark run on 2026-10-24.", out)
+        self.assertNotRegex(out, r"\b(Our|our) own\b")
         self.assertIn("risky answers plus a small sample get a claim-by-claim LLM audit", out)
         self.assertNotRegex(out, r"\{[a-z][a-z0-9_.:]*\}", "every placeholder is filled")
 
@@ -283,7 +291,7 @@ class PostTest(unittest.TestCase):
         # Jev is the subject of its own sentence: never "the documents ... sent the model by Jev".
         self.assertIn(
             "Jev, TypeSafe AI's decision model (through OpenRouter), checks every answer against "
-            "the documents the app already sent the model. One call answers every check",
+            "the documents the app already sent. One call answers every check",
             out,
         )
         self.assertNotIn("sent the model by Jev", out)
@@ -333,7 +341,7 @@ class PostTest(unittest.TestCase):
         self.assertIn("live mode uses your own OpenRouter key", out)
         self.assertNotIn("no sign-up", out.lower())
 
-    def test_the_agreement_stands_beside_the_like_for_like_figure(self) -> None:
+    def test_the_agreement_names_its_thresholds_and_is_not_like_for_like(self) -> None:
         _, out, _ = run(self.root)
         para = [p for p in out.split("\n\n") if "human labels" in p]
         self.assertEqual(len(para), 1)
@@ -341,20 +349,73 @@ class PostTest(unittest.TestCase):
         # n per class once, for the sample both figures come from (D212).
         self.assertTrue(
             text.startswith(
-                "On a RAGTruth-QA sample (120 hallucinated and 180 faithful answers), at the "
-                "default thresholds"
+                "On a RAGTruth-QA sample (120 hallucinated and 180 faithful answers), the fast "
+                "check matched"
             ),
             text,
         )
         self.assertIn(
             "matched the human labels on 80.4% (95% interval 75.2% to 84.8%) [measured]", text
         )
-        self.assertIn("balanced accuracy 78.1% (95% interval 73.3% to 82.6%) [measured]", text)
-        self.assertIn("76% at 0.5 [third-party]", text)
+        self.assertIn("balanced accuracy 78.1% (73.3% to 82.6%) [measured]", text)
+        # D233: the thresholds the bench really flags at (each evaluator's warn_at), where the
+        # groundedness one came from, and Arize's two figures, said not to be like for like.
         self.assertIn(
-            "Same model, different sample, so any difference is not TrustAgent's doing.", text
+            "It flags at groundedness 0.8 (Arize's tuned cutoff on RAGTruth itself, which may "
+            "favour it) or contradiction 0.7.",
+            text,
         )
-        self.assertNotIn("87%", out, "never beside the tuned-threshold figure (D212)")
+        self.assertIn(
+            "Arize's test of Jev, one question worded differently: 76% at 0.5 [third-party], "
+            "87% at a tuned 0.80 [third-party]. Not like for like;",
+            text,
+        )
+        self.assertNotRegex(text, r"(?i)same (model|threshold)|not TrustAgent's doing")
+
+    def test_the_thresholds_come_from_the_evaluators(self) -> None:
+        root = make_root()
+        self.addCleanup(shutil.rmtree, root, True)
+        path = root / lp.EVALUATOR_PATH.format(name="groundedness")
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        spec["outcomes"]["warn_at"] = 0.65
+        path.write_text(json.dumps(spec), encoding="utf-8")
+        _, out, _ = run(root)
+        self.assertIn("It flags at groundedness 0.65 (", out)
+        # An unreadable threshold leaves the paragraph out: never a cutoff the bench did not use.
+        path.unlink()
+        code, out, err = run(root)
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("human labels", out)
+        self.assertIn("the bench thresholds", err)
+
+    def test_a_computed_cost_says_so(self) -> None:
+        measured = copy.deepcopy(MEASURED)
+        measured["sources"]["fast_check_usd_per_1k"]["cost_source"] = "computed"
+        root = make_root(measured=measured)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root)
+        self.assertEqual(code, 0, err)
+        self.assertIn(
+            f"The benchmark: {COST_CONDITIONS}; the fast check's cost is tokens × price; cost "
+            "grows with document length.",
+            out,
+        )
+        self.assertNotIn("the judge's cost", out)
+
+    def test_an_opening_counts_as_linkedin_counts(self) -> None:
+        root = make_root()
+        self.addCleanup(shutil.rmtree, root, True)
+        path = root / lp.TEMPLATE_PATH
+        # 12 emoji and a space: 13 more characters by len() (141, within 150) but 25 more
+        # UTF-16 units (153): LinkedIn's count is the one that decides what a phone shows.
+        filler = "\U0001F600" * 12
+        text = path.read_text(encoding="utf-8").replace(
+            "TrustAgent, my open-source", filler + " TrustAgent, my open-source", 1
+        )
+        path.write_text(text, encoding="utf-8")
+        code, _, err = run(root)
+        self.assertEqual(code, 2, err)
+        self.assertIn("before '...see more'", err)
 
     def test_an_incomplete_agreement_is_left_out_with_a_note(self) -> None:
         measured = copy.deepcopy(MEASURED)

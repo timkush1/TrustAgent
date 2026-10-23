@@ -44,17 +44,17 @@ TrustAgent, my open-source hallucination gateway: its fast check cost {measured:
 
 I gave it {featured.source}: it promised “{featured.claim}”, but its document says “{featured.evidence}”. TrustAgent {featured.outcome}.
 
-Your app points its OpenAI or Anthropic SDK at a Go gateway. Jev, TypeSafe AI's decision model (through OpenRouter), checks every answer against the documents the app already sent the model. One call answers every check (grounded? contradicts the source? leaks personal data?) with probabilities, not text. Each route's policy then flags, blocks or falls back; risky answers plus a small sample get a claim-by-claim LLM audit.
+Your app points its OpenAI or Anthropic SDK at a Go gateway. Jev, TypeSafe AI's decision model (through OpenRouter), checks every answer against the documents the app already sent. One call answers every check (grounded? contradicted? personal data?) as probabilities. Each route's policy then flags, blocks or falls back; risky answers plus a small sample get a claim-by-claim LLM audit.
 
 The benchmark: {cost.conditions}; cost grows with document length. The fast check took {measured:gate_latency_ms_p50} at the median ({gate.conditions}) and was {measured:same_checks_cost_ratio}× cheaper than {same_checks.judge} asking the same questions [measured].
 
 {agreement}
 
-The finding that changed the design: without source documents, Jev's groundedness scores can invert. Haqq's public test found it ranked fabricated legal citations above honest ones when it had none (link in the first comment). So with nothing to check against, TrustAgent marks an answer "not checked".
+The finding that changed the design: without source documents, Jev's groundedness scores can invert. Haqq's public test found it ranked fabricated legal citations above honest ones (link in the first comment). So with nothing to check against, TrustAgent marks an answer "not checked".
 
 A new check can start as plain English: an LLM drafts it, you test it and watch it in shadow, then Jev runs it on every request.
 
-Every figure in the product carries a label (measured, estimate, vendor, third-party, simulated), checked in CI. Our own figures above are from one benchmark run on {run.date}.
+Every figure in the product carries a label (measured, estimate, vendor, third-party, simulated), checked in CI. Mine above come from one benchmark run on {run.date}.
 
 Designed and directed by me; built with AI coding agents (Claude Code) to plans I approved and decisions I made. Go, Python (LangGraph), React/TypeScript, Postgres, gRPC, Docker.
 
@@ -68,10 +68,12 @@ Code (MIT): https://github.com/timkush1/TrustAgent
 
 `{agreement}` becomes one paragraph only when every part of it is measured: our RAGTruth-QA
 accuracy and balanced accuracy, each with its confidence interval, the number of answers per
-class (said once when both figures come from the same answers), at the default thresholds, beside
-Arize's accuracy at the same 0.5 threshold (never beside Arize's tuned-threshold figure). If any
-part is missing, the command leaves the paragraph out and says so; the agreement then lives in
-the README only (D212).
+class (said once when both figures come from the same answers); the thresholds the bench flags
+at, read from `contracts/evaluators` (groundedness 0.8, which came from Arize's tuned cutoff on
+RAGTruth itself, so the sample may favour it, or contradiction 0.7); then Arize's two figures for
+Jev from the claims contract, at 0.5 and at a tuned 0.80, each with its [third-party] chip, on one
+question worded differently. Neither is like for like, and the paragraph says so (D233). If any part is missing, the command leaves the
+paragraph out and says so; the agreement then lives in the README only (D212).
 
 ## The post, mode R
 
@@ -102,8 +104,9 @@ Code (MIT): https://github.com/timkush1/TrustAgent
 
 ## Notes for posting
 
-- **When.** After Gate C, at the time the owner picks. In mode A, TypeSafe has had the results
-  for 3 days (the courtesy note) and may be tagged only if they said yes.
+- **When.** After Gate C, at the time the owner picks. In mode A, the results went to TypeSafe at
+  least 3 days before the post, as the courtesy note said they would (a box in S3c of the launch
+  checklist), and TypeSafe is tagged only if they said yes.
 - **The video is the post's media**: attach the 60-second launch video (`make launch-video`) to
   the post itself, not to a comment.
 - **First comment**: the Haqq link the post promises,

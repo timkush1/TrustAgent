@@ -35,9 +35,11 @@ Placeholders:
                        "76% at 0.5 [third-party]"
   {run.date}           the measured run's date; {run.ids} its run ids; {snapshot} its snapshot
   {agreement}          a paragraph built here: our RAGTruth-QA accuracy and balanced accuracy, each
-                       with its 95% interval and n per class, at default thresholds, beside the
-                       like-for-like third-party accuracy at a 0.5 threshold (D212). When any part
-                       is missing the paragraph is left out (the agreement then lives in the
+                       with its 95% interval and n per class; the thresholds the bench flags at
+                       (each bench evaluator's warn_at, read from contracts/evaluators) and where
+                       the groundedness one came from; then Arize's figures for Jev, at 0.5 and at
+                       its tuned threshold, said not to be like for like (D212, D233). When any
+                       part is missing the paragraph is left out (the agreement then lives in the
                        README only) and a note says so.
   {roles}              at the start of a line: the line is printed only with --roles
 
@@ -76,7 +78,15 @@ CLAIMS_PATH = "contracts/claims/value-claims.v1.json"
 RECORDED_DIR = "frontend-react/demo-data/recorded"
 POST_HEADING = "## The post"
 RESTRICTED_HEADING = "## The post, mode R"
-LIKE_FOR_LIKE_ID = "arize_ragtruth_accuracy_at_default_threshold"
+# D233: Arize's figures for Jev on RAGTruth, at a 0.5 threshold, at its tuned one, and that
+# threshold. Neither accuracy is like for like with ours (one question, worded differently).
+ARIZE_AT_HALF_ID = "arize_ragtruth_accuracy_at_default_threshold"
+ARIZE_TUNED_ID = "arize_ragtruth_jev_accuracy"
+ARIZE_THRESHOLD_ID = "arize_ragtruth_tuned_threshold"
+# The evaluators the bench's fast check runs (backend-python/evals/judges.py DEFAULT_EVALUATORS);
+# the bench flags an answer when any of them reaches its warn_at.
+BENCH_EVALUATORS = ("groundedness", "contradiction")
+EVALUATOR_PATH = "contracts/evaluators/{name}.v1.json"
 CHIPS = {
     "measured": "measured",
     "estimate": "estimate",
@@ -118,6 +128,8 @@ class Sources:
     manifest: Optional[Dict[str, Any]]
     trace: Optional[Dict[str, Any]]
     problems: List[str] = field(default_factory=list)
+    # Each bench evaluator's warn_at as the post says it ("0.8"); None when one is unreadable.
+    thresholds: Optional[Dict[str, str]] = None
 
 
 # ------------------------------------------------------------------------------ reading
@@ -146,13 +158,36 @@ def template(text: str, heading: str) -> str:
     return block.group(1)
 
 
+def read_thresholds(root: Path) -> Optional[Dict[str, str]]:
+    """Each bench evaluator's warn_at, as the post says it ("0.8"), or None when one is
+    unreadable (D233: the post never names a cutoff the bench did not use)."""
+    out: Dict[str, str] = {}
+    for name in BENCH_EVALUATORS:
+        try:
+            spec = _read_json(root / EVALUATOR_PATH.format(name=name))
+        except UsageError:
+            return None
+        outcomes = spec.get("outcomes") if isinstance(spec, dict) else None
+        warn_at = outcomes.get("warn_at") if isinstance(outcomes, dict) else None
+        if not isinstance(warn_at, (int, float)) or isinstance(warn_at, bool):
+            return None
+        out[name] = f"{warn_at:g}"
+    return out
+
+
 def read_sources(root: Path, need_tape: bool) -> Sources:
     measured = _read_json(root / MEASURED_PATH) or {}
     claims_doc = _read_json(root / CLAIMS_PATH) or {}
     claims = {
         c["id"]: c for c in claims_doc.get("claims") or [] if isinstance(c, dict) and "id" in c
     }
-    src = Sources(measured=measured, claims=claims, manifest=None, trace=None)
+    src = Sources(
+        measured=measured,
+        claims=claims,
+        manifest=None,
+        trace=None,
+        thresholds=read_thresholds(root),
+    )
     if not need_tape:
         return src
     manifest = _read_json(root / RECORDED_DIR / "manifest.json")
@@ -208,9 +243,6 @@ def measured_value(src: Sources, key: str) -> Optional[float]:
 
 def show(value: float, unit: str) -> str:
     """A measured value as the README shows it (scripts/check-claims.mjs formatting)."""
-    if unit == "multiplier":
-        # Rounded for the post, as the README rounds its estimate (27×, not 26.84×).
-        return str(round(value)) if value >= 10 else f"{value:.1f}".rstrip("0").rstrip(".")
     text = format_value(value, unit)
     if unit == "ms":
         return f"{text} ms"
@@ -308,13 +340,28 @@ def gate_conditions(src: Sources) -> Optional[str]:
     return text.strip() if isinstance(text, str) and text.strip() else None
 
 
+# How a cost the vendor did not report is said (the README says "Measured tokens × vendor price").
+COMPUTED_COSTS = (
+    ("fast_check_usd_per_1k", "the fast check's cost is tokens × price"),
+    ("llm_same_checks_usd_per_1k", "the judge's cost is tokens × price"),
+)
+
+
 def cost_conditions(src: Sources) -> Optional[str]:
-    """measured.json sources.fast_check_usd_per_1k.conditions (D229), from a measured run only."""
+    """measured.json sources.fast_check_usd_per_1k.conditions (D229), from a measured run only;
+    a cost computed from tokens × price, not reported by the vendor, says so."""
     if not measured_run(src):
         return None
-    entry = (src.measured.get("sources") or {}).get("fast_check_usd_per_1k") or {}
-    text = entry.get("conditions")
-    return text.strip() if isinstance(text, str) and text.strip() else None
+    sources = src.measured.get("sources") or {}
+    text = (sources.get("fast_check_usd_per_1k") or {}).get("conditions")
+    if not isinstance(text, str) or not text.strip():
+        return None
+    computed = [
+        words
+        for key, words in COMPUTED_COSTS
+        if (sources.get(key) or {}).get("cost_source") == "computed"
+    ]
+    return "; ".join([text.strip(), *computed])
 
 
 def judge_name(model: str) -> str:
@@ -360,21 +407,37 @@ def _answers(counts: Tuple[int, int]) -> str:
     return f"{counts[0]} hallucinated and {counts[1]} faithful answers"
 
 
+def arize_figures(src: Sources) -> Optional[str]:
+    """Arize's two figures for Jev with their chips: "76% at 0.5 [third-party], 87% at a tuned
+    0.80 [third-party]" (D233), or None when a claim is missing."""
+    at_half = claim_text(src, ARIZE_AT_HALF_ID)
+    tuned = src.claims.get(ARIZE_TUNED_ID) or {}
+    threshold = src.claims.get(ARIZE_THRESHOLD_ID) or {}
+    chip = CHIPS.get(str(tuned.get("label")))
+    if at_half is None or not chip or not tuned.get("display") or not threshold.get("display"):
+        return None
+    return f"{at_half}, {tuned['display']} at a tuned {threshold['display']} [{chip}]"
+
+
 def agreement(src: Sources) -> Tuple[Optional[str], List[str]]:
-    """(the paragraph, what is missing). D212: never alone, never beside the tuned figure, each
-    figure with its 95% interval and n per class (said once when both figures share the sample)."""
+    """(the paragraph, what is missing). D212, D233: never alone; each figure with its 95%
+    interval and n per class (said once when both figures share the sample); the thresholds the
+    bench flags at, and where the groundedness one came from; then Arize's figures for Jev, said
+    not to be like for like."""
     missing = []
     accuracy = measured_value(src, "ragtruth_qa_accuracy")
     balanced = measured_value(src, "ragtruth_qa_agreement")
     acc_int = _interval(src, "ragtruth_qa_accuracy", "fraction")
     bal_int = _interval(src, "ragtruth_qa_agreement", "fraction")
-    like = claim_text(src, LIKE_FOR_LIKE_ID)
+    thresholds = src.thresholds
+    arize = arize_figures(src)
     for name, value in (
         ("ragtruth_qa_accuracy", accuracy),
         ("ragtruth_qa_agreement", balanced),
         ("the interval of ragtruth_qa_accuracy (with n per class)", acc_int),
         ("the interval of ragtruth_qa_agreement (with n per class)", bal_int),
-        (f"the like-for-like claim {LIKE_FOR_LIKE_ID}", like),
+        ("the bench thresholds (warn_at in contracts/evaluators)", thresholds),
+        (f"Arize's figures ({ARIZE_AT_HALF_ID}, {ARIZE_TUNED_ID}, {ARIZE_THRESHOLD_ID})", arize),
     ):
         if value is None:
             missing.append(name)
@@ -382,19 +445,23 @@ def agreement(src: Sources) -> Tuple[Optional[str], List[str]]:
         return None, missing
     # For the type checker: every part is present.
     assert accuracy is not None and balanced is not None and acc_int and bal_int
+    assert thresholds is not None and arize is not None
     if acc_int[1] == bal_int[1]:
         sample = f"On a RAGTruth-QA sample ({_answers(acc_int[1])})"
-        acc_words, bal_words = acc_int[0], bal_int[0]
+        # The second interval follows the first: "95% interval" is said once.
+        acc_words, bal_words = acc_int[0], bal_int[0].replace("95% interval ", "", 1)
     else:
         sample = "On a RAGTruth-QA sample"
         acc_words = f"{acc_int[0]}, {_answers(acc_int[1])}"
         bal_words = f"{bal_int[0]}, {_answers(bal_int[1])}"
     text = (
-        f"{sample}, at the default thresholds, the fast check matched the human labels on "
-        f"{show(accuracy, 'fraction')} ({acc_words}) [measured]; balanced accuracy "
-        f"{show(balanced, 'fraction')} ({bal_words}) [measured]. Arize's test of Jev at the same "
-        f"threshold: {like}. Same model, different sample, so any difference is not TrustAgent's "
-        f"doing. RAGTruth is public, so the model may have seen it in training."
+        f"{sample}, the fast check matched the human labels on {show(accuracy, 'fraction')} "
+        f"({acc_words}) [measured]; balanced accuracy {show(balanced, 'fraction')} ({bal_words}) "
+        f"[measured]. It flags at groundedness {thresholds['groundedness']} (Arize's tuned cutoff "
+        f"on RAGTruth itself, which may favour it) or contradiction "
+        f"{thresholds['contradiction']}. Arize's test of Jev, one question worded differently: "
+        f"{arize}. Not like for like; RAGTruth is public, so the model may have seen it in "
+        f"training."
     )
     return text, []
 
@@ -523,10 +590,10 @@ def check_honesty(text: str, src: Sources) -> None:
             f"fits; cut {length - MAX_POST_CHARS:,} or more from the template in {TEMPLATE_PATH}"
         )
     opening = text.split("\n", 1)[0]
-    if len(opening) > OPENING_MAX or "TrustAgent" not in opening:
+    if post_length(opening) > OPENING_MAX or "TrustAgent" not in opening:
         raise UsageError(
             f"the first line must name TrustAgent within {OPENING_MAX} characters so a phone "
-            f"shows it before '...see more' (it has {len(opening)}): {opening!r}"
+            f"shows it before '...see more' (it has {post_length(opening)}): {opening!r}"
         )
     if re.search(r"\bmy (support )?bot\b", text, re.IGNORECASE):
         raise UsageError(
