@@ -17,6 +17,7 @@ import pytest
 from evals.examples import DatasetManifest
 from evals.judges import (
     CASCADE_RESPONSE,
+    DEFAULT_EVALUATORS,
     FAILED,
     GATE,
     LLM_FULL_AUDIT,
@@ -31,6 +32,7 @@ from evals.report import (
     HOLDOUT_REPORT_NAME,
     LABEL_MEASURED,
     LABEL_SIMULATED,
+    VALUE_DESCRIPTIONS,
     BenchmarkSchemaError,
     MockOutputRefused,
     PublishRefused,
@@ -834,6 +836,39 @@ def test_measured_values_come_from_the_newest_run_that_measures_them() -> None:
     nothing = derive_measured([], previous, "2026-09-28T00:00:00Z")
     assert nothing["status"] == "not_measured" and nothing["runs"] == [] and nothing["tier"] is None
     assert schema_errors(nothing, "measured.v1.schema.json") == []
+
+
+def test_the_accuracy_values_say_what_they_are_never_like_for_like() -> None:
+    """D233: the bench flags at each evaluator's own warn_at (groundedness 0.8, contradiction
+    0.7), so its plain accuracy is not like for like with a third party's accuracy at 0.5.
+    Publish writes what the two values are, whatever the previous measured.json said, and the
+    bench fixtures say the same."""
+    previous = json.loads(contract_path("claims/measured.json").read_text())
+    previous["values"]["ragtruth_qa_accuracy"]["description"] = "The like-for-like figure."
+    derived = derive_measured([], previous, "2026-09-28T00:00:00Z")
+    assert set(VALUE_DESCRIPTIONS) == {"ragtruth_qa_accuracy", "ragtruth_qa_agreement"}
+    for key, description in VALUE_DESCRIPTIONS.items():
+        assert derived["values"][key]["description"] == description
+        assert "like-for-like" not in description and "default thresholds" in description
+    assert schema_errors(derived, "measured.v1.schema.json") == []
+    fixtures = sorted((contracts_dir() / "fixtures" / "bench").glob("measured.*.json"))
+    assert fixtures
+    for path in fixtures:
+        values = json.loads(path.read_text())["values"]
+        for key, description in VALUE_DESCRIPTIONS.items():
+            assert values[key]["description"] == description, path.name
+
+
+def test_the_agreement_caveats_name_the_thresholds_the_bench_flags_at() -> None:
+    """D233: the gate flags at each bench evaluator's warn_at; the claims say exactly those."""
+    claims = json.loads(contract_path("claims/value-claims.v1.json").read_text())["claims"]
+    caveats = [c["caveat"] for c in claims if c.get("measured_ref") in VALUE_DESCRIPTIONS]
+    assert len(caveats) == 2
+    for ref in DEFAULT_EVALUATORS:
+        name = ref.split("@")[0]
+        spec = json.loads(contract_path(f"evaluators/{name}.v1.json").read_text())
+        for caveat in caveats:
+            assert f"{name} {spec['outcomes']['warn_at']:g}" in caveat
 
 
 def test_a_measured_gate_latency_carries_its_conditions() -> None:

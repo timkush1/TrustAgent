@@ -68,14 +68,14 @@
     "ragtruth_qa_agreement": {
       "value": 0.77,
       "unit": "fraction",
-      "description": "Balanced accuracy of the fast check on the RAGTruth-QA subset.",
+      "description": "Balanced accuracy of the fast check on the RAGTruth-QA subset, at TrustAgent's default thresholds.",
       "run_id": "lite-p6-fixture",
       "system": "gate"
     },
     "ragtruth_qa_accuracy": {
       "value": 0.82,
       "unit": "fraction",
-      "description": "Plain accuracy of the fast check on the RAGTruth-QA subset at default thresholds (the like-for-like figure for third-party accuracy).",
+      "description": "Plain accuracy of the fast check on the RAGTruth-QA subset, at TrustAgent's default thresholds (the measure third-party tests report; not like for like with them).",
       "run_id": "lite-p6-fixture",
       "system": "gate"
     },

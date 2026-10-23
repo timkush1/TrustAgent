@@ -684,6 +684,8 @@ function measuredProblems(m) {
 const measured = get('claims/measured.json');
 if (measured) for (const p of measuredProblems(measured)) error('claims/measured.json', p.replace(/^[a-z_]+: /, ''));
 
+// The evaluators the bench's fast check runs (backend-python/evals/judges.py DEFAULT_EVALUATORS).
+const BENCH_EVALUATORS = ['groundedness', 'contradiction'];
 const claims = get('claims/value-claims.v1.json');
 const claimIds = new Set();
 if (claims) {
@@ -738,6 +740,20 @@ if (claims) {
       if (!pair) error(REL, `${c.id}: measured_pair ${c.measured_pair} is not a claim`);
       else if (pair.label !== 'measured') error(REL, `${c.id}: measured_pair ${c.measured_pair} is a ${pair.label} claim, not measured`);
       else if (pair.unit !== c.unit) error(REL, `${c.id}: unit ${c.unit} differs from its measured_pair ${c.measured_pair} unit ${pair.unit}`);
+    }
+  }
+  // D233: the bench flags an answer at each bench evaluator's warn_at, so the caveat of our
+  // RAGTruth agreement names those thresholds exactly (the README, the site and the release notes
+  // show it), and never another cutoff.
+  for (const c of claims.claims) {
+    if (!['ragtruth_qa_agreement', 'ragtruth_qa_accuracy'].includes(c.measured_ref)) continue;
+    for (const name of BENCH_EVALUATORS) {
+      const warnAt = get(`evaluators/${name}.v1.json`)?.outcomes?.warn_at;
+      if (typeof warnAt !== 'number') {
+        error(REL, `${c.id}: evaluators/${name}.v1.json gives no warn_at, so its caveat's threshold cannot be checked (D233)`);
+      } else if (!(c.caveat ?? '').includes(`${name} ${warnAt}`)) {
+        error(REL, `${c.id}: its caveat must name the threshold the bench flags at, "${name} ${warnAt}" (evaluators/${name}.v1.json warn_at, D233)`);
+      }
     }
   }
   const paired = claims.claims.filter((c) => c.measured_pair !== undefined).map((c) => c.measured_pair);

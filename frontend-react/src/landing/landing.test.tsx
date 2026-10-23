@@ -22,7 +22,7 @@ import { digest } from 'virtual:trustagent/tape-digest';
 import claimsDoc from '@contracts/claims/value-claims.v1.json';
 import { priceCall } from '@/lib/decision/cost';
 import { OurMeasurements } from './Affordable';
-import { claim, costConditionsKey, fillCaveat, intervalText, LABEL_TEXT, landingClaims, optionalClaim, splitClaims, type ClaimView } from './claims';
+import { claim, costConditionsKey, fillCaveat, formatValue, intervalText, LABEL_TEXT, landingClaims, optionalClaim, splitClaims, type ClaimView } from './claims';
 import { commonReadDate, compareRows } from './compareData';
 import { command as landingCommand, copy as landingCopy, DEMO_HREF, REFUND } from './content';
 import { auditShareWords, defaultCalculatorInputs, formatMultiple, judgeOptions, modelName, monthlyCost, PRICE_TABLE, referenceJudge, type CalculatorInputs } from './costModel';
@@ -159,7 +159,7 @@ describe('landing page', () => {
     expect(within(screen.getByRole('main')).queryAllByText(/not yet measured/i)).toHaveLength(0);
     expect(document.querySelector('[data-value-label="measured"]')).toBeNull();
     const measured = document.querySelector('[data-measured]') as HTMLElement;
-    expect(measured).toHaveTextContent('Not published yet: our measured fast-check cost, our p50 fast-check latency and our RAGTruth-QA agreement.');
+    expect(measured).toHaveTextContent('Not published yet: our measured fast-check cost, our p50 fast-check latency and our RAGTruth-QA balanced accuracy.');
   });
 
   it('lists the source of every landing claim, judge price and comparison cell in the footer', async () => {
@@ -788,15 +788,24 @@ describe('our measurements', () => {
     const chip = block.querySelector('[data-value-label="measured"]') as HTMLElement;
     expect(chip).toHaveAttribute('href', '#source-ragtruth_qa_agreement_measured');
     const scope = chip.closest('[data-caveat-scope]') as HTMLElement;
-    expect(scope).toHaveTextContent(/Our RAGTruth-QA agreement:\s*81\.3%/);
-    // The caveat says it is read at default thresholds against Arize's accuracy at 0.5.
+    expect(scope).toHaveTextContent(/Our RAGTruth-QA balanced accuracy:\s*81\.3%/);
+    // D233: the caveat names the thresholds the bench flags at, and says Arize's figures above are
+    // not like for like (never "the same threshold").
     expect(scope.querySelector('[data-caveat-for="ragtruth_qa_agreement_measured"]')).toHaveTextContent(agreement.caveat ?? '');
-    expect(agreement.caveat).toMatch(/default thresholds/);
+    expect(agreement.caveat).toMatch(/groundedness 0\.8 or contradiction 0\.7/);
+    expect(agreement.caveat).toMatch(/Not like for like with Arize's Jev figures/);
+    expect(agreement.caveat).not.toMatch(/same threshold|0\.5/);
     const interval = scope.querySelector('[data-interval-for="ragtruth_qa_agreement_measured"]') as HTMLElement;
     expect(interval).toHaveTextContent('95% interval 75% to 86% (bootstrap, 2000 resamples); 40 answers with a hallucination and 160 without.');
     // Its figures sit in the chip's scope, as every figure on the page does.
     expect(interval.closest('[data-chip-scope]')?.querySelector('[data-value-label]')).not.toBeNull();
     expect(block).toHaveTextContent('Still to publish: our measured fast-check cost.');
+  });
+
+  it('formats a measured multiple as the README, the release notes and the post do (27×, not 26.84×)', () => {
+    expect(formatValue(26.84, 'multiplier')).toBe('27');
+    expect(formatValue(3.14, 'multiplier')).toBe('3.1');
+    expect(formatValue(0.2134, 'usd_per_1k')).toBe('0.213');
   });
 
   it('words an interval as the README does, and gives none before a run', () => {

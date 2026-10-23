@@ -40,9 +40,10 @@
  *   [pair-unknown]        an estimate's measured_pair names no measured claim
  *   [pair-divergence]     an estimate and its measured pair differ by more than 2× (a warning;
  *                         an error with --launch until the estimate's figure or wording is updated)
- *   [agreement-alone]     our RAGTruth agreement or accuracy is shown in a section without the
- *                         like-for-like third-party figure (accuracy at a 0.5 threshold); a warning
- *                         once the value is measured, an error with --launch (D212)
+ *   [agreement-alone]     our RAGTruth agreement or accuracy is shown in a section without both of
+ *                         Arize's figures for Jev (accuracy at a 0.5 threshold and at its tuned
+ *                         one; neither is like for like, D233); a warning once the value is
+ *                         measured, an error with --launch (D212)
  *   [third-party-stale]   (warning) a third-party claim's as_of is more than 120 days old
  *   [reverify-open]       (warning) a claim still says what must be re-checked before launch
  *                         (an error with --launch)
@@ -104,8 +105,12 @@ export const PAIR_MAX_RATIO = 2;
 export const MAX_FAILURE_RATE = 0.05;
 /** The measured values that are our agreement with RAGTruth's labels (D212). */
 export const AGREEMENT_REFS = ['ragtruth_qa_agreement', 'ragtruth_qa_accuracy'];
-/** The like-for-like third-party figure every agreement is shown beside (D212, H-9). */
-export const LIKE_FOR_LIKE_ID = 'arize_ragtruth_accuracy_at_default_threshold';
+/**
+ * Arize's figures for Jev on RAGTruth that every agreement of ours is shown beside (D212, D233):
+ * its accuracy at a 0.5 threshold, then at its tuned one. Neither is like for like: Arize asks one
+ * question, worded differently, and our bench flags at each evaluator's own warn_at.
+ */
+export const ARIZE_FIGURE_IDS = ['arize_ragtruth_accuracy_at_default_threshold', 'arize_ragtruth_jev_accuracy'];
 /** The files whose holder or author stays a placeholder until the owner names it (D216, S1). */
 export const OWNER_PLACEHOLDER = '{{OWNER_LEGAL_NAME}}';
 export const OWNER_FILES = ['LICENSE', 'frontend-react/package.json', 'backend-python/pyproject.toml'];
@@ -337,10 +342,14 @@ function caveatPattern(caveat) {
 // ---------------------------------------------------------------------------------------------
 // Claims and measured values
 
-/** Same formatting as the landing page (frontend-react/src/landing/claims.ts). */
+/**
+ * Same formatting as the landing page (frontend-react/src/landing/claims.ts), the release notes and
+ * the post. A multiple is whole from 10 up (27×, not a spurious 26.84×), one decimal below.
+ */
 export function formatValue(value, unit) {
   if (unit === 'fraction') return `${Math.round(value * 1000) / 10}%`;
   if (unit === 'usd_per_1k') return value >= 1 ? value.toFixed(2) : value.toFixed(3);
+  if (unit === 'multiplier') return String(value >= 10 ? Math.round(value) : Math.round(value * 10) / 10);
   return String(Math.round(value * 100) / 100);
 }
 
@@ -503,15 +512,20 @@ function measuredNote(claim, measured) {
 }
 
 /**
- * The like-for-like third-party figure, written after a measured agreement (D212): with its
- * marker where the claim is written for both the readme and the docs, as plain text otherwise.
+ * Arize's figures for Jev, written after a measured agreement (D212, D233), each with its caveat:
+ * with its marker where the claim is written for both the readme and the docs, as plain text
+ * otherwise. Our thresholds are in the agreement row's caveat just above.
  */
-function likeForLikeLine(claims) {
-  const c = claims.claims.find((x) => x.id === LIKE_FOR_LIKE_ID);
-  if (!c) return null;
-  const marked = SURFACES.every((s) => c.surfaces.includes(s));
-  const figure = `${marked ? `<!-- claim:${c.id} --> ` : ''}${c.display} [${LABEL_CHIPS[c.label]}]`;
-  return `Like for like (default thresholds): ${c.text.replace(/:\s*/g, ', ')}: ${figure}. ${c.caveat ?? ''}`.trimEnd();
+export const ARIZE_COMPARISON_LEAD = "Not like for like: Arize's RAGTruth test of Jev asks one question, worded differently.";
+function arizeComparisonLine(claims) {
+  const figures = ARIZE_FIGURE_IDS.map((id) => claims.claims.find((x) => x.id === id));
+  if (figures.some((c) => !c)) return null;
+  const said = figures.map((c, i) => {
+    const marked = SURFACES.every((s) => c.surfaces.includes(s));
+    const figure = `${marked ? `<!-- claim:${c.id} --> ` : ''}${c.display} [${LABEL_CHIPS[c.label]}]`;
+    return `${i === 0 ? 'Its accuracy' : 'At its best'}: ${figure}. ${c.caveat ?? ''}`.trimEnd();
+  });
+  return [ARIZE_COMPARISON_LEAD, ...said].join(' ');
 }
 
 /**
@@ -519,7 +533,7 @@ function likeForLikeLine(claims) {
  * Before a measured run is published, one sentence. After it, proxy overhead gets a table
  * of its own after the fast-check results, so it never sits next to the fast check's latency
  * (D118); a value the run did not cover says "not yet measured" without the [measured] chip; an
- * agreement row is followed by the like-for-like third-party figure (D212).
+ * agreement row is followed by Arize's figures, said not to be like for like (D212, D233).
  */
 export function renderMeasuredBlock(claims, measured, read, loadRuns = []) {
   const problems = [];
@@ -558,8 +572,8 @@ export function renderMeasuredBlock(claims, measured, read, loadRuns = []) {
   const overhead = listed.filter((c) => isProxyOverhead(c, measured)).map(row);
   if (results.length) lines.push(...table(results), '');
   const agreement = resultClaims.some((c) => AGREEMENT_REFS.includes(c.measured_ref) && shownValue(c, measured) !== null);
-  const like = agreement ? likeForLikeLine(claims) : null;
-  if (like) lines.push(like, '');
+  const comparison = agreement ? arizeComparisonLine(claims) : null;
+  if (comparison) lines.push(comparison, '');
   if (overhead.length) lines.push(OVERHEAD_INTRO, '', ...table(overhead), '');
   const details = [measured.generated_by, measured.generated_at?.slice(0, 10), snapshotText(measured)].filter(Boolean).join(', ');
   lines.push(
@@ -759,7 +773,7 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
   const problems = [];
   const report = (level, rule, file, line, message) => problems.push({ level, rule, file, line, message });
   const byId = new Map(claims.claims.map((c) => [c.id, c]));
-  const like = byId.get(LIKE_FOR_LIKE_ID) ?? null;
+  const arize = ARIZE_FIGURE_IDS.map((id) => byId.get(id));
   const block = renderMeasuredBlock(claims, measured, read, loadRuns);
   const blockRule = (p) => {
     if (p.includes('sources.gate_latency')) return 'latency-conditions';
@@ -900,21 +914,21 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
         `"${hit.sentence.slice(0, 120)}" calls OpenRouter PKCE verified, but ${SPEC_PATH} Appendix D records no dated verification for it`);
     }
 
-    // D212: our agreement is read beside the like-for-like third-party figure (accuracy at a 0.5
-    // threshold), never alone and never only beside the tuned-threshold one.
-    if (like) {
+    // D212, D233: our agreement is read beside both of Arize's figures (at a 0.5 threshold and at
+    // its tuned one), never alone and never beside one of them only: neither is like for like.
+    if (arize.every(Boolean)) {
       for (const section of sections(masked)) {
         const agreed = markers.filter((mk) => mk.line >= section.from && mk.line < section.to)
           .map((mk) => byId.get(mk.id))
           .filter((c) => c && c.label === 'measured' && AGREEMENT_REFS.includes(c.measured_ref));
         if (!agreed.length) continue;
         const text = normalize(visible.slice(section.from, section.to).join(' '));
-        if (text.includes(normalize(like.display))) continue;
+        if (arize.every((c) => text.includes(normalize(c.display)))) continue;
         const shown = agreed.filter((c) => shownValue(c, measured) !== null);
         if (!launch && !shown.length) continue;
         report(launch ? 'error' : 'warn', 'agreement-alone', file, section.from + 1,
-          `${agreed.map((c) => c.id).join(', ')} must be shown beside ${like.id} ("${like.display}"), the like-for-like ` +
-            'figure at default thresholds, in the same section (D212)');
+          `${agreed.map((c) => c.id).join(', ')} must be shown beside Arize's figures ` +
+            `${arize.map((c) => `${c.id} ("${c.display}")`).join(' and ')} in the same section, and neither is like for like (D212, D233)`);
       }
     }
   }
@@ -1286,9 +1300,12 @@ const FIXTURE_CLAIMS = {
     { id: 'meas_agree', text: 'Our RAGTruth-QA agreement', value: null, unit: 'fraction', display: '{value}',
       empty_display: 'not yet measured', label: 'measured', basis: 'b', source_url: null, as_of: null, caveat: null,
       measured_ref: 'ragtruth_qa_agreement', surfaces: ['readme', 'docs'] },
-    { id: LIKE_FOR_LIKE_ID, text: 'Arize RAGTruth test: Jev accuracy at a 0.5 threshold', value: 0.76, unit: 'fraction',
+    { id: ARIZE_FIGURE_IDS[0], text: 'Arize RAGTruth test: Jev accuracy at a 0.5 threshold', value: 0.76, unit: 'fraction',
       display: '76% at 0.5', label: 'third_party', basis: 'b', source_url: 'https://example.com/a', as_of: TODAY,
       caveat: 'Thresholds need calibrating.', surfaces: ['landing', 'readme', 'docs'] },
+    { id: ARIZE_FIGURE_IDS[1], text: 'Arize RAGTruth test: Jev accuracy', value: 0.87, unit: 'fraction',
+      display: '88%', label: 'third_party', basis: 'b', source_url: 'https://example.com/a', as_of: TODAY,
+      caveat: 'Only at a tuned threshold.', surfaces: ['landing', 'readme', 'docs'] },
   ],
 };
 
@@ -1787,7 +1804,7 @@ const CASES = [
     expect: ['pair-unknown'],
   },
   {
-    name: 'a measured agreement beside the like-for-like figure passes',
+    name: "a measured agreement beside both of Arize's figures passes (D233)",
     measured: MEASURED,
     read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
     files: {
@@ -1795,13 +1812,14 @@ const CASES = [
         '## Accuracy',
         'Ours: <!-- claim:meas_agree --> 81.3% [measured].',
         '',
-        'Like for like: <!-- claim:arize_ragtruth_accuracy_at_default_threshold --> 76% at 0.5 [third-party]. Thresholds need calibrating.',
+        'Not like for like: <!-- claim:arize_ragtruth_accuracy_at_default_threshold --> 76% at 0.5 [third-party]. Thresholds need calibrating.',
+        'At its best: <!-- claim:arize_ragtruth_jev_accuracy --> 88% [third-party]. Only at a tuned threshold.',
       ].join('\n'),
     },
     expect: [],
   },
   {
-    name: 'a measured agreement alone, or beside the tuned figure only, warns; --launch refuses it',
+    name: "a measured agreement alone, or beside one of Arize's figures only, warns; --launch refuses it",
     measured: MEASURED,
     read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
     files: {
@@ -1809,13 +1827,17 @@ const CASES = [
         '## Accuracy',
         'Ours: <!-- claim:meas_agree --> 81.3% [measured], against <!-- claim:tp_fresh --> 87% [third-party].',
         '',
+        '## At 0.5 only',
+        'Ours: <!-- claim:meas_agree --> 81.3% [measured].',
+        '<!-- claim:arize_ragtruth_accuracy_at_default_threshold --> 76% at 0.5 [third-party]. Thresholds need calibrating.',
+        '',
         '## Elsewhere',
-        'Like for like: <!-- claim:arize_ragtruth_accuracy_at_default_threshold --> 76% at 0.5 [third-party]. Thresholds need calibrating.',
+        '<!-- claim:arize_ragtruth_jev_accuracy --> 88% [third-party]. Only at a tuned threshold.',
       ].join('\n'),
     },
     expect: [],
-    warnings: ['agreement-alone', 'third-party-stale'],
-    variants: [{ launch: true, compare: COMPARE(REVIEWED_CELL), read: LAUNCH_READY, expect: ['agreement-alone'], warnings: ['third-party-stale'] }],
+    warnings: ['agreement-alone', 'agreement-alone', 'third-party-stale'],
+    variants: [{ launch: true, compare: COMPARE(REVIEWED_CELL), read: LAUNCH_READY, expect: ['agreement-alone', 'agreement-alone'], warnings: ['third-party-stale'] }],
   },
   {
     name: 'an agreement not measured yet does not need the comparison until --launch',
@@ -1969,7 +1991,8 @@ function selfTestRun(check) {
         measuredText.includes('measured on Test CPU, 10 logical CPUs and 8 GB RAM visible to Linux') &&
         measuredText.includes(`From the measured runs bench-1, load-1 (bench-publish, 2026-11-02, decision-model snapshot ${SNAPSHOT}).`) &&
         measuredText.includes('<!-- claim:meas_agree --> 81.3% [measured]') &&
-        measuredText.includes(`<!-- claim:${LIKE_FOR_LIKE_ID} --> 76% at 0.5 [third-party]`),
+        measuredText.includes(`<!-- claim:${ARIZE_FIGURE_IDS[0]} --> 76% at 0.5 [third-party]`) &&
+        measuredText.includes(`<!-- claim:${ARIZE_FIGURE_IDS[1]} --> 88% [third-party]`),
       measuredText);
 
     const launch = scan({ launch: true });
@@ -2028,7 +2051,7 @@ export function selfTest() {
   // Generated blocks pass their own rules, measured or not, in the README and in a launch draft
   // (whose figures need markers: the block's interval and notes are exempt, being generated).
   const PARTIAL = { ...MEASURED, values: { ...MEASURED.values, gate_latency_ms_p50: { ...MEASURED.values.gate_latency_ms_p50, value: null } } };
-  for (const [name, measured, markers] of [['not measured', NOT_MEASURED, 0], ['measured', MEASURED, 5], ['partly measured', PARTIAL, 5]]) {
+  for (const [name, measured, markers] of [['not measured', NOT_MEASURED, 0], ['measured', MEASURED, 6], ['partly measured', PARTIAL, 6]]) {
     const read = (p) => (p === `${LOAD_RUNS_DIR}/load-1.json` ? Buffer.from(JSON.stringify(LOAD_RUN)) : null);
     const block = renderMeasuredBlock(FIXTURE_CLAIMS, measured, read);
     const text = ['<!-- measured:start -->', ...block.lines, '<!-- measured:end -->'].join('\n');
@@ -2057,9 +2080,13 @@ export function selfTest() {
     check('generated block (measured): the agreement row has its interval and n per class (D212)',
       agree.includes('81.3% [measured]') && agree.includes('95% interval 75% to 86% (bootstrap, 2000 resamples); 40 answers with a hallucination and 160 without.'),
       agree);
-    check('generated block (measured): the like-for-like figure follows the results (D212)',
-      at(LIKE_FOR_LIKE_ID) > at('meas_agree') && at(LIKE_FOR_LIKE_ID) < intro &&
-        lines[at(LIKE_FOR_LIKE_ID)].startsWith('Like for like (default thresholds): Arize RAGTruth test, Jev accuracy at a 0.5 threshold:'),
+    const arizeLine = lines[at(ARIZE_FIGURE_IDS[0])] ?? '';
+    check("generated block (measured): Arize's figures follow the results, neither said to be like for like (D212, D233)",
+      at(ARIZE_FIGURE_IDS[0]) > at('meas_agree') && at(ARIZE_FIGURE_IDS[0]) < intro &&
+        at(ARIZE_FIGURE_IDS[1]) === at(ARIZE_FIGURE_IDS[0]) &&
+        arizeLine === `${ARIZE_COMPARISON_LEAD} Its accuracy: <!-- claim:${ARIZE_FIGURE_IDS[0]} --> 76% at 0.5 [third-party]. ` +
+          `Thresholds need calibrating. At its best: <!-- claim:${ARIZE_FIGURE_IDS[1]} --> 88% [third-party]. Only at a tuned threshold.` &&
+        !/like for like \(|same threshold/i.test(lines.join('\n')),
       JSON.stringify(lines));
     check('generated block (measured): a reported cost says so', (lines[at('meas_cost')] ?? '').includes('Cost as the vendor reported it.'));
     check('generated block (measured): the footer names the snapshot',
@@ -2097,6 +2124,8 @@ export function selfTest() {
   check('format: usd_per_1k under $1 keeps 3 decimals', formatValue(0.2134, 'usd_per_1k') === '0.213');
   check('format: fraction as a percentage', formatValue(0.873, 'fraction') === '87.3%');
   check('format: ms to 2 decimals', formatValue(1.234, 'ms') === '1.23');
+  check('format: a multiple is whole from 10 up, one decimal below, as the post says it',
+    formatValue(26.84, 'multiplier') === '27' && formatValue(9.96, 'multiplier') === '10' && formatValue(3.14, 'multiplier') === '3.1');
   check('slug: GitHub heading anchors', slug('Latency `caveat` (P50)!') === 'latency-caveat-p50');
   check('pkce: unverified rows', JSON.stringify(pkceStatus(SPEC_UNVERIFIED)) === '{"localhost":false,"pages":false,"found":true}');
   check('pkce: dated rows', JSON.stringify(pkceStatus(SPEC_VERIFIED)) === '{"localhost":true,"pages":true,"found":true}');

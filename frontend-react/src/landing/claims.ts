@@ -105,9 +105,11 @@ const INTERVAL_METHODS: Record<string, string> = { wilson: 'Wilson', bootstrap: 
 
 export const LABEL_TEXT: Record<ClaimLabel, string> = copy.value_labels;
 
-function formatValue(value: number, unit: string): string {
+/** As scripts/check-claims.mjs formats it: a multiple is whole from 10 up (27×), one decimal below. */
+export function formatValue(value: number, unit: string): string {
   if (unit === 'fraction') return `${Math.round(value * 1000) / 10}%`;
   if (unit === 'usd_per_1k') return value >= 1 ? value.toFixed(2) : value.toFixed(3);
+  if (unit === 'multiplier') return String(value >= 10 ? Math.round(value) : Math.round(value * 10) / 10);
   return String(Math.round(value * 100) / 100);
 }
 

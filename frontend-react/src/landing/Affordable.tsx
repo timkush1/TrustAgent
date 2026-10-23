@@ -128,8 +128,8 @@ function PublishedFigures() {
 /**
  * Our own figures. The only place on the page that names what is not measured yet: the hero shows
  * our figure only once it is published. Each published figure keeps its caveat beside its chip
- * and, from the run, its 95% interval with n per class (D212); the agreement's caveat says which
- * third-party figure it is read against (Arize's accuracy at 0.5, above).
+ * and, from the run, its 95% interval with n per class (D212); the agreement's caveat names the
+ * thresholds the bench flags at and says Arize's figures above are not like for like (D233).
  */
 export function OurMeasurements({
   measured = [claim('fast_check_cost_per_1k_measured'), claim('gate_latency_p50_measured'), claim('ragtruth_qa_agreement_measured')],

@@ -764,6 +764,9 @@ describe('validate.mjs', () => {
     sb.edit('claims/value-claims.v1.json', (c) => {
       c.claims.find((x) => x.id === 'same_checks_cost_multiple').measured_pair = 'fast_check_cost_per_1k';
       c.claims.find((x) => x.id === 'gate_latency_p50_measured').measured_pair = 'gate_latency_p95_measured';
+      // D233: an agreement caveat that names another cutoff than the bench's.
+      const accuracy = c.claims.find((x) => x.id === 'ragtruth_qa_accuracy_measured');
+      accuracy.caveat = accuracy.caveat.replace('groundedness 0.8', 'groundedness 0.5');
     });
     // A measured.json that says measured without its snapshot, attempts or cost sources.
     sb.edit('claims/measured.json', (m) => {
@@ -778,6 +781,8 @@ describe('validate.mjs', () => {
     assert.match(r.out, /run\.refused\.dirty\.json: the fixture must break rule dirty, but breaks none/);
     assert.match(r.out, /measured\.publishable\.json: a publishable fixture breaks a rule: attempts/);
     assert.match(r.out, /same_checks_cost_multiple: measured_pair fast_check_cost_per_1k is a estimate claim, not measured/);
+    assert.match(r.out, /ragtruth_qa_accuracy_measured: its caveat must name the threshold the bench flags at, "groundedness 0\.8"/);
+    assert.doesNotMatch(r.out, /ragtruth_qa_agreement_measured: its caveat/);
     assert.match(r.out, /gate_latency_p50_measured: a measured claim is the target of measured_pair, never its source/);
     assert.match(r.out, /claims\/measured\.json: a measured file names the decision-model snapshot/);
     assert.match(r.out, /claims\/measured\.json: sources\.attempts discloses every bench run/);

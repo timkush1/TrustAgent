@@ -110,6 +110,19 @@ COST_KEYS = {
 }
 ACCURACY_KEY = "ragtruth_qa_accuracy"
 AGREEMENT_KEY = "ragtruth_qa_agreement"
+# D233: what the two accuracy values are, as every publish writes them, whatever the previous
+# measured.json said (Step 0's template called plain accuracy the like-for-like figure for a
+# third party's, which it is not: the bench flags at each evaluator's own warn_at).
+VALUE_DESCRIPTIONS = {
+    AGREEMENT_KEY: (
+        "Balanced accuracy of the fast check on the RAGTruth-QA subset, at TrustAgent's default "
+        "thresholds."
+    ),
+    ACCURACY_KEY: (
+        "Plain accuracy of the fast check on the RAGTruth-QA subset, at TrustAgent's default "
+        "thresholds (the measure third-party tests report; not like for like with them)."
+    ),
+}
 ECE_BEFORE_KEY = "groundedness_ece_before"
 ECE_AFTER_KEY = "groundedness_ece_after"
 LATENCY_KEYS = ("gate_latency_ms_p50", "gate_latency_ms_p95")
@@ -1153,6 +1166,9 @@ def derive_measured(
     """
     previous_values = previous.get("values") or {}
     values: Dict[str, Dict[str, Any]] = {key: dict(entry) for key, entry in previous_values.items()}
+    for key, description in VALUE_DESCRIPTIONS.items():
+        if key in values:
+            values[key]["description"] = description
     used: Dict[str, Mapping[str, Any]] = {}
     from_run: Dict[str, Mapping[str, Any]] = {}  # key -> the benchmark run its value came from
 
