@@ -714,8 +714,18 @@ The work as it landed, phase by phase; the sections above sum it up.
 - Makefile split into `mk/*.mk` fragments; `make check`; WSL-aware URL opener;
   `make up` also starts Postgres and waits for health.
 - Frontend toolchain: Vite 8, TypeScript 6, React 19.3 (pinned).
-- Go toolchain pinned to `go1.25.11`; pytest deselects `e2e`/`integration`
+- Go toolchain pinned to `go1.26.10`; pytest deselects `e2e`/`integration`
   by default; `.gitattributes` and per-service `.dockerignore` files.
+- **Dependencies (security):** the engine's audit graph runs on LangGraph 1.x
+  (langgraph 0.0.20 → 1.2.16, langchain-core 0.1.23 → 1.7.0, langsmith
+  0.0.87 → 0.14.12), clearing the langchain-core and langsmith CVEs; anyio
+  4.15.1, certifi 2026.10.23, PyJWT 2.15.1 and urllib3 2.8.0 clear the rest of
+  Trivy's `poetry.lock` findings. Audits are unchanged: `run_audit` still
+  returns every `AuditState` key (None when no step set it), as it did on
+  LangGraph 0.0.x. The gateway moves to Go 1.26, gRPC v1.84.0 and current
+  `golang.org/x` modules; Go 1.27 waits for a gosec release that can read its
+  export data. Trivy's secret scan skips only the detector vectors'
+  deliberately fake keys (`trivy-secret.yaml`).
 - `SubmitAudit`/`GetAuditResult` are deprecated in favour of `Evaluate`.
 - Registry defaults now apply where the walking skeleton hard-coded others:
   `TRUTHTABLE_WRITE_TIMEOUT=0` (per-route write deadlines instead of one server

@@ -15,7 +15,10 @@ include = [{path = "src/truthtable/grpc/pb/*_pb2*.py", format = ["sdist", "wheel
 python = "^3.11"
 grpcio = "^1.60.0"
 grpcio-tools = "^1.60.0"
-langgraph = "^0.0.20"
+# The audit graph (graphs/audit_graph.py). LangGraph 1.x brings langchain-core
+# 1.x and langsmith 0.14 (langchain-core 0.1 and langsmith 0.0 carry fixed
+# CVEs); the engine uses only StateGraph, START/END, compile and ainvoke.
+langgraph = "^1.2.16"
 pydantic = "^2.5.0"
 pydantic-settings = "^2.1.0"
 httpx = "^0.26.0"
@@ -99,7 +102,6 @@ ignore_errors = true
 module = [
     "grpc",
     "grpc.*",
-    "langgraph.*",
     "qdrant_client.*",
     "sentence_transformers.*",
     "torch.*",

@@ -317,7 +317,7 @@ and how to migrate from 1.0.
 
 | Layer | Technology |
 |---|---|
-| Gateway | Go 1.25, Gin, pgx, gorilla/websocket |
+| Gateway | Go 1.26, Gin, pgx, gorilla/websocket |
 | Fast check | Jev (TypeSafe AI) via OpenRouter, TypeSafe or a compatible gateway; a mock for the demo and CI |
 | Audit engine | Python 3.11, LangGraph, gRPC |
 | Judge | Claude Haiku via OpenRouter or Anthropic, OpenAI, or Ollama locally |

@@ -103,7 +103,7 @@ graph LR
 
 | Service | Language | Job |
 |---|---|---|
-| **proxy** (the gateway) | Go 1.25, gin | The `/v1` LLM APIs, Tier 0 and Tier 1, policies, the REST API, the WebSocket stream, the audit queue, credentials, costs and budgets |
+| **proxy** (the gateway) | Go 1.26, gin | The `/v1` LLM APIs, Tier 0 and Tier 1, policies, the REST API, the WebSocket stream, the audit queue, credentials, costs and budgets |
 | **engine** | Python 3.11, LangGraph, gRPC | The deep audit: decompose an answer into claims, verify each against the evidence with an LLM judge, score it; the Studio's AI drafter; the optional knowledge base |
 | **postgres** | Postgres 16 | Traces, gate decisions, audits, policy versions, keys, encrypted credentials, the cost ledger, the admin audit log |
 | **dashboard** | React 19, served by nginx | Overview, Traffic, trace detail, Policies, Playground, Evaluators and the Studio, Savings, Settings |
