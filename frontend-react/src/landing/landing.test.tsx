@@ -119,13 +119,13 @@ describe('landing page', () => {
   it('shows each claim’s caveat next to its chip', async () => {
     await renderLanding();
     const ids = new Set(landingClaims().map((c) => c.id));
-    let caveats = 0;
+    const caveats = new Set<string>();
     for (const chip of document.querySelectorAll<HTMLAnchorElement>('[data-value-label]')) {
       const id = chip.getAttribute('href')?.replace('#source-', '') ?? '';
       if (!ids.has(id)) continue; // a judge price in the calculator, not a claim
       const c = claim(id);
       if (!c.caveat) continue;
-      caveats += 1;
+      caveats.add(id);
       // The caveat sits in the chip's own scope, or in the small block that holds the claim.
       const scope = chip.closest('[data-caveat-scope]') ?? chip.closest('[data-chip-scope]');
       const note = scope?.querySelector(`[data-caveat-for="${id}"]`);
@@ -133,8 +133,8 @@ describe('landing page', () => {
       expect(note).toHaveTextContent(c.caveat);
       expect(scope?.querySelectorAll('[data-value-label]').length, `${id}: the block holding its caveat is small`).toBeLessThanOrEqual(2);
     }
-    // The hero's third-party latency, the Arize test and OpenRouter's own test.
-    expect(caveats).toBeGreaterThanOrEqual(3);
+    // The hero's third-party latency and the Arize test.
+    expect([...caveats]).toEqual(expect.arrayContaining(['jev_p50_latency_openrouter', 'arize_ragtruth_jev_accuracy']));
     const latency = document.querySelector('[data-caveat-for="jev_p50_latency_openrouter"]');
     expect(latency?.closest('section')?.getAttribute('aria-labelledby')).toBe('hero-title');
   });

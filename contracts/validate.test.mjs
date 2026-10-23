@@ -273,7 +273,7 @@ describe('validate.mjs', () => {
       c.claims.find((x) => x.id === 'studio_draft_cost_estimate').per_unit_of = 'no_such_figure';
       // D168: the cost of one call is its tokens at the price claim, to two significant digits.
       c.claims.find((x) => x.id === 'hero_card_cost_usd').value = 0.0002;
-      c.claims.find((x) => x.id === 'llm_full_audit_cost_per_1k').tokens_x_price = { input_tokens: 10, price_claim: 'hero_card_latency_ms' };
+      c.claims.find((x) => x.id === 'llm_full_audit_cost_per_1k').tokens_x_price = { input_tokens: 10, price_claim: 'jev_p50_latency_openrouter' };
     });
     sb.edit('claims/compare.v1.json', (c) => {
       c.rows[0].cells.inline = { value: 'yes', vendor: 'Langfuse', text: 'Runs as a hosted service.', source_url: null, as_of: null, reviewed: false };
@@ -287,7 +287,7 @@ describe('validate.mjs', () => {
     assert.match(r.out, /studio_draft_cost_estimate: per_unit_of no_such_figure is neither a usd_per_1k claim nor a figure/);
     assert.match(r.out, /hero_card_cost_usd: value 0\.0002 must be 565 tokens × jev_input_price_per_mtok \(0\.042 per million\) = 0\.000024/);
     assert.match(r.out, /llm_full_audit_cost_per_1k: tokens_x_price needs unit usd/);
-    assert.match(r.out, /llm_full_audit_cost_per_1k: tokens_x_price\.price_claim hero_card_latency_ms is not a usd_per_mtok claim with a value/);
+    assert.match(r.out, /llm_full_audit_cost_per_1k: tokens_x_price\.price_claim jev_p50_latency_openrouter is not a usd_per_mtok claim with a value/);
     assert.match(r.out, /observability_judge\.inline: a yes cell needs the source_url it was read from and as_of/);
     assert.match(r.out, /guardrails\.self_hosted: a partial cell says what the vendor documents \(text\)/);
     assert.match(r.out, /cloud_groundedness: no cell for column explanations/);
@@ -921,8 +921,8 @@ describe('schemas accept realistic documents', { skip: !existsSync(SPEC) }, () =
       schema: 'trustagent.recording/v1', kind: 'recorded',
       label: 'Recorded 2026-10-12 · typesafe/jev-1.13-20260917 + claude-haiku-4-5 · scripted answers · replayed, not live',
       recorded_at: '2026-10-12T09:00:00Z', git_sha: 'abc1234', trustagent_version: '2.0.0',
-      decision_model: { backend: 'openrouter-decisions', snapshot: 'typesafe/jev-1.13-20260917' },
-      judge: { provider: 'anthropic', model: 'claude-haiku-4-5', fallback_active: false }, calibration_state: 'measured',
+      decision_model: { backend: 'openrouter-decisions', snapshot: 'typesafe/jev-1.13-20260917', host: 'openrouter.ai' },
+      judge: { provider: 'anthropic', model: 'claude-haiku-4-5', fallback_active: false, host: 'openrouter.ai' }, calibration_state: 'measured',
       answer_sources: { scripted: 1, generated: 0 }, totals: { traces: 1, decision_usd: 0.0002, llm_usd: 0.03 },
       roi: { window: '24h', gated_responses: 1, simulated: false },
       traces: [{ trace_id: TRACE, created_at: '2026-10-12T09:00:00Z', answer_source: 'scripted' }],
@@ -945,6 +945,17 @@ describe('schemas accept realistic documents', { skip: !existsSync(SPEC) }, () =
       calibration: { snapshot: 'typesafe/jev-1.13-20260917', quality: 'measured' },
     };
     assert.equal(check('recording.v1', hosts), null);
+    // A recorded tape names its hosts: without them nothing shows a vendor answered (D203).
+    const { host: _dmHost, ...dmNoHost } = hosts.decision_model;
+    const { host: _judgeHost, ...judgeNoHost } = hosts.judge;
+    assert.notEqual(check('recording.v1', { ...hosts, decision_model: dmNoHost }), null, 'recorded needs the fast-check host');
+    assert.notEqual(check('recording.v1', { ...hosts, judge: judgeNoHost }), null, 'recorded needs the judge host');
+    const generated = { ...hosts, answer_sources: { scripted: 0, generated: 1, generated_host: 'openrouter.ai' }, traces: [{ ...hosts.traces[0], answer_source: 'generated' }] };
+    assert.equal(check('recording.v1', generated), null);
+    assert.notEqual(check('recording.v1', { ...generated, answer_sources: { scripted: 0, generated: 1, generated_host: null } }), null, 'generated answers name their host');
+    assert.notEqual(check('recording.v1', { ...generated, answer_sources: { scripted: 0, generated: 1 } }), null, 'generated answers name their host');
+    // A simulated tape needs none of them.
+    assert.equal(check('recording.v1', { ...mock, decision_model: { backend: 'mock', snapshot: 'mock/jev-heuristic-v1' }, judge: judgeNoHost }), null);
     assert.notEqual(check('recording.v1', { ...hosts, decision_model: { ...hosts.decision_model, host: 'mock-upstream' } }), null, 'recorded needs a vendor host');
     assert.notEqual(check('recording.v1', { ...hosts, judge: { ...hosts.judge, host: 'https://openrouter.ai/api' } }), null, 'bare hosts only');
     assert.notEqual(check('recording.v1', { ...hosts, answer_sources: { ...hosts.answer_sources, generated_host: 'mock-upstream' } }), null);
