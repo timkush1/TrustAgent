@@ -36,9 +36,9 @@ TRUTHTABLE_VERIFY_CONTEXT_SCOPE (per-claim evidence for the verifier).
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Awaitable, Dict, List, Optional, Protocol, Sequence, cast
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, START, StateGraph
 
 from .state import (
     AuditOutcome,
@@ -62,7 +62,17 @@ if TYPE_CHECKING:  # knowledge add-on: imported only when retrieval is configure
 
 logger = logging.getLogger(__name__)
 
-GraphStep = Callable[[AuditState], Awaitable[AuditState]]
+
+class GraphStep(Protocol):
+    """
+    A graph node: takes the audit state and returns it. The parameter is named
+    `state`, as LangGraph's node protocols require (a plain Callable alias leaves
+    the name open, so StateGraph.add_node rejects it in a type check).
+    """
+
+    def __call__(self, state: AuditState) -> Awaitable[AuditState]:
+        ...
+
 
 # ContextDocument.source of the documents the knowledge retriever supplies.
 KNOWLEDGE_SOURCE = "knowledge"
@@ -71,6 +81,12 @@ KNOWLEDGE_SOURCE = "knowledge"
 DECIDED_BY_NONE = "none"
 
 _POLICY_VALUES = frozenset({"", "auto"} | {policy.value for policy in UnsupportedPolicy})
+
+# Every AuditState key, in declaration order. A LangGraph run's result leaves out
+# the keys no node wrote (for example scores on an audit that ended at
+# preflight); run_audit adds them back as None, the shape its callers have
+# always had (LangGraph 0.0.x returned every state key).
+_STATE_KEYS = tuple(AuditState.__annotations__)
 
 _NOT_ASSESSED_TRACES = {
     NotAssessedReason.NO_EVIDENCE: (
@@ -347,7 +363,7 @@ def build_audit_graph(
     workflow.add_node("verify", _unless_not_assessed(verifier.run))
     workflow.add_node("score", _unless_not_assessed(scorer.run))
 
-    workflow.set_entry_point("preflight")
+    workflow.add_edge(START, "preflight")
     workflow.add_edge("preflight", "decompose")
 
     if embedding_service is not None and qdrant_store is not None:  # has_retrieval
@@ -459,8 +475,10 @@ async def run_audit(
         "step_timings": {},  # Initialize for pipeline observability
     }
 
-    # Execute graph
-    final_state: AuditState = await graph.ainvoke(initial_state)
+    # Execute graph. Keys no node wrote come back as None (_STATE_KEYS).
+    result: Dict[str, Any] = dict.fromkeys(_STATE_KEYS)
+    result.update(await graph.ainvoke(initial_state))
+    final_state = cast(AuditState, result)
 
     logger.info(
         f"Audit complete for {request_id}: verdict={final_state.get('verdict')}, "
