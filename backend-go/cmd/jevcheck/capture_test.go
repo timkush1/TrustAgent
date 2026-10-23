@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -333,11 +334,21 @@ func TestCaptureRefusesPlainHTTPVendor(t *testing.T) {
 	}
 }
 
-// The committed captures (contracts/fixtures/vendor/captured, written at P6b with the owner's key)
-// decode with the production decoders. Before the capture the directory does not exist.
+// requireCaptures makes TestCommittedCapturesDecode fail on an empty capture directory: once the
+// owner's capture is committed, an empty glob would pass without decoding anything.
+//
+//	go test ./cmd/jevcheck -run TestCommittedCapturesDecode -v -args -require-captures
+var requireCaptures = flag.Bool("require-captures", false, "fail when contracts/fixtures/vendor/captured holds no capture")
+
+// The committed captures (contracts/fixtures/vendor/captured, written by make jev-capture
+// CONFIRM=1 with the owner's key) decode with the production decoders. Before the capture the
+// directory does not exist, which passes unless -require-captures is given.
 func TestCommittedCapturesDecode(t *testing.T) {
 	dir := filepath.Join("..", "..", "..", "contracts", "fixtures", "vendor", "captured")
 	files, _ := filepath.Glob(filepath.Join(dir, "*.json"))
+	if len(files) == 0 && *requireCaptures {
+		t.Fatalf("-require-captures: %s holds no capture (make jev-capture CONFIRM=1 writes them)", dir)
+	}
 	if len(files) == 0 {
 		if _, err := os.Stat(dir); err == nil {
 			entries, _ := os.ReadDir(dir)
@@ -347,7 +358,7 @@ func TestCommittedCapturesDecode(t *testing.T) {
 				}
 			}
 		}
-		t.Logf("no committed captures in %s yet (they come from make jev-capture CONFIRM=1 at P6b)", dir)
+		t.Logf("no committed captures in %s yet (they come from make jev-capture CONFIRM=1)", dir)
 		return
 	}
 	stems := map[string]bool{}
