@@ -286,3 +286,7 @@ make lint-workflows # actionlint and zizmor over .github/workflows
 cd frontend-react && npm audit --omit=dev --audit-level=high
 gitleaks git --config .gitleaks.toml --redact .            # if gitleaks is installed
 ```
+
+Scan git, as CI does, not the directory: `gitleaks dir .` also reads the gitignored `.env`, whose
+generated `POSTGRES_PASSWORD` and `TRAFFICGEN_API_KEY` match the generic-api-key rule. Those are
+local, never committed, and not a leak.
