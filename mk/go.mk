@@ -88,12 +88,13 @@ export-replay: ## Export a sanitized replay recording: REPLAY_OUT=<dir> [REPLAY_
 
 ##@ Decision model check and Go benchmarks
 
-# make jev-check: one paid-free check of the decision model's connection (cmd/jevcheck). Inside a
-# running stack it runs in the proxy container, where the gateway's own configuration is; without
-# one it runs from this checkout with the shell's environment.
+# make jev-check: one check of the decision model's connection (cmd/jevcheck). It sends the
+# one-question probe (contracts/cascade/probe.v1.json), which the vendor bills at about USD 0.00001,
+# so it needs no CONFIRM=1. Inside a running stack it runs in the proxy container, where the
+# gateway's own configuration is; without one it runs from this checkout with the shell's environment.
 JEV_CHECK_ARGS ?=
 
-jev-check: ## Check the decision model connection (cmd/jevcheck; in the running stack's proxy container when there is one)
+jev-check: ## Check the decision model connection: one probe call, billed about USD 0.00001 (cmd/jevcheck; in the running stack's proxy container when there is one)
 	@if $(COMPOSE) ps --status running --services 2>/dev/null | grep -qx proxy; then \
 		$(COMPOSE) exec -T proxy /jevcheck $(JEV_CHECK_ARGS); \
 	else \

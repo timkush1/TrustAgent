@@ -41,12 +41,24 @@ eval-benchmark: ## HaluEval benchmark against local Ollama, EVAL_MODEL (requires
 	cd backend-python && $(POETRY) run python -m evals.datasets.download halueval --samples 200
 	cd backend-python && $(POETRY) run python -m evals.run_eval --dataset halueval --provider ollama --model $(EVAL_MODEL) --output eval-report.json
 
-eval-compare: ## Judge-model comparison on HaluEval (needs OPENAI_API_KEY + ANTHROPIC_API_KEY; about USD 1-5 of usage)
-	cd backend-python && $(POETRY) run python -m evals.datasets.download halueval --samples 100
-	cd backend-python && $(POETRY) run python -m evals.run_eval --dataset halueval --provider ollama --model $(EVAL_MODEL) --output eval-ollama.json
-	cd backend-python && $(POETRY) run python -m evals.run_eval --dataset halueval --provider openai --model gpt-4o-mini --output eval-openai.json
-	cd backend-python && $(POETRY) run python -m evals.run_eval --dataset halueval --provider anthropic --model claude-haiku-4-5-20251001 --output eval-anthropic.json
+# eval-compare spends on two vendor keys, so it is a dry run unless CONFIRM=1 (D204, as for every
+# paid target). run_eval.py keeps no cost ledger: the bound is the example count, EVAL_COMPARE_N.
+EVAL_COMPARE_N ?= 100
+
+eval-compare: ## Judge-model comparison on HaluEval, EVAL_COMPARE_N answers (needs OPENAI_API_KEY + ANTHROPIC_API_KEY; about USD 1-5 of usage; a dry run unless CONFIRM=1)
+ifneq ($(CONFIRM),1)
+	@echo "eval-compare: a dry run, nothing is spent (to run it: make eval-compare CONFIRM=1)"
+	@echo "  plan: $(EVAL_COMPARE_N) HaluEval QA answers (half faithful, half hallucinated) through the full audit, one judge at a time:"
+	@echo "    ollama $(EVAL_MODEL) (local, free), then openai gpt-4o-mini and anthropic claude-haiku-4-5-20251001 (paid)"
+	@echo "  estimate: about USD 1-5 of usage in total [estimate]; no cost cap: each judge stops after $(EVAL_COMPARE_N) answers"
+	@echo "  reports: backend-python/eval-{ollama,openai,anthropic}.json"
+else
+	cd backend-python && $(POETRY) run python -m evals.datasets.download halueval --samples $(EVAL_COMPARE_N)
+	cd backend-python && $(POETRY) run python -m evals.run_eval --dataset halueval --limit $(EVAL_COMPARE_N) --provider ollama --model $(EVAL_MODEL) --output eval-ollama.json
+	cd backend-python && $(POETRY) run python -m evals.run_eval --dataset halueval --limit $(EVAL_COMPARE_N) --provider openai --model gpt-4o-mini --output eval-openai.json
+	cd backend-python && $(POETRY) run python -m evals.run_eval --dataset halueval --limit $(EVAL_COMPARE_N) --provider anthropic --model claude-haiku-4-5-20251001 --output eval-anthropic.json
 	@echo "Reports written: backend-python/eval-{ollama,openai,anthropic}.json"
+endif
 
 # ---------- Benchmarks (SPEC P6, 2.13): owner-run, paid, hard-capped ----------
 # Keys come from the environment or .env (one OpenRouter key covers Jev and the
