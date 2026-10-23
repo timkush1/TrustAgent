@@ -276,6 +276,42 @@ class ReleaseNotesTest(unittest.TestCase):
         self.assertIn(f"decision-model snapshot {SNAPSHOT}", out)
         self.assertIn("simulated tape", out)
 
+    def test_a_measured_latency_names_how_it_was_taken(self) -> None:
+        """D205, D225: connection, requests at a time, where it ran, snapshot and n."""
+        conditions = (
+            "warm connection, one request at a time, run on Linux (region cloud us-east), "
+            f"snapshot {SNAPSHOT}, n=199"
+        )
+        values = dict(MEASURED["values"])
+        values["gate_latency_ms_p50"] = dict(
+            values["gate_latency_ms_p50"], value=231.0, run_id="20261102T100000Z-abc1234"
+        )
+        claims = dict(CLAIMS, claims=[dict(c) for c in CLAIMS["claims"]])
+        for c in claims["claims"]:
+            if c["id"] == "gate_latency_p50_measured":
+                c["caveat"] = "The fast check's own time per answer: {gate_conditions}."
+        with_conditions = dict(
+            MEASURED, values=values, sources={"gate_latency": {"conditions": conditions}}
+        )
+        root = make_root(measured=with_conditions, claims_doc=claims)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+        self.assertEqual(code, 0, err)
+        self.assertIn(
+            "- Our p50 fast-check latency: 231 ms p50 [measured] (run 20261102T100000Z-abc1234). "
+            f"The fast check's own time per answer: {conditions}.",
+            out,
+        )
+        self.assertNotIn("{gate_conditions}", out)
+        self.assertNotIn("laptop", out)
+        # Without the conditions the latency is refused, never printed bare.
+        root = make_root(measured=dict(MEASURED, values=values), claims_doc=claims)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertIn("never published without how it was taken (D205)", err)
+
     def test_a_mock_or_unmeasured_run_lists_no_measured_figure(self) -> None:
         for measured in (dict(MEASURED, mock=True), dict(MEASURED, status="not_measured")):
             root = make_root(measured=measured)

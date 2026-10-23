@@ -39,6 +39,7 @@ from evals.report import (
     check_publish,
     derive_measured,
     document_problems,
+    gate_conditions_text,
     measured_problems,
     publish,
     publish_problems,
@@ -751,6 +752,49 @@ def test_measured_values_come_from_the_newest_run_that_measures_them() -> None:
     nothing = derive_measured([], previous, "2026-09-28T00:00:00Z")
     assert nothing["status"] == "not_measured" and nothing["runs"] == [] and nothing["tier"] is None
     assert schema_errors(nothing, "measured.v1.schema.json") == []
+
+
+def test_a_measured_gate_latency_carries_its_conditions() -> None:
+    """D205, D225: the connection, requests at a time, where it ran, snapshot and n."""
+    previous = json.loads(contract_path("claims/measured.json").read_text())
+    document, _, _ = p6_run(run_id="lite-cond")
+
+    derived = derive_measured([document], previous, "2026-10-12T10:00:00Z")
+
+    gate_n = document["quality"]["by_system"][GATE]["scored"]
+    assert derived["values"]["gate_latency_ms_p50"]["run_id"] == "lite-cond"
+    assert derived["sources"]["gate_latency"] == {
+        "connection": "warm",
+        "gate_concurrency": 1,
+        "platform": "WSL2",
+        "region": "il",
+        "n": gate_n,
+        "conditions": "warm connection, one request at a time, run on WSL2 (region il), "
+        f"snapshot {SNAPSHOT}, n={gate_n}",
+    }
+    assert schema_errors(derived, "measured.v1.schema.json") == []
+    assert "latency_conditions" not in [p.code for p in measured_problems(derived)]
+
+    # A run without its latency block or host_env gives no conditions, and the rule refuses it.
+    bare = copy.deepcopy(document)
+    del bare["latency"]
+    derived = derive_measured([bare], previous, "2026-10-12T10:00:00Z")
+    assert "gate_latency" not in derived.get("sources", {})
+    assert "latency_conditions" in [p.code for p in measured_problems(derived)]
+
+
+def test_the_conditions_name_where_the_run_really_ran() -> None:
+    cold = gate_conditions_text(
+        {"connection": "cold", "gate_concurrency": 4},
+        {"platform": "Linux", "region": "cloud us-east"},
+        180,
+        None,
+    )
+    assert cold == (
+        "cold connection (each call set up its own), 4 requests at a time, "
+        "run on Linux (region cloud us-east), n=180"
+    )
+    assert "laptop" not in cold
 
 
 def test_index_is_newest_first() -> None:

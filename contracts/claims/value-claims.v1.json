@@ -261,7 +261,7 @@
       "basis": "Gate latency measured in bench-lite.",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "The fast check's own time per answer, the vendor call included: {gate_conditions}.",
       "measured_ref": "gate_latency_ms_p50",
       "surfaces": ["landing", "readme"]
     },
@@ -276,7 +276,7 @@
       "basis": "Gate latency measured in bench-lite.",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "The fast check's own time per answer, the vendor call included: {gate_conditions}.",
       "measured_ref": "gate_latency_ms_p95",
       "surfaces": ["landing", "readme"]
     },

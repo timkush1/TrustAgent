@@ -112,6 +112,7 @@ ACCURACY_KEY = "ragtruth_qa_accuracy"
 AGREEMENT_KEY = "ragtruth_qa_agreement"
 ECE_BEFORE_KEY = "groundedness_ece_before"
 ECE_AFTER_KEY = "groundedness_ece_after"
+LATENCY_KEYS = ("gate_latency_ms_p50", "gate_latency_ms_p95")
 # D212: the published balanced accuracy's interval.
 PUBLISH_BOOTSTRAP_RESAMPLES = 2000
 PUBLISH_BOOTSTRAP_SEED = 13
@@ -995,6 +996,56 @@ def accuracy_intervals(
     return out
 
 
+def gate_conditions_text(
+    latency: Mapping[str, Any], host_env: Mapping[str, Any], n: int, snapshot: Optional[str]
+) -> str:
+    """
+    The words written after a measured gate latency (D205, D225): the connection, how many gate
+    calls ran at once, where the run really ran (inputs.host_env: platform and region, never an
+    assumed machine), the snapshot and n. Every surface shows this sentence as written here
+    (measured.json sources.gate_latency.conditions, the latency claims' {gate_conditions}).
+    """
+    connection = (
+        "warm connection"
+        if latency.get("connection") == "warm"
+        else "cold connection (each call set up its own)"
+    )
+    at_once = int(latency.get("gate_concurrency") or 1)
+    concurrency = "one request at a time" if at_once == 1 else f"{at_once} requests at a time"
+    where = f"run on {host_env.get('platform')} (region {host_env.get('region')})"
+    parts = [connection, concurrency, where]
+    if snapshot:
+        parts.append(f"snapshot {snapshot}")
+    parts.append(f"n={n}")
+    return ", ".join(parts)
+
+
+def gate_latency_source(run: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    measured.json sources.gate_latency (D205) from the bench run that gave the gate latency, or
+    None when the run does not record its latency block, host_env or the gate's scored count.
+    """
+    latency = run.get("latency")
+    host_env = (run.get("inputs") or {}).get("host_env")
+    gate_counts = ((run.get("quality") or {}).get("by_system") or {}).get(GATE) or {}
+    n = gate_counts.get("scored")
+    if not isinstance(latency, Mapping) or not isinstance(host_env, Mapping):
+        return None
+    if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+        return None
+    if latency.get("connection") not in ("warm", "cold") or not host_env.get("platform"):
+        return None
+    snapshot = ((_system(run, GATE) or {}).get("decision_model") or {}).get("snapshot")
+    return {
+        "connection": latency["connection"],
+        "gate_concurrency": int(latency.get("gate_concurrency") or 1),
+        "platform": str(host_env["platform"]),
+        "region": str(host_env.get("region") or "local"),
+        "n": n,
+        "conditions": gate_conditions_text(latency, host_env, n, snapshot),
+    }
+
+
 def derive_measured(
     runs: Sequence[Mapping[str, Any]],
     previous: Mapping[str, Any],
@@ -1108,6 +1159,15 @@ def derive_measured(
             sources[key] = {"cost_source": source}
         elif values.get(key, {}).get("value") is None:
             sources.pop(key, None)
+    latency_run = next((from_run[key] for key in LATENCY_KEYS if key in from_run), None)
+    if latency_run is not None:
+        conditions = gate_latency_source(latency_run)
+        if conditions is not None:
+            sources["gate_latency"] = conditions
+        else:
+            sources.pop("gate_latency", None)
+    elif all(values.get(key, {}).get("value") is None for key in LATENCY_KEYS):
+        sources.pop("gate_latency", None)
     if holdout is not None:
         sources["groundedness_ece"] = {
             "method": "holdout",
@@ -1269,6 +1329,17 @@ def measured_problems(measured: Mapping[str, Any]) -> List[Problem]:
             Problem(
                 "ece_source",
                 "groundedness_ece_after needs sources.groundedness_ece, held out (D206)",
+            )
+        )
+    published_latency = [
+        key for key in LATENCY_KEYS if (values.get(key) or {}).get("value") is not None
+    ]
+    if published_latency and not (sources.get("gate_latency") or {}).get("conditions"):
+        out.append(
+            Problem(
+                "latency_conditions",
+                f"{', '.join(published_latency)} needs sources.gate_latency: the connection, "
+                "the requests at a time, where it ran, the snapshot and n (D205)",
             )
         )
     for key, interval in (measured.get("intervals") or {}).items():

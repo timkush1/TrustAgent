@@ -30,6 +30,8 @@
  *                         --write generates (proxy overhead in a table of its own, D118);
  *                         [block-unpaired] when the markers do not pair up
  *   [load-run-missing]    a measured overhead value names a run with no docs/benchmarks/load file
+ *   [latency-conditions]  a measured gate latency has no sources.gate_latency.conditions in
+ *                         measured.json (D205): the figure would show without how it was taken
  *   [empty-measured-chip] a measured claim with no value carries the [measured] chip: an absent
  *                         value is not a measurement, so "not yet measured" goes without it
  *   [pair-unknown]        an estimate's measured_pair names no measured claim
@@ -399,6 +401,22 @@ function machineText(claim, measured, read, loadRuns = []) {
   }
 }
 
+/**
+ * The words for a latency caveat's {gate_conditions} (D205, D225): measured.json
+ * sources.gate_latency.conditions, as bench publish wrote it (connection, requests at a time,
+ * where the run really ran, snapshot, n). Nothing for a value not measured yet: the caveat is
+ * then dropped, never shown with a raw placeholder.
+ */
+export function gateConditions(claim, measured, empty) {
+  if (empty) return { text: null, problem: null };
+  const text = measured?.sources?.gate_latency?.conditions;
+  if (typeof text === 'string' && text.trim()) return { text: text.trim(), problem: null };
+  return {
+    text: 'conditions not recorded',
+    problem: `${MEASURED_PATH} publishes ${claim.measured_ref} without sources.gate_latency.conditions (D205): rerun make bench-publish`,
+  };
+}
+
 function inMeasuredBlock(claim) {
   return claim.label === 'measured' && claim.surfaces.some((s) => SURFACES.includes(s));
 }
@@ -487,6 +505,11 @@ export function renderMeasuredBlock(claims, measured, read, loadRuns = []) {
       const machine = machineText(c, measured, read, loadRuns);
       if (machine.problem) problems.push(machine.problem);
       caveat = caveat.replace('{machine}', machine.text);
+    }
+    if (caveat.includes('{gate_conditions}')) {
+      const filled = gateConditions(c, measured, shown.empty);
+      if (filled.problem) problems.push(filled.problem);
+      caveat = filled.text === null ? '' : caveat.replace('{gate_conditions}', filled.text);
     }
     const note = [shown.empty ? '' : measuredNote(c, measured), caveat].filter(Boolean).join(' ');
     const result = shown.empty ? shown.text : `${shown.text} [${LABEL_CHIPS.measured}]`;
@@ -702,7 +725,7 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
   const byId = new Map(claims.claims.map((c) => [c.id, c]));
   const like = byId.get(LIKE_FOR_LIKE_ID) ?? null;
   const block = renderMeasuredBlock(claims, measured, read, loadRuns);
-  for (const p of block.problems) report('error', 'load-run-missing', MEASURED_PATH, null, p);
+  for (const p of block.problems) report('error', p.includes('sources.gate_latency') ? 'latency-conditions' : 'load-run-missing', MEASURED_PATH, null, p);
   const pkce = pkceStatus(specText);
   const rewrites = new Map();
   let markerCount = 0;
@@ -757,7 +780,9 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
             `claim ${claim.id} is labelled ${claim.label}: its chip is [${want}], not [${chip[1]}]`);
         }
       }
-      if (claim.caveat && !checkCaveat(claim, mk, file, lines, visible, prose, files, read)) {
+      // A caveat filled from the run ({gate_conditions}) exists only once the value is measured.
+      const runCaveat = claim.caveat?.includes('{gate_conditions}') && expected.empty;
+      if (claim.caveat && !runCaveat && !checkCaveat(claim, mk, file, lines, visible, prose, files, read)) {
         report('error', 'caveat-missing', file, line,
           `claim ${claim.id}: its caveat ("${claim.caveat}") or a link to an anchor holding it must follow within ${CAVEAT_WINDOW_LINES} lines`);
       }
@@ -1201,8 +1226,8 @@ const FIXTURE_CLAIMS = {
       caveat: "Gateway's own time with simulated vendors; {machine}", measured_ref: 'proxy_overhead_ms_p50',
       surfaces: ['readme', 'docs'] },
     { id: 'meas_latency', text: 'Fast-check latency, p50', value: null, unit: 'ms', display: '{value} ms p50',
-      empty_display: 'not yet measured', label: 'measured', basis: 'b', source_url: null, as_of: null, caveat: null,
-      measured_ref: 'gate_latency_ms_p50', surfaces: ['readme'] },
+      empty_display: 'not yet measured', label: 'measured', basis: 'b', source_url: null, as_of: null,
+      caveat: 'The fast check\'s own time per answer: {gate_conditions}.', measured_ref: 'gate_latency_ms_p50', surfaces: ['readme'] },
     { id: 'meas_agree', text: 'Our RAGTruth-QA agreement', value: null, unit: 'fraction', display: '{value}',
       empty_display: 'not yet measured', label: 'measured', basis: 'b', source_url: null, as_of: null, caveat: null,
       measured_ref: 'ragtruth_qa_agreement', surfaces: ['readme', 'docs'] },
@@ -1242,7 +1267,13 @@ const MEASURED = {
   intervals: {
     ragtruth_qa_agreement: { lo: 0.75, hi: 0.86, method: 'bootstrap', resamples: 2000, seed: 13, n_pos: 40, n_neg: 160 },
   },
-  sources: { fast_check_usd_per_1k: { cost_source: 'reported' } },
+  sources: {
+    fast_check_usd_per_1k: { cost_source: 'reported' },
+    gate_latency: {
+      connection: 'warm', gate_concurrency: 1, platform: 'Linux', region: 'cloud us-east', n: 199,
+      conditions: `warm connection, one request at a time, run on Linux (region cloud us-east), snapshot ${'jev-1.13-20260917'}, n=199`,
+    },
+  },
 };
 
 const LOAD_RUN = { environment: { cpu_model: 'Test CPU', cores: 10, mem_gb: 8, os: 'Linux' } };
@@ -1593,8 +1624,9 @@ const CASES = [
     variants: [
       { measured: { ...MEASURED, snapshot: null }, expect: ['launch-snapshot'] },
       { measured: { ...MEASURED, snapshot: [SNAPSHOT, 'jev-1.14-20261101'] }, expect: ['launch-snapshot'] },
-      { measured: { ...MEASURED, snapshot: [SNAPSHOT, 'jev-1.14-20261101'], sources: { snapshot_split: true } }, expect: [] },
-      { measured: { ...MEASURED, sources: { snapshot_split: true } }, expect: ['launch-snapshot'] },
+      { measured: { ...MEASURED, snapshot: [SNAPSHOT, 'jev-1.14-20261101'], sources: { ...MEASURED.sources, snapshot_split: true } }, expect: [] },
+      { measured: { ...MEASURED, sources: { ...MEASURED.sources, snapshot_split: true } }, expect: ['launch-snapshot'] },
+      { measured: { ...MEASURED, sources: { fast_check_usd_per_1k: { cost_source: 'reported' } } }, expect: ['latency-conditions'] },
     ],
     expect: [],
   },
@@ -1934,9 +1966,17 @@ export function selfTest() {
     check('generated block (measured): a reported cost says so', (lines[at('meas_cost')] ?? '').includes('Cost as the vendor reported it.'));
     check('generated block (measured): the footer names the snapshot',
       lines[lines.length - 1].includes(`decision-model snapshot ${SNAPSHOT}`), lines[lines.length - 1]);
+    check('generated block (measured): the latency names its conditions, where it ran and n (D205, D225)',
+      (lines[at('meas_latency')] ?? '').includes("212.4 ms p50 [measured] | The fast check's own time per answer: warm connection, " +
+        'one request at a time, run on Linux (region cloud us-east), snapshot jev-1.13-20260917, n=199. |'),
+      lines[at('meas_latency')]);
     const partial = renderMeasuredBlock(FIXTURE_CLAIMS, PARTIAL, read).lines;
-    check('generated block (partly measured): a value the run lacks has no [measured] chip',
-      partial.some((l) => l.includes('<!-- claim:meas_latency --> not yet measured |')), JSON.stringify(partial));
+    check('generated block (partly measured): a value the run lacks has no [measured] chip and no conditions',
+      partial.some((l) => l.endsWith('<!-- claim:meas_latency --> not yet measured | |')), JSON.stringify(partial));
+    const bare = renderMeasuredBlock(FIXTURE_CLAIMS, { ...MEASURED, sources: { fast_check_usd_per_1k: { cost_source: 'reported' } } }, read);
+    check('generated block (measured): a latency without its conditions is a problem, never a raw placeholder',
+      bare.problems.some((p) => p.includes('without sources.gate_latency.conditions')) && !bare.lines.join('\n').includes('{gate_conditions}'),
+      JSON.stringify(bare.problems));
     const split = renderMeasuredBlock(FIXTURE_CLAIMS, { ...MEASURED, snapshot: [SNAPSHOT, 'jev-1.14'], sources: { snapshot_split: true } }, read).lines;
     check('generated block (split snapshots): the footer names both', split[split.length - 1].includes(`snapshots ${SNAPSHOT} and jev-1.14`));
     const computed = renderMeasuredBlock(FIXTURE_CLAIMS, { ...MEASURED, sources: { fast_check_usd_per_1k: { cost_source: 'computed' } } }, read).lines;

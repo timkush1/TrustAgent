@@ -61,6 +61,24 @@ const entries = new Map((claimsDoc.claims as ClaimEntry[]).map((c) => [c.id, c])
 const measuredValues = measuredDoc.values as Record<string, { value: number | null }>;
 const measuredRun = measuredDoc.status === 'measured' && measuredDoc.mock === false;
 const measuredIntervals = (measuredDoc as { intervals?: Record<string, MeasuredInterval> }).intervals ?? {};
+const measuredSources = (measuredDoc as { sources?: { gate_latency?: { conditions?: unknown } } }).sources ?? {};
+
+/**
+ * A caveat as the page shows it. `{gate_conditions}` is filled from measured.json
+ * (sources.gate_latency.conditions: the connection, requests at a time, where the run ran, the
+ * snapshot and n; D205), as scripts/check-claims.mjs fills it for the README. A value not
+ * measured yet has no conditions, so its caveat is dropped; a placeholder is never shown raw.
+ */
+export function fillCaveat(
+  caveat: string | null,
+  hasValue: boolean,
+  conditions: unknown = measuredRun ? measuredSources.gate_latency?.conditions : undefined,
+): string | null {
+  if (!caveat?.includes('{gate_conditions}')) return caveat;
+  if (!hasValue) return null;
+  const text = typeof conditions === 'string' && conditions.trim() ? conditions.trim() : 'conditions not recorded';
+  return caveat.replace('{gate_conditions}', text);
+}
 const INTERVAL_METHODS: Record<string, string> = { wilson: 'Wilson', bootstrap: 'bootstrap' };
 
 export const LABEL_TEXT: Record<ClaimLabel, string> = copy.value_labels;
@@ -103,7 +121,7 @@ export function claim(id: string): ClaimView {
     basis: c.basis,
     sourceUrl: c.source_url,
     asOf: c.as_of,
-    caveat: c.caveat,
+    caveat: fillCaveat(c.caveat, hasValue),
     interval: hasValue && label === 'measured' && measuredRun && c.measured_ref ? intervalText(measuredIntervals[c.measured_ref], c.unit) : null,
   };
 }

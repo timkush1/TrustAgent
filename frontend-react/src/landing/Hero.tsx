@@ -74,10 +74,14 @@ export function Hero({ ours = claim('gate_latency_p50_measured') }: { ours?: Cla
           {/* Our own figure joins it once a benchmark run publishes one; until then the Cost
               section says what is not measured yet, so the first screen never opens on a gap. */}
           {ours.hasValue ? (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1" data-hero-measured>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1" data-hero-measured data-caveat-scope>
               <dt className="text-fg-muted">Measured by us:</dt>
               <dd>
                 <ClaimValue claim={ours} />
+              </dd>
+              {/* D205: how it was taken (connection, one at a time, where it ran, n) sits beside it. */}
+              <dd className="basis-full">
+                <ClaimCaveat claim={ours} className="max-w-md" />
               </dd>
             </div>
           ) : null}

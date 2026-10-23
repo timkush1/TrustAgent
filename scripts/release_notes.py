@@ -69,6 +69,7 @@ MEASURED_PATH = "contracts/claims/measured.json"
 CLAIMS_PATH = "contracts/claims/value-claims.v1.json"
 RECORDED_MANIFEST = "frontend-react/demo-data/recorded/manifest.json"
 COMMON_SCHEMA = "contracts/schema/common.v1.schema.json"
+LOAD_RUNS_DIR = "docs/benchmarks/load"
 # Our agreement with RAGTruth's labels is read only beside the like-for-like third-party figure,
 # accuracy at the default 0.5 threshold, never alone or beside the tuned one (D212).
 AGREEMENT_REFS = ("ragtruth_qa_agreement", "ragtruth_qa_accuracy")
@@ -299,6 +300,38 @@ def measured_note(measured: Dict[str, Any], ref: str, unit: str) -> str:
     return text
 
 
+def figure_caveat(root: Path, measured: Dict[str, Any], claim: Dict[str, Any]) -> str:
+    """
+    A measured figure's caveat with its run placeholders filled, as scripts/check-claims.mjs fills
+    them: {gate_conditions} from measured.json sources.gate_latency (D205: the connection, the
+    requests at a time, where the run ran, the snapshot and n), {machine} from the load run.
+    Refused when the run does not say how a latency was taken: it is never published bare.
+    """
+    caveat = str(claim.get("caveat") or "").strip()
+    if "{gate_conditions}" in caveat:
+        conditions = ((measured.get("sources") or {}).get("gate_latency") or {}).get("conditions")
+        if not isinstance(conditions, str) or not conditions.strip():
+            raise Refused(
+                f"{MEASURED_PATH} publishes {claim.get('measured_ref')} without "
+                "sources.gate_latency.conditions: a latency is never published without how it "
+                "was taken (D205); rerun make bench-publish"
+            )
+        caveat = caveat.replace("{gate_conditions}", conditions.strip())
+    if "{machine}" in caveat:
+        run_id = ((measured.get("values") or {}).get(claim.get("measured_ref")) or {}).get("run_id")
+        env = ((_read_json(root, f"{LOAD_RUNS_DIR}/{run_id}.json") or {}) if run_id else {}).get(
+            "environment"
+        ) or {}
+        machine = (
+            f"measured on {env['cpu_model']}, {env['cores']} logical CPUs and {env['mem_gb']} GB "
+            f"RAM visible to {env['os']}"
+            if all(env.get(k) for k in ("cpu_model", "cores", "mem_gb", "os"))
+            else "machine unknown"
+        )
+        caveat = caveat.replace("{machine}", machine)
+    return caveat
+
+
 def like_for_like(claims: List[Dict[str, Any]]) -> str:
     """The third-party figure a measured agreement is read beside (D212); Refused without it."""
     like = next((c for c in claims if c.get("id") == LIKE_FOR_LIKE_ID), None)
@@ -364,8 +397,10 @@ def numbers_section(root: Path) -> List[str]:
             display = claim["display"].replace("{value}", format_value(value, unit))
             run = f" (run {entry['run_id']})" if entry.get("run_id") else ""
             note = measured_note(measured, str(ref), unit)
+            caveat = figure_caveat(root, measured, claim)
+            after = " ".join(part for part in (f"{note}." if note else "", caveat) if part)
             shown.append(
-                f"- {claim['text']}: {display} [measured]{run}" + (f". {note}." if note else "")
+                f"- {claim['text']}: {display} [measured]{run}" + (f". {after}" if after else "")
             )
             agreement = agreement or ref in AGREEMENT_REFS
     if shown:

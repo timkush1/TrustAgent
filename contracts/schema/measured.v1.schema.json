@@ -102,6 +102,20 @@
             "calibration_sha256": {"$ref": "common.v1.schema.json#/$defs/Sha256Hex"},
             "dataset": {"type": "string", "minLength": 1}
           }
+        },
+        "gate_latency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["connection", "gate_concurrency", "platform", "region", "n", "conditions"],
+          "description": "How the gate latency values were taken (D205, D225), from the bench run that measured them: its latency block (connection, gate_concurrency), its inputs.host_env (platform and region: where it really ran, never assumed) and the gate's scored count n. conditions is the sentence shown after the figure wherever it appears (the {gate_conditions} placeholder in the latency claims' caveat), snapshot included; bench publish writes it. Required whenever a gate latency value is published.",
+          "properties": {
+            "connection": {"enum": ["warm", "cold"]},
+            "gate_concurrency": {"type": "integer", "minimum": 1},
+            "platform": {"type": "string", "minLength": 1, "maxLength": 64},
+            "region": {"type": "string", "minLength": 1, "maxLength": 64},
+            "n": {"type": "integer", "minimum": 1},
+            "conditions": {"type": "string", "minLength": 1, "maxLength": 300}
+          }
         }
       },
       "patternProperties": {

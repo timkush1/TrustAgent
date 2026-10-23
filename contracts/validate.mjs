@@ -654,6 +654,10 @@ function measuredProblems(m) {
   if ((m.values.groundedness_ece_after?.value ?? null) !== null && m.sources?.groundedness_ece?.method !== 'holdout') {
     out.push('ece_source: groundedness_ece_after needs sources.groundedness_ece, held out (D206)');
   }
+  const latencyKeys = ['gate_latency_ms_p50', 'gate_latency_ms_p95'].filter((k) => (m.values[k]?.value ?? null) !== null);
+  if (latencyKeys.length && !m.sources?.gate_latency?.conditions) {
+    out.push(`latency_conditions: ${latencyKeys.join(', ')} needs sources.gate_latency: the connection, the requests at a time, where it ran, the snapshot and n (D205)`);
+  }
   for (const k of Object.keys(m.intervals ?? {})) {
     const v = m.values[k];
     if (!v || v.unit !== 'fraction') out.push(`intervals: intervals.${k} is not a fraction in values`);
@@ -678,6 +682,12 @@ if (claims) {
       error(REL, `${c.id}: measured claims have value null (read from measured.json), a measured_ref and an empty_display`);
     }
     if (c.label !== 'measured' && c.value === null) error(REL, `${c.id}: only measured claims may have a null value`);
+    // A caveat's {name} is filled from the measured run (D205, D118); any other {name} would show raw.
+    for (const [, name] of (c.caveat ?? '').matchAll(/\{([a-z_]+)\}/g)) {
+      const system = measured?.values?.[c.measured_ref]?.system;
+      const fills = { machine: system === 'proxy', gate_conditions: system === 'gate' && /^gate_latency_ms_/.test(c.measured_ref ?? '') };
+      if (!fills[name]) error(REL, `${c.id}: caveat placeholder {${name}} is not filled for this claim (only {machine} on a proxy overhead claim, {gate_conditions} on a gate latency claim)`);
+    }
     if (c.assumption_ref !== undefined) {
       const f = figureValues.get(c.assumption_ref);
       if (!f) error(REL, `${c.id}: assumption_ref ${c.assumption_ref} is not a computable figure in pricing/assumptions.v1.json`);

@@ -38,17 +38,17 @@
       "system": null
     },
     "gate_latency_ms_p50": {
-      "value": null,
+      "value": 231,
       "unit": "ms",
       "description": "Fast-check latency p50.",
-      "run_id": null,
+      "run_id": "lite-p6-fixture",
       "system": "gate"
     },
     "gate_latency_ms_p95": {
-      "value": null,
+      "value": 512,
       "unit": "ms",
       "description": "Fast-check latency p95.",
-      "run_id": null,
+      "run_id": "lite-p6-fixture",
       "system": "gate"
     },
     "proxy_overhead_ms_p50": {
@@ -129,6 +129,14 @@
       "calibration_file": "config/calibration/typesafe__jev-1.13-20260917.json",
       "calibration_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "dataset": "ragtruth:qa-train@c103204"
+    },
+    "gate_latency": {
+      "connection": "warm",
+      "gate_concurrency": 1,
+      "platform": "WSL2",
+      "region": "il",
+      "n": 199,
+      "conditions": "warm connection, one request at a time, run on WSL2 (region il), snapshot typesafe/jev-1.13-20260917, n=199"
     }
   }
 }

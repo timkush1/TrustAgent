@@ -784,6 +784,27 @@ describe('validate.mjs', () => {
     assert.match(r.out, /claims\/measured\.json: values\.fast_check_usd_per_1k needs sources\.fast_check_usd_per_1k\.cost_source/);
   });
 
+  test('a gate latency needs its conditions, and a caveat placeholder must be one that is filled (D205)', () => {
+    const sb = sandbox();
+    sb.edit('claims/measured.json', (m) => {
+      m.status = 'measured'; m.tier = 'lite'; m.generated_by = 'evals.bench publish'; m.generated_at = '2026-10-12T10:00:00Z';
+      m.runs = ['r1']; m.snapshot = 'typesafe/jev-1.13-20260917';
+      m.sources = { attempts: { bench_runs: 1, refused_run_ids: [] } };
+      m.values.gate_latency_ms_p50.value = 231;
+      m.values.gate_latency_ms_p50.run_id = 'r1';
+    });
+    sb.edit('claims/value-claims.v1.json', (c) => {
+      c.claims.find((x) => x.id === 'fast_check_cost_per_1k_measured').caveat = 'Measured on {machine}.';
+      c.claims.find((x) => x.id === 'proxy_overhead_p50_measured').caveat = 'Taken with {gate_conditions}.';
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /claims\/measured\.json: gate_latency_ms_p50 needs sources\.gate_latency/);
+    assert.match(r.out, /fast_check_cost_per_1k_measured: caveat placeholder \{machine\} is not filled/);
+    assert.match(r.out, /proxy_overhead_p50_measured: caveat placeholder \{gate_conditions\} is not filled/);
+    assert.doesNotMatch(r.out, /gate_latency_p50_measured: caveat placeholder/);
+  });
+
   test('repo calibration files are validated when present', () => {
     const sb = sandbox();
     const table = Array.from({ length: 101 }, (_, i) => i / 100);

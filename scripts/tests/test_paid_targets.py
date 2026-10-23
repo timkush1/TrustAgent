@@ -56,8 +56,15 @@ def paid_targets() -> Dict[str, List[str]]:
 class PaidTargetsAreDryRuns(unittest.TestCase):
     def test_the_scan_finds_the_known_paid_targets(self) -> None:
         found = set(paid_targets())
-        for target in ("bench-lite", "bench-smoke", "calib-pass", "eval-live", "jev-capture",
-                       "eval-compare", "record-demo"):
+        for target in (
+            "bench-lite",
+            "bench-smoke",
+            "calib-pass",
+            "eval-live",
+            "jev-capture",
+            "eval-compare",
+            "record-demo",
+        ):
             self.assertIn(target, found)
 
     def test_every_paid_target_branches_on_confirm_first(self) -> None:
@@ -65,7 +72,9 @@ class PaidTargetsAreDryRuns(unittest.TestCase):
             if target in NOT_GATED:
                 continue
             with self.subTest(target=target):
-                first = next((ln for ln in body if ln.strip() and not ln.lstrip().startswith("#")), "")
+                first = next(
+                    (ln for ln in body if ln.strip() and not ln.lstrip().startswith("#")), ""
+                )
                 if target in DELEGATED:
                     self.assertIn('CONFIRM="$(CONFIRM)"', first)
                     self.assertIn(DELEGATED[target], first)
@@ -79,7 +88,12 @@ class EvalCompareDryRun(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k not in ("CONFIRM", "MAKEFLAGS", "MFLAGS")}
         r = subprocess.run(  # nosec B603 B607 - fixed arguments
             ["make", "-n", "--no-print-directory", "eval-compare", *args],
-            cwd=ROOT, env=env, capture_output=True, text=True, timeout=60, check=False,
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
         )
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout

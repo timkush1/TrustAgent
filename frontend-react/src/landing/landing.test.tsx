@@ -22,7 +22,7 @@ import { digest } from 'virtual:trustagent/tape-digest';
 import claimsDoc from '@contracts/claims/value-claims.v1.json';
 import { priceCall } from '@/lib/decision/cost';
 import { OurMeasurements } from './Affordable';
-import { claim, intervalText, LABEL_TEXT, landingClaims, optionalClaim, splitClaims, type ClaimView } from './claims';
+import { claim, fillCaveat, intervalText, LABEL_TEXT, landingClaims, optionalClaim, splitClaims, type ClaimView } from './claims';
 import { commonReadDate, compareRows } from './compareData';
 import { command as landingCommand, copy as landingCopy, DEMO_HREF, REFUND } from './content';
 import { auditShareWords, defaultCalculatorInputs, formatMultiple, judgeOptions, modelName, monthlyCost, PRICE_TABLE, referenceJudge, type CalculatorInputs } from './costModel';
@@ -810,6 +810,30 @@ describe('hero latency strip', () => {
     expect(row.querySelector('[data-value-label="measured"]')).not.toBeNull();
     // The third-party figure keeps its caveat beside it.
     expect(document.querySelector('[data-caveat-for="jev_p50_latency_openrouter"]')).toHaveTextContent(claim('jev_p50_latency_openrouter').caveat ?? '');
+  });
+
+  it('says how our latency was taken beside it: connection, one at a time, where it ran, snapshot, n (D205)', () => {
+    const conditions = 'warm connection, one request at a time, run on Linux (region cloud us-east), snapshot typesafe/jev-1.13-20260917, n=199';
+    const base = claim('gate_latency_p50_measured');
+    const caveat = fillCaveat(claimsDoc.claims.find((c) => c.id === 'gate_latency_p50_measured')?.caveat ?? null, true, conditions);
+    const measured: ClaimView = { ...base, display: '241 ms p50', hasValue: true, value: 241, caveat };
+    render(<Hero ours={measured} />);
+    const row = document.querySelector('[data-hero-measured]') as HTMLElement;
+    expect(row).toHaveAttribute('data-caveat-scope');
+    const note = row.querySelector('[data-caveat-for="gate_latency_p50_measured"]') as HTMLElement;
+    expect(note).toHaveTextContent(`The fast check’s own time per answer, the vendor call included: ${conditions}.`.replace('’', "'"));
+    expect(note.textContent).not.toMatch(/laptop|\{/);
+  });
+
+  it('never shows a caveat placeholder raw: no conditions before a run, a plain note without them', () => {
+    const raw = 'Time: {gate_conditions}.';
+    expect(fillCaveat(raw, false, 'warm')).toBeNull();
+    expect(fillCaveat(raw, true, undefined)).toBe('Time: conditions not recorded.');
+    expect(fillCaveat('No placeholder.', false)).toBe('No placeholder.');
+    // Before a run publishes, the latency claims carry no caveat at all.
+    expect(claim('gate_latency_p50_measured').caveat).toBeNull();
+    expect(claim('gate_latency_p95_measured').caveat).toBeNull();
+    for (const c of landingClaims()) expect(c.caveat ?? '').not.toMatch(/\{[a-z_]+\}/);
   });
 });
 
