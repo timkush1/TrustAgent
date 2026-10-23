@@ -280,7 +280,6 @@ def test_the_ledger_sums_every_step_and_reconciles_with_the_key(tmp_path: Path) 
         "bench-lite": 2.9,
         "calib-pass": 0.2,
         "record-demo": 1.2,
-        "jev-check": 0.0,
     }
     calib = next(step for step in ledger.steps if step.name == "calib-pass")
     assert calib.entries == 2 and calib.cap_usd == pytest.approx(0.60)  # one re-run allowed

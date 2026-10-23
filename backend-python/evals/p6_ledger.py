@@ -12,8 +12,10 @@ It reads what the paid steps left behind and calls nothing but the free
 - the record ledger, tmp/record-demo/ledger.jsonl (VEND, D208), read by
   scripts/record_demo.py's own Ledger: each attempt counts once, at its final
   reading of the key, or at an upper bound when that reading failed;
-- the result lines of the other steps (jev-capture, jev-check) from the
-  journal tmp/p6/results.log, where the make targets append them.
+- the result line of jev-capture from the journal tmp/p6/results.log, where
+  its make target appends it. jev-check and doctor --probe print no result
+  line (D232: one probe call, below the ledger's precision), so they have no
+  row; the key's usage still counts them, as unattributed.
 
 Each step is compared with its D201 cap (capture $0.01, smoke $0.30,
 calib-pass $0.30 a pass, two at most, bench-lite $5, record-demo $4 in
@@ -52,8 +54,8 @@ CAPS_TOTAL = 9.61
 KEY_LIMIT = 8.00
 # Ledger names of the bench steps (fixed resume keys, D204).
 BENCH_LEDGERS = {"bench-smoke": "smoke-p6", "bench-lite": "lite-p6"}
-# Steps whose spend comes only from their result line.
-JOURNAL_STEPS = ("jev-capture", "jev-check")
+# Steps whose spend comes only from their result line (jev-check prints none, D232).
+JOURNAL_STEPS = ("jev-capture",)
 TOLERANCE_USD = 0.01  # Rounding between the vendor's usage and the files
 
 
