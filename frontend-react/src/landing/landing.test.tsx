@@ -669,21 +669,28 @@ describe('calculator', () => {
 
   it('offers the judges the price table prices: one per model, no Jev, data-driven', () => {
     const options = judgeOptions();
-    expect(options.map((o) => o.name)).toEqual(['Claude Haiku 4.5', 'Local model (Ollama)']);
+    // The sourced Sonnet 5.5 pair (D149, read 2026-10-23) is one option: same price on both providers.
+    expect(options.map((o) => o.name)).toEqual(['Claude Haiku 4.5', 'Claude Sonnet 5.5', 'Local model (Ollama)']);
     expect(referenceJudge(options).ref).toEqual({ provider: 'anthropic', model: 'claude-haiku-4-5' });
-    // A sourced Sonnet pair would appear with no code change (D149), once per model.
+    // Another priced model appears with no code change, once per model.
     const sonnet = { input_per_mtok: 3, output_per_mtok: 15, label: 'vendor_price' as const, source: 'https://example.com', as_of: '2026-10-10' };
     const table: PricingTable = {
       ...PRICE_TABLE,
       entries: [...PRICE_TABLE.entries, { ...sonnet, match: 'claude-sonnet-4-5*', provider: 'anthropic' }, { ...sonnet, match: 'anthropic/claude-sonnet-4.5', provider: 'openrouter' }],
     };
-    expect(judgeOptions(table).map((o) => o.name)).toEqual(['Claude Haiku 4.5', 'Local model (Ollama)', 'Claude Sonnet 4.5']);
+    expect(judgeOptions(table).map((o) => o.name)).toEqual(['Claude Haiku 4.5', 'Claude Sonnet 5.5', 'Local model (Ollama)', 'Claude Sonnet 4.5']);
     // The same model at two prices is two options, each naming its provider.
     const split: PricingTable = {
       ...table,
       entries: table.entries.map((e) => (e.provider === 'openrouter' && e.match === 'anthropic/claude-sonnet-4.5' ? { ...e, input_per_mtok: 3.3 } : e)),
     };
-    expect(judgeOptions(split).map((o) => o.name)).toEqual(['Claude Haiku 4.5', 'Local model (Ollama)', 'Claude Sonnet 4.5 (Anthropic)', 'Claude Sonnet 4.5 (OpenRouter)']);
+    expect(judgeOptions(split).map((o) => o.name)).toEqual([
+      'Claude Haiku 4.5',
+      'Claude Sonnet 5.5',
+      'Local model (Ollama)',
+      'Claude Sonnet 4.5 (Anthropic)',
+      'Claude Sonnet 4.5 (OpenRouter)',
+    ]);
     expect(modelName({ match: 'anthropic/claude-haiku-4.5', provider: 'openrouter' })).toBe('Claude Haiku 4.5');
   });
 

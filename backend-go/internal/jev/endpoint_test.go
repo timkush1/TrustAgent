@@ -3,6 +3,8 @@ package jev
 import (
 	"net/url"
 	"testing"
+
+	"github.com/truthtable/backend-go/internal/decision"
 )
 
 // The credential binding compares canonical origins (D78).
@@ -59,8 +61,10 @@ func TestPriceOf(t *testing.T) {
 		t.Errorf("TRUTHTABLE_JEV_PRICE_PER_MTOK must win: %+v", p)
 	}
 	c.cfg.PricePerMTok, c.prices = 0, nil
-	if p := c.priceOf("typesafe/jev-1.13"); p.perMTok != 0.042 || p.version != "2026-09-27" {
-		t.Errorf("nil Prices = %+v, want the contracts table (0.042, 2026-09-27)", p)
+	if table, err := decision.ContractsPrices(); err != nil {
+		t.Fatal(err)
+	} else if p := c.priceOf("typesafe/jev-1.13"); p.perMTok != 0.042 || p.version != table.Version {
+		t.Errorf("nil Prices = %+v, want the contracts table (0.042, %s)", p, table.Version)
 	}
 	// The effective table sees the model without OpenRouter's "~" alias prefix.
 	var seen string
