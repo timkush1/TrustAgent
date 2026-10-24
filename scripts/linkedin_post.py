@@ -33,7 +33,10 @@ Placeholders:
                        (ms with " ms", USD with "$", a fraction as a percentage, a multiplier bare)
   {claim:ID}           a claim's display and label chip from value-claims.v1.json, e.g.
                        "76% at 0.5 [third-party]"
-  {run.date}           the measured run's date; {run.ids} its run ids; {snapshot} its snapshot
+  {run.date}           the measured run's date; {run.ids} its run ids; {snapshot} its snapshot.
+                       The post says its figures come from one benchmark run, so {run.date} is
+                       missing when measured.json's values come from several (a load run, which
+                       the post does not quote, is not counted)
   {agreement}          a paragraph built here: our RAGTruth-QA accuracy and balanced accuracy, each
                        with its 95% interval and n per class; the thresholds the bench flags at
                        (each bench evaluator's warn_at, read from contracts/evaluators) and where
@@ -470,11 +473,39 @@ def agreement(src: Sources) -> Tuple[Optional[str], List[str]]:
     return text, []
 
 
+def benchmark_runs(src: Sources) -> List[str]:
+    """The benchmark runs measured.json's values come from: its ``runs`` without the load runs
+    (the proxy overhead, system ``proxy``, which bench-publish folds in and the post never quotes).
+    evals/report.py takes each value from the newest run that measures it, so after a second
+    published run the values can come from two runs."""
+    values = src.measured.get("values") or {}
+    load = {
+        str(entry.get("run_id"))
+        for entry in values.values()
+        if isinstance(entry, dict) and entry.get("system") == "proxy" and entry.get("run_id")
+    }
+    return [str(r) for r in src.measured.get("runs") or [] if r and str(r) not in load]
+
+
+def several_runs_problem(src: Sources) -> Optional[str]:
+    """Why {run.date} cannot be filled: the post says its figures come from one benchmark run."""
+    runs = benchmark_runs(src)
+    if len(runs) <= 1:
+        return None
+    return (
+        f"{MEASURED_PATH} takes its values from {len(runs)} benchmark runs ({', '.join(runs)}), "
+        "but the post says they come from one benchmark run on {run.date}: publish from one run, "
+        f"or reword that sentence in {TEMPLATE_PATH}"
+    )
+
+
 def run_facts(src: Sources) -> Dict[str, Optional[str]]:
     if not measured_run(src):
         return {"run.date": None, "run.ids": None, "snapshot": None}
     generated = str(src.measured.get("generated_at") or "")
     date = generated[:10] if re.match(r"\d{4}-\d{2}-\d{2}", generated) else None
+    if several_runs_problem(src):
+        date = None
     runs = [str(r) for r in src.measured.get("runs") or [] if r]
     snap = src.measured.get("snapshot")
     if isinstance(snap, list):
@@ -563,8 +594,9 @@ def fill(tpl: str, src: Sources, roles: bool) -> Tuple[str, List[str], List[str]
                 raise UsageError(f"{{{name}}} must stand at the start of its own line")
             value = value_of(name)
             if value is None:
-                if name not in missing:
-                    missing.append(name)
+                reason = (several_runs_problem(src) if name == "run.date" else None) or name
+                if reason not in missing:
+                    missing.append(reason)
                 return m.group(0)
             return value
 

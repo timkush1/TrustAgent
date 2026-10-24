@@ -617,6 +617,37 @@ class MissingValueTest(unittest.TestCase):
         measured["generated_at"] = None
         self.assert_missing(make_root(measured=measured), "run.date")
 
+    def test_values_from_two_benchmark_runs_are_not_one_run(self) -> None:
+        # evals/report.py takes each value from the newest run that measures it, so a second
+        # published run can leave the post's figures spread over two runs, and "one benchmark run
+        # on {run.date}" would be false.
+        measured = copy.deepcopy(MEASURED)
+        measured["runs"] = ["20261024T171500Z-abc1234", "20261101T090000Z-def5678"]
+        measured["values"]["fast_check_usd_per_1k"]["run_id"] = "20261101T090000Z-def5678"
+        self.assert_missing(
+            make_root(measured=measured),
+            "takes its values from 2 benchmark runs "
+            "(20261024T171500Z-abc1234, 20261101T090000Z-def5678)",
+            "publish from one run, or reword that sentence",
+        )
+
+    def test_a_load_run_beside_the_benchmark_run_is_still_one_run(self) -> None:
+        # bench-publish folds the newest load run in (the proxy overhead, system proxy): its id is
+        # in runs, but the post quotes no proxy figure.
+        measured = copy.deepcopy(MEASURED)
+        measured["runs"] = ["20261010T131516Z-f60a8a4", "20261024T171500Z-abc1234"]
+        measured["values"]["proxy_overhead_ms_p50"] = {
+            "value": 1.9,
+            "unit": "ms",
+            "run_id": "20261010T131516Z-f60a8a4",
+            "system": "proxy",
+        }
+        root = make_root(measured=measured)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root)
+        self.assertEqual(code, 0, err)
+        self.assertIn("Mine come from one benchmark run on 2026-10-24.", out)
+
 
 class TemplateTest(unittest.TestCase):
     def test_the_real_templates_use_known_placeholders_only(self) -> None:
