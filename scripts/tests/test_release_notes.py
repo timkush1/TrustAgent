@@ -513,6 +513,33 @@ class ReleaseNotesTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, root, True)
         self.assertEqual(run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))[0], 0)
 
+    def test_a_tape_without_its_date_version_or_snapshot_is_refused(self) -> None:
+        # The notes name the tape's date, snapshot and version: never "TrustAgent None".
+        for tape, named in (
+            (
+                {k: v for k, v in RECORDED_TAPE.items() if k != "trustagent_version"},
+                "trustagent_version",
+            ),
+            ({k: v for k, v in RECORDED_TAPE.items() if k != "recorded_at"}, "recorded_at"),
+            (dict(RECORDED_TAPE, recorded_at="soon"), "recorded_at"),
+            (
+                dict(
+                    RECORDED_TAPE,
+                    decision_model={
+                        k: v for k, v in RECORDED_TAPE["decision_model"].items() if k != "snapshot"
+                    },
+                ),
+                "decision_model.snapshot",
+            ),
+        ):
+            root = make_root(tape=tape)
+            self.addCleanup(shutil.rmtree, root, True)
+            code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+            self.assertEqual(code, 1, named)
+            self.assertEqual(out, "")
+            self.assertIn(f"says kind recorded but has no {named}", err)
+            self.assertNotIn("None", err)
+
     def test_refuses_a_missing_digest(self) -> None:
         engine = copy.deepcopy(self.fixture["engine"])
         del engine["digest"]

@@ -456,6 +456,26 @@ def tape_hosts_problem(tape: Dict[str, Any], hosts: List[str]) -> Optional[str]:
     )
 
 
+def tape_facts_problem(tape: Dict[str, Any]) -> Optional[str]:
+    """Why the notes cannot name a recorded tape (no recording date, TrustAgent version or
+    decision-model snapshot in its manifest), or None. check_recording --require-recorded guards
+    the tape in pages.yml; the notes refuse on their own rather than print "None"."""
+    missing = []
+    if not re.match(r"\d{4}-\d{2}-\d{2}", str(tape.get("recorded_at") or "")):
+        missing.append("recorded_at")
+    if not str(tape.get("trustagent_version") or "").strip():
+        missing.append("trustagent_version")
+    if not str((tape.get("decision_model") or {}).get("snapshot") or "").strip():
+        missing.append("decision_model.snapshot")
+    if not missing:
+        return None
+    return (
+        f"{RECORDED_MANIFEST} says kind recorded but has no {', '.join(missing)}: the notes name "
+        "the tape's date, snapshot and version (python3 scripts/check_recording.py "
+        "frontend-react/demo-data/recorded --require-recorded)"
+    )
+
+
 def numbers_section(root: Path) -> List[str]:
     """Every measured figure with its label; a simulated or missing run is said as such."""
     measured = _read_json(root, MEASURED_PATH) or {}
@@ -505,7 +525,7 @@ def numbers_section(root: Path) -> List[str]:
         )
     tape = _read_json(root, RECORDED_MANIFEST)
     if isinstance(tape, dict) and tape.get("kind") == "recorded":
-        problem = tape_hosts_problem(tape, vendor_hosts(root))
+        problem = tape_hosts_problem(tape, vendor_hosts(root)) or tape_facts_problem(tape)
         if problem:
             raise Refused(problem)
         model = tape.get("decision_model") or {}
@@ -513,8 +533,8 @@ def numbers_section(root: Path) -> List[str]:
             "",
             f"The live demo replays a recorded tape: real fast-check and judge answers about "
             f"scripted and generated demo answers, recorded "
-            f"{str(tape.get('recorded_at', ''))[:10]} on snapshot {model.get('snapshot')} with "
-            f"TrustAgent {tape.get('trustagent_version')}.",
+            f"{str(tape['recorded_at'])[:10]} on snapshot {model['snapshot']} with "
+            f"TrustAgent {tape['trustagent_version']}.",
         ]
     else:
         lines += [
