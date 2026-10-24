@@ -73,9 +73,8 @@ push tags or merge into `main`; those stay on GitHub's web pages, which work fro
 2. **Turn on private vulnerability reporting:** repository **Settings → Code security → Private
    vulnerability reporting → Enable**. The new `SECURITY.md`, `CONTRIBUTING.md` and issue forms
    send security reports there, and it is off today.
-3. **Your interview talking points: public or private.** `docs/launch/interview-talking-points.md`
-   holds your prepared interview stories. Private (the default, H-7) moves it out of the
-   repository before the merge; public keeps it.
+3. **Your interview talking points: private (done, 24 October 2026, H-7).** They left the
+   repository and are kept by the owner outside it.
 
 ### Then: merge the pull request
 
@@ -94,16 +93,15 @@ everything above onto `main` (PR #45 then shows as merged too).
     answer in 7 days, choose to keep waiting or **mode R** (no Jev figures published; the site
     shows the simulated replay).
 - **G1, answers** (skip what you already answered before the merge; the legal name is answered): any other
-  `timkush1.github.io` sites; an "open to roles" line in the post, yes or no; the interview talking
-  points public or private; launch day; audience (Israel, or US and EU); and the build line used in
+  `timkush1.github.io` sites; an "open to roles" line in the post, yes or no; launch day; audience (Israel, or US and EU); and the build line used in
   the post, README and release notes (D227, D230): *"Designed and directed by me, built with AI
   coding agents (Claude Code) working to the plans, tests and reviews I set."* Keep it or reword it.
 - **G1, OpenRouter account** (§10 G1 step 4): sign in, **no credit yet**, check the privacy page.
 - **The `main` ruleset** (§10 G9 step 4) as soon as you can, with the admin bypass **for pull
   requests only** (D220).
 
-Say back: **"S1 done: mode A/W/R, name …, sites none/…, roles yes/no, talking points
-public/private, launch <day>, build line ok/…"**.
+Say back: **"S1 done: mode A/W/R, sites none/…, roles yes/no, launch <day>, audience …, build
+line ok/…"**.
 
 ### S2: the paid day, about 2.5 hours, mostly waiting (§8, §10)
 

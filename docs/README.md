@@ -62,7 +62,6 @@ Start with the [project README](../README.md) for the overview and quick start. 
 | [launch/github-metadata.md](launch/github-metadata.md) | Repository description, topics and social preview |
 | [launch/og-spec.md](launch/og-spec.md) | The 1280×640 social card: layout, content, how it is captured (`make og`; `make hero-gif` and `make screenshots` capture the README's hero and pictures) |
 | [launch/linkedin-post.md](launch/linkedin-post.md) | The launch post's templates (and the mode-R variant); `make linkedin-post` fills them from the measured run and the recorded tape, and exits 1 on any missing value |
-| [launch/interview-talking-points.md](launch/interview-talking-points.md) | Ten engineering stories: decision, alternatives, result, what went wrong |
 
 ## Component deep-dives
 

@@ -131,7 +131,7 @@ paid runs and the release steps run from a Claude cloud session (D221).
       `v1.0.0` tag on `d709df3`, pushed with the owner's OK (the cloud session cannot push tags).
 - [ ] **The re-verification is current**: every comparison cell's source re-read and dated, no
       claim with an open `reverify`, the market lines in
-      [interview-talking-points.md](interview-talking-points.md) dated or deleted.
+      the owner's private interview talking points dated or deleted.
 
 ## S3a: the results to TypeSafe, settings and the pull request
 
