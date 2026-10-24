@@ -63,8 +63,9 @@ paid runs and the release steps run from a Claude cloud session (D221).
       environment's variables only.
 - [ ] **Handoff**: `docs/v2/STATUS.md` rewritten for the cloud session; int7 merged into
       `feat/v2-jev-gateway` and both pushed.
-- [ ] **The talking-points choice applied** (H-7) before that pull request opens: if private
-      (the default while S1 has not answered), `interview-talking-points.md` has left the tree.
+- [ ] **The talking-points choice applied** (H-7) before the pull request below opens (on int7
+      before the merge when S1 has answered): if private, the default while S1 has not answered,
+      `interview-talking-points.md` has left the tree.
 - [ ] **The pull request into `main`** (A-8, D220), opened by the lead right after Gate A from
       `feat/v2-jev-gateway`, and merged by the owner with **Create a merge commit**. Public `main`
       then says how TrustAgent was built (the README "How it was built" section, the landing's

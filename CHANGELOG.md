@@ -154,7 +154,8 @@ Details are under *Build log by phase* (*Breaking changes (P3)* and
 - **The public site**: a landing page with a cost calculator and a sourced,
   dated comparison table, the replayed demo, Studio and the live Playground in
   the browser (`pages.yml`).
-- **Release tooling**: `make version-bump` and `make check-version`, multi-arch
+- **Release tooling**: `make version-bump` (`RELEASE_DATE=` dates the CHANGELOG
+  heading with the planned tag day) and `make check-version`, multi-arch
   GHCR images with SBOMs and build provenance (`release-images.yml`), a
   pull-based quick start, `make release-notes TAG=…` (the CHANGELOG section,
   every image digest and the commands that verify it, each measured figure

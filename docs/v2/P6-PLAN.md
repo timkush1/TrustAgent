@@ -990,6 +990,8 @@ Say back: **"S1 done: mode A/W/R, name …, sites none/…, roles yes/no, talkin
 
 ### Sitting S3a (release day, about 30 min, then hours of CI)
 
+**Before Claude pushes the release branch (C5; 1 min, GitHub web UI).** If the pull request Claude opened right after Gate A (A-8) is still open, merge it with **Create a merge commit**, or close it. A pull request follows its branch, so C5's push would otherwise add the measured run and 2.0.0 to it (D234). Say **"A-8 merged"** or **"A-8 closed"**.
+
 **The results to TypeSafe (mode A only, 10 min; your email, any device; C5a).** Claude says the release branch is pushed (C5) and sends you three things: the measured figures with their labels, the link to the published run, and the post's final text.
 1. Email them to the TypeSafe address you wrote to at G0. The courtesy note promised them at least 3 days before the post. If TypeSafe has not answered whether you may tag them, ask again in the same email.
 2. Tell Claude the date you sent it (**"results sent <date>"**). Claude writes it in `docs/launch/terms-check.md`.
