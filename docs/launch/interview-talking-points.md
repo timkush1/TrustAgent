@@ -2,8 +2,9 @@
 
 Eleven engineering stories from building TrustAgent 2.0, each told the same way: **the decision**,
 **the alternatives** it beat, **the measured result** (or **third-party evidence**, where the
-result is someone else's test: never call it ours), and **what went wrong**. Each fits in about
-two minutes; the links go to the code or the record behind it.
+result is someone else's test: never call it ours; or **the record**, where the result is a
+process with no measurement), and **what went wrong**. Each fits in about two minutes; the links
+go to the code or the record behind it.
 
 Say early how it was built: TrustAgent was designed and directed by one developer and built with AI
 coding agents (Claude Code) to plans the developer approved and decisions the developer made; the
@@ -184,9 +185,9 @@ No benchmark run of our own is published yet, so there are no measured results h
   agents passed; `main` now changes only through pull requests the owner merges.
 - **Alternatives.** One long chat session (no memory between days, no parallel work); agents that
   push straight to the main branch; reviewing only by reading the diff.
-- **Measured result.** Cross-language decision logic proven by golden vectors rather than review,
+- **The record.** Cross-language decision logic proven by golden vectors rather than review,
   the gating scanners (gosec, bandit, npm audit, gitleaks) clean at every merge, and every paid
-  step a dry run unless confirmed (the plans in `docs/v2/` and the merge commits are the record).
+  step a dry run unless confirmed (the plans in `docs/v2/` and the merge commits hold it).
 - **What went wrong.** Two runs of the same fix round once started in parallel, and their agents
   worked in one worktree until one was killed for memory: the rule became "stop the old run before
   relaunching". A review found that a run's "measured" label was decided by the backend's name, so

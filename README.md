@@ -375,7 +375,8 @@ gosec, bandit, npm audit and gitleaks); separate review agents then checked each
 correctness, coverage and design, with fix rounds until they passed. The developer made the
 product decisions, approved each phase plan and authorized the pushes and every paid run; agents
 merged after their gates and the review agents passed, and `main` now changes only through pull
-requests the developer merges. Commits made with an agent carry its co-author line.
+requests the developer merges. Since 2026-02-21, every commit except Dependabot's and plain merges
+carries the co-author line of the agent it was made with.
 
 ## Contributing
 
