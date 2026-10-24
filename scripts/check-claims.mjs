@@ -50,7 +50,7 @@
  *   [launch-*]            with --launch: the recorded dataset (its vendor hosts, version and
  *                         snapshot), a measured run (its failure rate and one snapshot), a reviewed
  *                         comparison table, the og.png card, no open reverify, no licence
- *                         placeholder (see launchChecks)
+ *                         placeholder, no demo link still waiting for Pages (see launchChecks)
  *
  * Markers, chips and figures inside code (fenced blocks and inline code spans) are not read, so a
  * doc can show the syntax. A display, chip, caveat or link inside an HTML comment does not count
@@ -114,6 +114,13 @@ export const ARIZE_FIGURE_IDS = ['arize_ragtruth_accuracy_at_default_threshold',
 /** The files whose holder or author stays a placeholder until the owner names it (D216, S1). */
 export const OWNER_PLACEHOLDER = '{{OWNER_LEGAL_NAME}}';
 export const OWNER_FILES = ['LICENSE', 'frontend-react/package.json', 'backend-python/pyproject.toml'];
+/**
+ * D220: until S3b turns Pages on, these pages point their demo links at `make demo` (the hosted
+ * demo would be a 404 on `main`) and say so in a pages-pending comment. C2 points them back at the
+ * site and deletes the comment; the launch gate refuses one left behind.
+ */
+export const PAGES_PENDING_FILES = ['README.md', 'docs/DEMO.md'];
+export const PAGES_PENDING_MARK = '<!-- pages-pending';
 
 /** The chip each label is written with in prose. */
 export const LABEL_CHIPS = {
@@ -1038,7 +1045,8 @@ function parseJson(buf) {
  *   - any comparison cell that is unverified or not reviewed by the owner;
  *   - a missing or malformed og.png;
  *   - a claim that still says what must be re-checked (reverify, D212);
- *   - the owner's name still a placeholder in the licence or the package metadata (D216).
+ *   - the owner's name still a placeholder in the licence or the package metadata (D216);
+ *   - a page whose demo links still wait for Pages (a pages-pending comment, D220).
  */
 export function launchChecks({ claims = { claims: [] }, measured, compare, read }) {
   const problems = [];
@@ -1132,6 +1140,13 @@ export function launchChecks({ claims = { claims: [] }, measured, compare, read 
   for (const path of OWNER_FILES) {
     if (read(path)?.toString('utf8').includes(OWNER_PLACEHOLDER)) {
       report('launch-license', path, `still says ${OWNER_PLACEHOLDER}: write the owner's legal name (D216)`);
+    }
+  }
+
+  for (const path of PAGES_PENDING_FILES) {
+    if (read(path)?.toString('utf8').includes(PAGES_PENDING_MARK)) {
+      report('launch-pages-pending', path,
+        'its demo links still point at `make demo` while Pages was off: point them back at the hosted demo as its pages-pending comment lists, then delete the comment (C2, D220)');
     }
   }
 
@@ -1772,6 +1787,19 @@ const CASES = [
     },
     files: {},
     expect: ['launch-license', 'launch-license', 'launch-reverify'],
+  },
+  {
+    name: 'launch: a demo link still waiting for Pages (D220)',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE(REVIEWED_CELL),
+    read: {
+      ...LAUNCH_READY,
+      'README.md': `# TrustAgent\n\n${PAGES_PENDING_MARK} (D220): point the demo links back at the site. -->\n`,
+      'docs/DEMO.md': '# The demo\n\nOpen <https://timkush1.github.io/TrustAgent/>.\n',
+    },
+    files: {},
+    expect: ['launch-pages-pending'],
   },
   {
     name: 'an open reverify warns without --launch',

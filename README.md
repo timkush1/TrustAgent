@@ -14,12 +14,19 @@ by your policy, and audited claim by claim on a live dashboard.**
 [![CI: E2E](https://github.com/timkush1/TrustAgent/actions/workflows/ci-e2e.yml/badge.svg)](https://github.com/timkush1/TrustAgent/actions/workflows/ci-e2e.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/timkush1/TrustAgent?sort=semver&display_name=tag)](https://github.com/timkush1/TrustAgent/releases)
-[![Live demo](https://img.shields.io/badge/live%20demo-open-2ea44f)](https://timkush1.github.io/TrustAgent/)
+[![Demo: make demo](https://img.shields.io/badge/demo-make%20demo-2ea44f)](#quick-start)
+
+<!-- pages-pending (D220): the hosted demo is not on until S3b turns Pages on, so the demo links on
+     this page point at `make demo` instead of a 404. At C2 point them back at
+     https://timkush1.github.io/TrustAgent/: the badge above
+     ([![Live demo](https://img.shields.io/badge/live%20demo-open-2ea44f)](https://timkush1.github.io/TrustAgent/)),
+     "Try the demo" below, "Open the live demo" in Quick start, the Screenshots line and the
+     Roadmap's "Done" line; then delete this comment (make check-claims-launch refuses it). -->
 
 <!-- hero-gif: docs/images/v2/hero.gif (1200 px, 12 fps, at most 8 MB) goes here once `make hero-gif`
      has run on a recorded tape; see docs/launch/launch-checklist.md. Never from the simulated tape. -->
 
-**[Try the demo](https://timkush1.github.io/TrustAgent/)** | [`make demo`](#quick-start)
+**[Try the demo](#quick-start)**: `make demo` runs it with zero keys; the hosted demo opens with the 2.0.0 release
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/v2/trace-dark.png">
@@ -82,8 +89,9 @@ No benchmark run of our own is published yet, so there are no measured results h
 
 ### In your browser (nothing to install)
 
-**[Open the live demo](https://timkush1.github.io/TrustAgent/).** It replays the demo traffic
-through the real dashboard: the Traffic list, a flagged answer with its contradicted
+**The hosted demo opens with the 2.0.0 release**, at `https://timkush1.github.io/TrustAgent/`;
+until then [DEMO](docs/DEMO.md#5-share-it) shows how to build the same site locally. It replays
+the demo traffic through the real dashboard: the Traffic list, a flagged answer with its contradicted
 claim marked, the exact request the fast check was sent, Savings and the Evaluator Studio. Each number
 carries its label, and a tape made with the mock checks says **Simulated** on every page.
 
@@ -205,9 +213,9 @@ Per-claim verdicts are **SUPPORTED**, **CONTRADICTED** (the evidence disproves i
      site replaying the simulated tape. Re-run it after a recorded tape ships, then drop "Simulated".
 -->
 Every picture below is **Simulated**: the static site replaying the zero-key demo's tape (mock checks and a
-mock judge, not model output), as each page's banner says. Every page is one click away in the
-[live demo](https://timkush1.github.io/TrustAgent/). The trace detail of the caught refund answer is at
-the [top of this page](#trustagent).
+mock judge, not model output), as each page's banner says. Every page is one click away in
+`make demo` now, and in the hosted demo from the 2.0.0 release. The trace detail of the caught
+refund answer is at the [top of this page](#trustagent).
 
 <table>
 <tr>
@@ -290,8 +298,8 @@ single-tenant.
   flag, block, fallback) on OpenAI and Anthropic APIs, JSON and streaming; the deep-audit engine;
   the dashboard with Traffic, the trace detail, Policies, Playground, Savings, the Evaluator Studio,
   labels and calibration; encrypted credentials and Connect OpenRouter; the landing page and the
-  live in-browser demo; the release pipeline for versioned, multi-arch images (the `edge` images on
-  GHCR are public).
+  in-browser demo site (hosted from the 2.0.0 release); the release pipeline for versioned,
+  multi-arch images (the `edge` images on GHCR are public).
 - **Next:** a measured benchmark and a recorded demo tape on the real models, the 2.0.0 release,
   then shared limits for running several gateway replicas.
 

@@ -1,9 +1,14 @@
 # The demo
 
+<!-- pages-pending (D220): the hosted demo is not on until S3b turns Pages on. At C2 drop the
+     "(from the 2.0.0 release ...)" notes below and delete this comment (make check-claims-launch
+     refuses it). -->
+
 TrustAgent has two demos:
 
 - **[The live demo in your browser](#the-live-demo-in-your-browser)**, at
-  <https://timkush1.github.io/TrustAgent/>: nothing to install. It replays a tape of demo traffic
+  <https://timkush1.github.io/TrustAgent/> (from the 2.0.0 release; until then
+  [build it locally](#5-share-it)): nothing to install. It replays a tape of demo traffic
   through the real dashboard, and its Playground can run real checks with your own OpenRouter key.
 - **`make demo`**, which runs all of TrustAgent on your machine with **no keys and no cost**: the
   fast check (Jev) and the deep-audit judge are mocks, and a traffic generator replays scripted
@@ -16,7 +21,8 @@ the gateway's behaviour is in [GATEWAY.md](GATEWAY.md).
 
 ## The live demo in your browser
 
-Open <https://timkush1.github.io/TrustAgent/>. The landing page explains the idea in a minute;
+Open <https://timkush1.github.io/TrustAgent/> (from the 2.0.0 release; until then
+[build it locally](#5-share-it)). The landing page explains the idea in a minute;
 **Try the demo** opens the dashboard, which has no server behind it: it replays a tape of the demo
 scenarios in compressed time, so Traffic fills up as you watch.
 

@@ -158,14 +158,17 @@ Details are under *Build log by phase* (*Breaking changes (P3)* and
   GHCR images with SBOMs and build provenance (`release-images.yml`), a
   pull-based quick start, `make release-notes TAG=…` (the CHANGELOG section,
   every image digest and the commands that verify it, each measured figure
-  with its label; it refuses a missing digest, and notes made from canned
-  inspect output say so at the top) and `make record-demo` (a dry run unless
-  `CONFIRM=1`).
+  with its label and the calibration error before and after, and how TrustAgent
+  was built in the README's own words; it refuses a missing digest or a README
+  without that section, and notes made from canned inspect output say so at the
+  top) and `make record-demo` (a dry run unless `CONFIRM=1`).
 - **Launch tooling**: `make linkedin-post` prints the launch post from the measured run and the
   recorded tape and exits 1 on any missing value; the launch checks, the release notes and the
   post count a tape as recorded only when the hosts it names are vendor hosts, never
   mock-upstream; the post says where its example answer came from (written for the demo, or the
-  model that generated it), never "my support bot", and names Jev's maker; `make clip FILE=…` (or
+  model that generated it), never "my support bot", names Jev's maker and says the LLM audit costs
+  extra; until the release turns the hosted demo on, the README's demo links point at `make demo`,
+  and `make check-claims-launch` refuses a page still waiting for it; `make clip FILE=…` (or
   a pipe into `make clip`) copies text to the Windows clipboard from WSL without garbling it; `make compare-review` re-reads every comparison source
   and prints each cell beside its source's own words; `make hygiene-check` (in `make check`) and
   `make gitleaks-history` keep local paths, personal emails and keys out of the repository.
