@@ -148,10 +148,13 @@ line ok/…"**.
 - **CI status and logs:** the public GitHub API or `gh`; there is no `$ORCH/ci_logs.py` (D220).
 - **Long commands** (bench, record, CI waits) run in the background; a foreground command stops
   after 10 minutes.
-- **Dependabot's Go updater fails** (`git_dependencies_not_reachable` for
-  `github.com/truthtable/backend-go`): it cannot follow the local `replace` of the `contracts`
-  module. Builds and tests are unaffected; Go modules are updated by hand meanwhile. Fix it or drop
-  the `gomod` entry in `.github/dependabot.yml`.
+- **Two Dependabot updaters fail; nothing else does** (checks on `main` after #46: 28 passed).
+  The Go one (`git_dependencies_not_reachable` for `github.com/truthtable/backend-go`) cannot
+  follow the local `replace` of the `contracts` module. The Python one stops at its own resolver:
+  it keeps every other locked version fixed and then finds `qdrant-client` 1.16.2 asking for
+  `numpy>=2.1.0` against the locked `numpy`. Builds, tests and installs are unaffected; Go and
+  Python dependencies are updated by hand meanwhile (as with the security fixes). Fix them or drop
+  those two entries in `.github/dependabot.yml`.
 - **Open P7 note** (SPEC H-20): `export-replay` takes the vendor hosts a caller passes for a
   recorded tape on trust beyond the mock cross-check.
 
