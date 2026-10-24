@@ -1,6 +1,6 @@
 # TrustAgent v2: status and handoff
 
-Last updated: 23 October 2026 (late evening). Read this first when you pick the project up in a new session,
+Last updated: 24 October 2026. Read this first when you pick the project up in a new session,
 for example a Claude cloud session at claude.ai/code. It says what is done, what runs next, and
 what only the owner can do. The detail is in [`P6-PLAN.md`](P6-PLAN.md): the paid-step cards
 (§8), the release steps (§9), the owner guides (§10) and the lead decisions (§1, D200 onward;
@@ -8,18 +8,22 @@ D220 to D233 record the move to the cloud and the review rounds of 23 October).
 
 ## Where things stand
 
-- **`feat/v2-int7` holds the P6a work** (all four streams, the rehearsal of every paid command
-  against mocks, four review rounds). In round 4 the verifier and the task-coverage check passed;
-  the launch-honesty review left **two findings**, listed under "Next step" below.
-- **`feat/v2-jev-gateway`** holds all of v2 (phases P0 to P5), the CI fixes since and the
-  dependency-security update (Go 1.26 toolchain, gRPC 1.84, LangGraph 1.x and the other Python
-  updates, a narrow Trivy secret allow-list; PR #45, every check green). It gets P6a in step 3
-  below.
-- **`main`** holds v2 P0 to P5 and the CI fixes. It gets the rest when the owner merges the
-  release-candidate pull request (step 4). Until then public `main` still has the old README badge
-  pointing at a Pages site that is not on yet, no "How it was built" section, and a few local
-  paths and a personal address in old design notes (D220, D223); the PR fixes all of that in the
-  tree.
+- **`feat/v2-jev-gateway` holds everything.** All of v2 (phases P0 to P5), the CI fixes since,
+  the dependency-security update (Go 1.26 toolchain, gRPC 1.84, LangGraph 1.x and the other Python
+  updates, a narrow Trivy secret allow-list; PR #45, every check green) and the finished P6a
+  preparation. **Build on this branch.**
+- **`main`** holds v2 P0 to P5 and the CI fixes. It gets the rest when the owner merges pull
+  request [#46](https://github.com/timkush1/TrustAgent/pull/46) on GitHub (A-8). Until then public `main` has no "How it was built" disclosure,
+  README demo links that point at a Pages site that is not on yet, and a few local paths and a
+  personal address in old design notes (D220, D223); the PR fixes all of that in the tree. It
+  carries no 2.0.0: the version stays 1.0.0 until the release (D234).
+- **P6a passed Gate A on 24 October 2026.** Every paid command was rehearsed against mocks: each
+  is a dry run until `CONFIRM=1`, has a dollar cap, reads the key's remaining credit, and refuses to
+  label mock or non-vendor output as measured or recorded. Four review rounds plus a final round:
+  the independent verifier (`make check`, scanners, no key anywhere) and the task-coverage check
+  passed; the launch-honesty review's last two findings are owner decisions, listed under "Before
+  you merge" below. Not re-run: R-5 (the public demo under `docker stats`), planned for the cloud
+  session before C14.
 - **What is left is P6b and P6c:** measure with the owner's OpenRouter key (capped at $8),
   publish the measured numbers, release v2.0.0, and post on LinkedIn.
 
@@ -27,11 +31,11 @@ D220 to D233 record the move to the cloud and the review rounds of 23 October).
 
 | Branch | What it holds |
 |---|---|
-| `feat/v2-int7` | **P6a, finishing.** The final fix round happens here (next step). |
-| `feat/v2-jev-gateway` | The development branch. After step 3 it holds everything; build on it from then on. |
+| `feat/v2-jev-gateway` | **Build on this.** Everything, including P6a. Claude pushes here. |
 | `main` | The public default branch. It moves only when the owner merges a pull request on GitHub (D220). |
-| `feat/v2-w7-{meas,vend,ship,cloud}` | The P6a stream branches, merged into `feat/v2-int7`. History only. |
+| `feat/v2-int7`, `feat/v2-w7-{meas,vend,ship,cloud}` | The P6a integration and stream branches, all merged. History only. |
 | `fix/deps-security` | The dependency-security fix (PR #45), already inside `feat/v2-jev-gateway`. |
+| `v1.0.0` (tag) | TrustAgent 1.0.0, the async auditor of June 2026. |
 
 ## Phase status
 
@@ -40,34 +44,9 @@ D220 to D233 record the move to the cloud and the review rounds of 23 October).
 | P0 to P3: contracts, walking skeleton, core services, the working gateway and dashboard | Done (1 Oct 2026) |
 | P4: encrypted credentials, Connect OpenRouter, setup wizard, Settings, cost ledger and caps, Savings, evaluators, labels and calibration, Studio | Done (9 Oct 2026) |
 | P5: the public static site, release and Pages workflows, fault and load tests, Tier-0 benchmarks, docs and launch drafts | Done (10 Oct 2026) |
-| P6a: measurement, vendor-capture, recording, release and launch tooling, every paid command rehearsed against mocks, four review rounds | **One final fix round left** (two launch-copy findings), then Gate A |
+| P6a: measurement, vendor-capture, recording, release and launch tooling, every paid command rehearsed against mocks, four review rounds | Done (Gate A, 24 Oct 2026) |
 | **P6b: paid measurement with the owner's key** | **Next.** Waits on the owner's terms check (G0) |
 | P6c: publish, release v2.0.0, post | After P6b |
-
-## Next step: finish P6a (Claude, about 2 hours, no money)
-
-1. On `feat/v2-int7`, fix the two findings of the last launch-honesty review:
-   - **The posting-day steps forget two promises.** P6-PLAN §10 G13, card C12, the definition of
-     done (§13) and `docs/launch/launch-checklist.md` must say: send TypeSafe the results at least
-     3 days before posting (the mode-A courtesy note promises it), tag TypeSafe only if they said
-     yes, and post the source link the post mentions (the Haqq paper) as its first comment.
-   - **The build disclosure on public `main`.** D220's list of what public `main` shows today and
-     the Gate A report bullet must name the missing "How it was built" disclosure (README section,
-     the landing's build line, talking-points story 11), which reaches `main` with the PR in
-     step 4.
-
-   Worth doing in the same round: label the third-party results in
-   `docs/launch/interview-talking-points.md` "Third-party evidence" (not "Measured result"); drop
-   "narrated" and "voice-over" from `docs/launch/demo-script.md` (the video is automated, D210);
-   print the ECE before calibration in the release notes too (D229); make the P6 row of
-   `docs/launch/release-pr.md` depend on the mode; spell out the Gate B post command; add the
-   audience and cloud-setup answers to the G1 say-back; add a one-line build disclosure to the
-   release-notes body.
-2. Re-run `make check`, `make hygiene-check` and `node scripts/check-claims.mjs`, then an
-   independent re-read of the launch copy and owner steps.
-3. Merge `feat/v2-int7` into `feat/v2-jev-gateway` (`--no-ff`), run `make check`, push.
-4. Open a pull request from `feat/v2-jev-gateway` into `main` (Claude), and the owner merges it.
-5. Rewrite this page for Gate A.
 
 ## Moving to a cloud session (owner, once, about 10 minutes; D221)
 
@@ -87,10 +66,23 @@ push tags or merge into `main`; those stay on GitHub's web pages, which work fro
 
 ## What only the owner can do, in order
 
-### After step 4: merge the pull request
+### Before you merge the pull request (5 minutes)
 
-Open the pull request Claude links → **Merge pull request** → **Create a merge commit** →
-Confirm. That brings everything onto `main` (PR #45 then shows as merged too).
+1. **Your legal name for the licence.** `LICENSE`, `frontend-react/package.json` and
+   `backend-python/pyproject.toml` hold the placeholder `{{OWNER_LEGAL_NAME}}` (today's `main`
+   says "Tim Kushnir" in one file and "Tim Kushmaro" in another). Tell Claude the exact name; it
+   fills all three in one commit. Merging before that would publish a licence with no holder.
+2. **Turn on private vulnerability reporting:** repository **Settings → Code security → Private
+   vulnerability reporting → Enable**. The new `SECURITY.md`, `CONTRIBUTING.md` and issue forms
+   send security reports there, and it is off today.
+3. **Your interview talking points: public or private.** `docs/launch/interview-talking-points.md`
+   holds your prepared interview stories. Private (the default, H-7) moves it out of the
+   repository before the merge; public keeps it.
+
+### Then: merge the pull request
+
+Open https://github.com/timkush1/TrustAgent/pull/46 → **Merge pull request** → **Create a merge commit** → Confirm. That brings
+everything above onto `main` (PR #45 then shows as merged too).
 
 ### S1: no money, about 45 minutes (P6-PLAN §10)
 
@@ -103,7 +95,7 @@ Confirm. That brings everything onto `main` (PR #45 then shows as merged too).
     request. This is **mode W** (D231). In mode W the paid Jev steps wait (D222). If there is no
     answer in 7 days, choose to keep waiting or **mode R** (no Jev figures published; the site
     shows the simulated replay).
-- **G1, answers:** your legal name for `LICENSE` ("Kushnir" or "Kushmaro"); any other
+- **G1, answers** (skip what you already answered before the merge): your legal name; any other
   `timkush1.github.io` sites; an "open to roles" line in the post, yes or no; the interview talking
   points public or private; launch day; audience (Israel, or US and EU); and the build line used in
   the post, README and release notes (D227, D230): *"Designed and directed by me, built with AI
@@ -136,7 +128,11 @@ public/private, launch <day>, build line ok/…"**.
   environment with `main` and a `v*` tag rule). The release PR goes from `feat/v2-jev-gateway`
   into `main`.
 - G10: `PAGES_ENABLED=true`, merge, check `GHCR_PUBLIC=true` (the images are already public, D224).
-- G11: the Pages Connect check (about $0.0002).
+- G11: the Pages Connect check (about $0.0002). C2 also points the README demo links back at the
+  site (they say `make demo` until Pages is on, D220).
+- **C5a, mode A only:** once the results are pushed, email TypeSafe the measured figures, the run
+  link and the post's final text, as the courtesy note promised. **Post at least 3 days later**,
+  tag TypeSafe only if they said yes, and put the Haqq link in the post's first comment.
 - **The v2.0.0 tag** is created by the owner through a GitHub release (C10, D221): Releases →
   Draft a new release → Choose a tag → type `v2.0.0` → create it on publish, target `main`.
 - G12, G13: About, topics, social preview, ruleset checks, code security, the stranger check, then
@@ -154,8 +150,10 @@ public/private, launch <day>, build line ok/…"**.
 
 ## Notes for the cloud session
 
-- **Version 2.0.0 is not bumped yet.** `make version-bump V=2.0.0` dates the CHANGELOG heading
-  the day it runs, and the release date depends on G0, so it runs at P6c (C4), not at Gate A.
+- **Version 2.0.0 is not bumped yet** (D234), so `main` shows no release that has not happened.
+  The bump runs on the P6b branch just before the recording (B8 needs it), with
+  `RELEASE_DATE=<planned tag date>` so the CHANGELOG heading carries the real release date; it
+  reaches `main` only with the release PR.
 - **No Jev output on a pushed branch before G0 says mode A** (D222): every branch is public. Keep
   bench, calibration, capture and recording outputs in their gitignored paths until then.
 - **Test database:** where the plan says `$ORCH/pg-url.sh`, start the preinstalled PostgreSQL 16
