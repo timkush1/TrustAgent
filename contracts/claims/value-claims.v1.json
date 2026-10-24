@@ -321,7 +321,7 @@
       "basis": "Balanced accuracy of the fast check on the bench-lite RAGTruth-QA subset, at TrustAgent's default thresholds (each bench evaluator's warn_at).",
       "source_url": null,
       "as_of": null,
-      "caveat": "At TrustAgent's default thresholds: an answer is flagged at groundedness 0.8 or contradiction 0.7. The 0.8 came from Arize's tuned cutoff on RAGTruth itself, so this benchmark may favour it. Not like for like with Arize's Jev figures: one question, worded differently. RAGTruth is public, so the model may have seen it in training.",
+      "caveat": "At TrustAgent's default thresholds: an answer is flagged at groundedness 0.8 or contradiction 0.7. The 0.8 came from Arize's tuned cutoff on RAGTruth itself, so this benchmark may favour TrustAgent's figure. Not like for like with Arize's Jev figures: one question, worded differently. RAGTruth is public, so the model may have seen it in training.",
       "measured_ref": "ragtruth_qa_agreement",
       "surfaces": ["landing", "readme", "docs"]
     },
@@ -366,7 +366,7 @@
       "basis": "Plain accuracy of the fast check on the bench-lite RAGTruth-QA subset, at TrustAgent's default thresholds (each bench evaluator's warn_at).",
       "source_url": null,
       "as_of": null,
-      "caveat": "Plain accuracy, as Arize reports it, at TrustAgent's default thresholds: an answer is flagged at groundedness 0.8 or contradiction 0.7. The 0.8 came from Arize's tuned cutoff on RAGTruth itself, so this benchmark may favour it. Still not like for like: Arize asks one question, worded differently. RAGTruth is public, so the model may have seen it in training.",
+      "caveat": "Plain accuracy, as Arize reports it, at TrustAgent's default thresholds: an answer is flagged at groundedness 0.8 or contradiction 0.7. The 0.8 came from Arize's tuned cutoff on RAGTruth itself, so this benchmark may favour TrustAgent's figure. Still not like for like: Arize asks one question, worded differently. RAGTruth is public, so the model may have seen it in training.",
       "measured_ref": "ragtruth_qa_accuracy",
       "surfaces": ["readme", "docs"]
     },

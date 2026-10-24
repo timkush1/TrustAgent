@@ -842,7 +842,7 @@ def test_the_accuracy_values_say_what_they_are_never_like_for_like() -> None:
     """D233: the bench flags at each evaluator's own warn_at (groundedness 0.8, contradiction
     0.7), so its plain accuracy is not like for like with a third party's accuracy at 0.5.
     Publish writes what the two values are, whatever the previous measured.json said, and the
-    bench fixtures say the same."""
+    bench fixtures and the committed template (public on every pushed branch) say the same."""
     previous = json.loads(contract_path("claims/measured.json").read_text())
     previous["values"]["ragtruth_qa_accuracy"]["description"] = "The like-for-like figure."
     derived = derive_measured([], previous, "2026-09-28T00:00:00Z")
@@ -853,7 +853,7 @@ def test_the_accuracy_values_say_what_they_are_never_like_for_like() -> None:
     assert schema_errors(derived, "measured.v1.schema.json") == []
     fixtures = sorted((contracts_dir() / "fixtures" / "bench").glob("measured.*.json"))
     assert fixtures
-    for path in fixtures:
+    for path in [*fixtures, contract_path("claims/measured.json")]:
         values = json.loads(path.read_text())["values"]
         for key, description in VALUE_DESCRIPTIONS.items():
             assert values[key]["description"] == description, path.name
