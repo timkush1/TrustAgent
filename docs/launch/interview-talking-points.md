@@ -1,7 +1,8 @@
 # Interview talking points
 
 Eleven engineering stories from building TrustAgent 2.0, each told the same way: **the decision**,
-**the alternatives** it beat, **the measured result**, and **what went wrong**. Each fits in about
+**the alternatives** it beat, **the measured result** (or **third-party evidence**, where the
+result is someone else's test: never call it ours), and **what went wrong**. Each fits in about
 two minutes; the links go to the code or the record behind it.
 
 Say early how it was built: TrustAgent was designed and directed by one developer and built with AI
@@ -67,7 +68,7 @@ No benchmark run of our own is published yet, so there are no measured results h
   (CONTRADICTED vs UNSUPPORTED, end to end). New checks start in shadow. A route that cannot
   block yet acts as flag and says why, with the fix.
 - **Alternatives.** Score every answer anyway; block on one probability; downgrade silently.
-- **Measured result.** A public test of Jev (Haqq, on legal citations:
+- **Third-party evidence.** A public test of Jev (Haqq, on legal citations:
   https://www.haqq.ai/blog/jev-legal-ai-hallucination-detection) found that without source
   documents its groundedness ranking inverts (fabricated citations scored above honest ones); that
   third-party finding is why groundedness is never asked without evidence.
@@ -83,7 +84,8 @@ No benchmark run of our own is published yet, so there are no measured results h
   Wilson lower bound.
 - **Alternatives.** Ship the vendor's 0.5 default; fit on the judge's labels; fit once and forget
   the snapshot.
-- **Measured result.** The 0.5 default is wrong: a third-party test reached
+- **Third-party evidence.** The 0.5 default is not the right cutoff for every question: a
+  third-party test reached
   <!-- claim:arize_ragtruth_accuracy_at_default_threshold --> 76% at 0.5 [third-party] against
   <!-- claim:arize_ragtruth_jev_accuracy --> 87% [third-party] at its best, which shows why
   thresholds must be calibrated per question and snapshot. That best was reached only at a tuned

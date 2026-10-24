@@ -141,7 +141,7 @@ TIME_CELL = re.compile(r"^(\d+(?:\.\d+)?)\s*[–-]\s*(\d+(?:\.\d+)?)\s*s$")
 
 
 def parse_table(markdown: str) -> List[Row]:
-    """The rows of the demo script's take table (Time | Screen | What you do | Caption)."""
+    """The rows of the demo script's take table (Time | Screen | What the take shows | Caption)."""
     rows: List[Row] = []
     header: Optional[List[str]] = None
     for line in markdown.splitlines():

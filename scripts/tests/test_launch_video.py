@@ -26,7 +26,7 @@ TABLE = textwrap.dedent(
     """\
     # A script
 
-    | Time | Screen | What you do | Caption (and voice-over) |
+    | Time | Screen | What the take shows | Caption (burned in) |
     |---|---|---|---|
     | 0–5 s | Landing | Wait | "One." |
     | 5–15 s | Traffic | Wait | "Two." |

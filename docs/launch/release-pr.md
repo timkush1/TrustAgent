@@ -2,9 +2,10 @@
 The body of the release pull request, feat/v2-jev-gateway → main (step C6). Copy it with
 `make clip FILE=docs/launch/release-pr.md` and paste it into the "Open a pull request" form.
 GitHub hides this comment. Links are absolute (a PR body has no relative links). Before copying: the TO FILL lines are filled at C4 (the measured run,
-the tape, the terms mode), and the owner merges it on GitHub with "Create a merge commit" only (D215, D220).
+the tape, the terms mode, what P6 brings in that mode), and the owner merges it on GitHub with "Create a merge commit" only (D215, D220).
 main already holds v2 phases P0 to P5: the owner made it public on 2026-10-21 (merge a582549, D220),
-so this PR brings P6 and the fixes made since, and the 2.0.0 version.
+and P6a too once the owner has merged the pull request the lead opens right after Gate A (D220),
+so this PR brings P6b and P6c (and P6a, if that one was not merged), the fixes made since, and the 2.0.0 version.
 -->
 
 # TrustAgent 2.0.0 "Jev gateway"
@@ -17,8 +18,10 @@ back. Groundedness is checked against what the request already carries (no RAG b
 asynchronous deep audit (LangGraph) explains the risky answers claim by claim; and a redesigned
 dashboard, a static demo site and Evaluator Studio sit on top.
 
-`main` has carried phases P0 to P5 since 2026-10-21. This PR adds P6 (the measured benchmark, the
-recorded demo, the release tooling and launch kit) and makes it version 2.0.0. The full list of
+`main` has carried phases P0 to P5 since 2026-10-21. This PR adds P6: TO FILL at C4 by the terms
+mode (mode A: the measured benchmark and the recorded demo; mode R: the measured figures that are
+not Jev's and the simulated demo), with the release tooling and launch kit if `main` does not hold
+them yet, and makes it version 2.0.0. The full list of
 changes is the `2.0.0 "Jev gateway"` section of [CHANGELOG.md](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/CHANGELOG.md);
 the design is [docs/v2/SPEC.md](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/SPEC.md).
 
@@ -40,7 +43,8 @@ squash, no rebase).
 | P3 | The enforcing pipeline, streaming, policies, the redesigned pages (on `main`) | [P3-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P3-PLAN.md) |
 | P4 | Security, the credential store, Connect OpenRouter, Studio, calibration, Savings (on `main`) | [P4-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P4-PLAN.md) |
 | P5 | The static site with live checks, the landing page, release images and tooling (on `main`) | [P5-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P5-PLAN.md) |
-| **P6 (this PR)** | Measured benchmarks, the recorded demo, the release tooling and launch kit, version 2.0.0 | [P6-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P6-PLAN.md) |
+| P6a | The release tooling, the launch kit and the build disclosure, rehearsed on mocks (TO FILL: "on `main` since <date>" if the pull request after Gate A was merged, else "this PR") | [P6-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P6-PLAN.md) |
+| **P6b and P6c (this PR)** | TO FILL by the terms mode: mode A, the measured benchmark and the recorded demo; mode R, the measured figures that are not Jev's and the simulated demo. Version 2.0.0 either way | [P6-PLAN](https://github.com/timkush1/TrustAgent/blob/feat/v2-jev-gateway/docs/v2/P6-PLAN.md) |
 
 ## Breaking changes
 
@@ -76,6 +80,6 @@ on, snapshot, TrustAgent version). The terms check is in
       a mock is labelled measured (`make check-claims-launch`).
 - [ ] The owner reviewed the comparison table, the social card, the GIF, the video and the post.
 
-After the merge: Pages deploys the recorded demo, the GitHub release creates the 2.0.0 tag (the
+After the merge: Pages deploys the demo (the recorded tape in mode A, the simulated one in mode R), the GitHub release creates the 2.0.0 tag (the
 owner makes it in the web UI) with its notes from `make release-notes TAG=v2.0.0`, and the tag's
 build publishes the semver images (the `edge` images on GHCR are public already).
