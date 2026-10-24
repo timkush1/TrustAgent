@@ -16,6 +16,7 @@
 import { Play, RotateCcw, Trash2 } from 'lucide-react';
 import { useId, useMemo, useState, type ReactNode } from 'react';
 import { CodeBlock } from '@/components/common/CodeBlock';
+import { CommandText } from '@/components/common/CommandText';
 import { EvidenceBadge } from '@/components/common/EvidenceBadge';
 import { useDelayedLoading } from '@/components/common/useDelayedLoading';
 import { Button } from '@/components/ui/button';
@@ -123,7 +124,9 @@ function Unavailable() {
   return (
     <Notice testId="live-unavailable">
       <p className="font-medium">{liveText.unavailable_title}</p>
-      <p>{fillTemplate(copy.playground_live.live_unavailable)}</p>
+      <p>
+        <CommandText text={fillTemplate(copy.playground_live.live_unavailable)} />
+      </p>
     </Notice>
   );
 }

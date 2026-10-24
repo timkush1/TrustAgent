@@ -15,8 +15,11 @@ import json
 import stat
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+import pytest
+
+from evals import bench, calibset, p6_ledger
 from evals.examples import LEVEL_RESPONSE, BenchExample
 from truthtable.providers.base import (
     CompletionRequest,
@@ -25,8 +28,46 @@ from truthtable.providers.base import (
     normalized_usage,
 )
 
+# What would let a test reach a vendor: the keys, the base URLs and the dotenv files that carry
+# them (a checkout's .env holds the owner's real key during P6b, D202).
+VENDOR_ENV = (
+    "OPENROUTER_API_KEY",
+    "TYPESAFE_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "TRUTHTABLE_JEV_API_KEY",
+    "TRUTHTABLE_JEV_BACKEND",
+    "TRUTHTABLE_JEV_BASE_URL",
+    "TRUTHTABLE_OPENROUTER_BASE_URL",
+    "TRUTHTABLE_POLICY_FILE",
+)
+
+
+def _offline(url: str, headers: Mapping[str, str], timeout_s: float) -> Tuple[int, bytes]:
+    raise AssertionError(f"a unit test reached for the network ({url}): pass a fake fetch")
+
+
+def _offline_fetch() -> Any:
+    return _offline
+
+
+def isolate_vendor_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Keep a test off the vendor whatever checkout it runs in: no key or base URL
+    from the process, no dotenv file (TRUTHTABLE_ENV_FILE set but empty), and a
+    key read that fails the test unless the test passes its own fake fetch.
+    Tests that need a key set a fake one after this runs.
+    """
+    monkeypatch.setenv("TRUTHTABLE_ENV_FILE", "")
+    for name in VENDOR_ENV:
+        monkeypatch.delenv(name, raising=False)
+    for module in (bench, calibset, p6_ledger):
+        monkeypatch.setattr(module, "_key_fetch", _offline_fetch)
+
+
 FAKE_GATE_EVAL = """#!{python}
 import json
+import os
 import sys
 import time
 
@@ -36,6 +77,9 @@ with open(config_path, encoding="utf-8") as f:
     config = json.load(f)
 with open(config["argv_log"], "a", encoding="utf-8") as f:
     f.write(json.dumps(args) + "\\n")
+with open(config["env_log"], "a", encoding="utf-8") as f:
+    seen = {{name: os.environ.get(name) for name in config.get("env_names", [])}}
+    f.write(json.dumps(seen) + "\\n")
 if config.get("sleep"):
     time.sleep(config["sleep"])
 if config.get("exit"):
@@ -71,7 +115,10 @@ for line in sys.stdin:
     answer = config["answers"].get(item["id"], config.get("default"))
     if answer is None:
         continue
-    sys.stdout.write(json.dumps(dict(id=item["id"], line=number, **answer)) + "\\n")
+    # Passed through to the output line, as cmd/gate-eval does.
+    passed = {{key: item[key] for key in ("labels", "label_hallucinated", "label_source", "domain",
+                                          "meta") if key in item}}
+    sys.stdout.write(json.dumps(dict(id=item["id"], line=number, **answer, **passed)) + "\\n")
 if config.get("exit_after"):
     sys.exit(config["exit_after"])
 """
@@ -88,9 +135,12 @@ class FakeGateEval:
         self.config_path = directory / "fake-gate-eval.json"
         self.argv_log = directory / "argv.jsonl"
         self.input_log = directory / "input.jsonl"
+        self.env_log = directory / "env.jsonl"
         self.config: Dict[str, Any] = {
             "argv_log": str(self.argv_log),
             "input_log": str(self.input_log),
+            "env_log": str(self.env_log),
+            "env_names": ["TRUTHTABLE_POLICY_FILE"],
             "answers": {},
             "default": None,
         }
@@ -120,6 +170,12 @@ class FakeGateEval:
             return []
         return [json.loads(line) for line in self.argv_log.read_text().splitlines()]
 
+    def envs(self) -> List[Dict[str, Optional[str]]]:
+        """The watched environment variables each invocation saw."""
+        if not self.env_log.exists():
+            return []
+        return [json.loads(line) for line in self.env_log.read_text().splitlines()]
+
     def inputs(self) -> List[Dict[str, Any]]:
         if not self.input_log.exists():
             return []
@@ -143,6 +199,9 @@ def gate_line(
     max_risk: Optional[float] = None,
     skip_reason: Optional[str] = None,
     decision_model: bool = True,
+    endpoint_host: Optional[str] = "openrouter.ai",
+    connection: str = "warm",
+    error_reason: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     A gate-eval output line (backend-go/cmd/gate-eval result) with the fields
@@ -152,8 +211,8 @@ def gate_line(
 
     def evaluator(risk: Optional[float]) -> Dict[str, Any]:
         if risk is None:
-            return {"status": "error", "risk_raw": None, "risk": None}
-        return {"status": "assessed", "risk_raw": risk, "risk": risk}
+            return {"status": "error", "reason": error_reason, "risk_raw": None, "risk": None}
+        return {"status": "assessed", "reason": None, "risk_raw": risk, "risk": risk}
 
     evaluators = {}
     if groundedness is not None or status == "ok":
@@ -176,6 +235,8 @@ def gate_line(
         "error": None,
         "skipped": None,
         "simulated": backend == "mock",
+        "endpoint_host": None if backend == "mock" else endpoint_host,
+        "connection": "cold" if backend == "mock" else connection,
         "route": "default",
         "mode": "flag",
         "decision": {
@@ -212,6 +273,7 @@ class ScriptedJudge(LLMProvider):
     """
 
     provider_name = "openrouter"
+    base_url = "https://openrouter.ai"
 
     def __init__(
         self,

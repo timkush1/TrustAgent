@@ -31,9 +31,9 @@
         "inline": {
           "value": "no",
           "vendor": "Langfuse",
-          "text": "Judges run asynchronously in the Langfuse worker on ingested traces; nothing runs inside your application.",
+          "text": "Judges run asynchronously in its own worker on ingested traces; nothing runs inside your application.",
           "source_url": "https://langfuse.com/docs/evaluation/evaluation-methods/llm-as-a-judge",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "self_hosted": {
@@ -41,7 +41,7 @@
           "vendor": "Langfuse",
           "text": "Open source and self-hosted with Docker; some add-on features need a license key.",
           "source_url": "https://langfuse.com/self-hosting",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "cost_class": {
@@ -49,7 +49,7 @@
           "vendor": "Langfuse",
           "text": "One judge-model call per evaluation; the cost depends on the judge model and the input size, and sampling keeps it down.",
           "source_url": "https://langfuse.com/docs/evaluation/evaluation-methods/llm-as-a-judge",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "explanations": {
@@ -57,7 +57,7 @@
           "vendor": "Langfuse",
           "text": "The judge returns a score together with its reasoning.",
           "source_url": "https://langfuse.com/docs/evaluation/evaluation-methods/llm-as-a-judge",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "calibration": {
@@ -65,7 +65,7 @@
           "vendor": "Langfuse",
           "text": "Calibrate a judge against labelled examples, or compare its scores with human annotation scores.",
           "source_url": "https://langfuse.com/docs/evaluation/evaluation-methods/llm-as-a-judge",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         }
       }
@@ -80,7 +80,7 @@
           "vendor": "Guardrails AI",
           "text": "Input and output guards run in your application and intercept what goes into and comes out of the LLM.",
           "source_url": "https://www.guardrailsai.com/docs",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "self_hosted": {
@@ -88,7 +88,7 @@
           "vendor": "Guardrails AI",
           "text": "An open-source Python framework under the Apache-2.0 license.",
           "source_url": "https://github.com/guardrails-ai/guardrails",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "cost_class": {
@@ -96,7 +96,7 @@
           "vendor": "NeMo Guardrails",
           "text": "The self-check facts rail asks an LLM whether each response follows from the evidence, one more LLM call per checked answer; AlignScore and third-party rails are alternatives.",
           "source_url": "https://docs.nvidia.com/nemo/guardrails/configure-guardrails/guardrail-catalog/fact-checking",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "explanations": {
@@ -104,7 +104,7 @@
           "vendor": "NeMo Guardrails",
           "text": "The self-check facts rail returns an accuracy score; an explanation of it is not documented.",
           "source_url": "https://docs.nvidia.com/nemo/guardrails/configure-guardrails/guardrail-catalog/fact-checking",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "calibration": {
@@ -112,7 +112,7 @@
           "vendor": "NeMo Guardrails",
           "text": "An evaluation tool measures rails, fact-checking included, on datasets; fitting thresholds to your own labels is not documented.",
           "source_url": "https://docs.nvidia.com/nemo/guardrails/evaluation/evaluate-guardrails",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         }
       }
@@ -127,15 +127,15 @@
           "vendor": "Amazon Bedrock",
           "text": "The contextual grounding check runs on each response through the Invoke or Converse APIs, or on its own through ApplyGuardrail.",
           "source_url": "https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-contextual-grounding-check.html",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "self_hosted": {
           "value": "no",
           "vendor": "Amazon Bedrock",
-          "text": "Amazon Bedrock is a fully managed AWS service; the contextual grounding check runs in Bedrock Guardrails, and no self-hosted or open-source edition is documented.",
+          "text": "A fully managed AWS service; the contextual grounding check runs in its Guardrails feature, and no self-hosted or open-source edition is documented.",
           "source_url": "https://docs.aws.amazon.com/bedrock/latest/userguide/what-is-bedrock.html",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "cost_class": {
@@ -143,7 +143,7 @@
           "vendor": "Amazon Bedrock",
           "text": "Billed per text unit, counting the grounding source, the query and the response.",
           "source_url": "https://aws.amazon.com/bedrock/pricing/",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "explanations": {
@@ -151,7 +151,7 @@
           "vendor": "Azure",
           "text": "Reasoning mode explains each ungrounded segment; the faster non-reasoning mode answers grounded or ungrounded only.",
           "source_url": "https://learn.microsoft.com/en-us/azure/ai-services/content-safety/concepts/groundedness",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "calibration": {
@@ -159,7 +159,7 @@
           "vendor": "Amazon Bedrock",
           "text": "You set the grounding and relevance thresholds that filter responses; a calibration workflow is not documented.",
           "source_url": "https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-contextual-grounding-check.html",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         }
       }
@@ -174,7 +174,7 @@
           "vendor": "Galileo",
           "text": "Luna-2 is built for real-time evaluations and runtime protection; how it sits in your request path is not documented on this page.",
           "source_url": "https://docs.galileo.ai/concepts/luna/luna",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "self_hosted": {
@@ -182,15 +182,15 @@
           "vendor": "Galileo",
           "text": "Luna-2 is in the Enterprise tier and can be self-hosted on-prem or in your cloud; an open-source release is not documented.",
           "source_url": "https://docs.galileo.ai/concepts/luna/luna",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "cost_class": {
           "value": "not_documented",
           "vendor": "Galileo",
-          "text": "No public per-answer price; Galileo says a small fine-tuned model scoring each metric lowers latency and cost compared with LLM judges.",
+          "text": "No public per-answer price; the docs say a small fine-tuned model scoring each metric lowers latency and cost compared with LLM judges.",
           "source_url": "https://docs.galileo.ai/concepts/luna/luna",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "explanations": {
@@ -198,7 +198,7 @@
           "vendor": "Galileo",
           "text": "Luna-2 scores a metric from the probabilities of True and False tokens; an explanation of the score is not documented.",
           "source_url": "https://docs.galileo.ai/concepts/luna/luna",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         },
         "calibration": {
@@ -206,7 +206,7 @@
           "vendor": "Galileo",
           "text": "Luna Studio fine-tunes a metric and scores it against your human-labelled test set.",
           "source_url": "https://docs.galileo.ai/luna-studio/ui/datasets/test-sets",
-          "as_of": "2026-10-10",
+          "as_of": "2026-10-21",
           "reviewed": false
         }
       }

@@ -102,6 +102,8 @@ def test_ragtruth_qa_conversion() -> None:
     assert faithful.label_hallucinated is False and faithful.meta["spans"] == "none"
     assert conflict.label_hallucinated is True and conflict.meta["spans"] == "conflict"
     assert both.meta["spans"] == "conflict+baseless"
+    # The source id lets the calibration sample be checked against the bench sample (D206).
+    assert all(example.meta["source_id"] for example in (faithful, conflict, both))
     assert faithful.query == "How long do refunds take?"
     assert faithful.context == ("Refunds take 30 days.", "Shipping is free.")
     assert faithful.level == LEVEL_RESPONSE and faithful.context_source == "request_context"
@@ -196,7 +198,7 @@ def test_ragtruth_prepare_downloads_samples_and_writes_a_manifest(tmp_path: Path
     assert manifest.source_sha256 == hashes
     assert manifest.revision == f"main@{combined_digest(hashes)[:12]}"
     assert manifest.run_revision == f"{manifest.revision}/stratified:label,model/seed7"
-    assert "A9" in manifest.license_note
+    assert "MIT" in manifest.license_note and "never dataset text" in manifest.license_note
     # Proportional strata: 30 of 120 rows are hallucinated, so 10 of 40.
     assert manifest.counts["positives"] == sum(e.label_hallucinated for e in examples) == 10
 

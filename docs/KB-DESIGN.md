@@ -7,8 +7,8 @@
 ## Research lineage
 
 This design is a deliberately scoped-down implementation of the core ideas
-from the VERITAS architecture research
-([VERITAS claim-graph research](archive/research/VERITAS-claim-graph-research.md)):
+from the VERITAS architecture research (an earlier research note, kept outside this
+repository):
 a verified, claim-level knowledge substrate, motivated by the documented
 failure mode of chunk-based stores — purpose-built legal-RAG tools
 hallucinating 17–33% of the time *with citations*, because "cited" and

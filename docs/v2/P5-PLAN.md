@@ -19,7 +19,7 @@ This is the final plan: the draft with both critiques applied. §22 lists what w
 - **Naming.** The wave is called "w6":
   - integration branch `feat/v2-int6`;
   - stream branches `feat/v2-w6-<id>`;
-  - worktrees `/home/timkushmar/projects/TrustAgent-w6-<id>`.
+  - worktrees `~/projects/TrustAgent-w6-<id>`.
 
 ---
 
@@ -171,8 +171,8 @@ The web streams start when 0b is done. **The 0a streams run `git merge feat/v2-i
      | 24177 | wrep |
      | 24178 | dxdocs |
 
-   - **Test DB:** `export TEST_DATABASE_URL=$(/home/timkushmar/.cache/trustagent-orch/pg-url.sh)` (pgserver, no Docker, one schema per test).
-   - **Python in worktrees:** `poetry run` maps to `/home/timkushmar/.cache/trustagent-orch/poetry-shim-wt`.
+   - **Test DB:** `export TEST_DATABASE_URL=$($ORCH/pg-url.sh)` (pgserver, no Docker, one schema per test).
+   - **Python in worktrees:** `poetry run` maps to `$ORCH/poetry-shim-wt`.
 8. **Ports, projects and image tags (lead proofs only, D141).** Never touch the owner's stacks: projects `truthtable` and `truthtable-demo`, ports 3000, 8080 and 5432, and the image tags `:1.0.0` and `:edge`. Every proof exports `TRUSTAGENT_VERSION=p5local`.
 
    | Project | Proxy | Dashboard | Postgres | Mock-upstream | Used for |
@@ -273,9 +273,9 @@ The web streams start when 0b is done. **The 0a streams run `git merge feat/v2-i
 
 1. After P4 I-8, create the branch and its worktree:
    ```bash
-   git worktree add /home/timkushmar/projects/TrustAgent-int6 -b feat/v2-int6 feat/v2-jev-gateway
-   cd /home/timkushmar/projects/TrustAgent-int6 && python3 scripts/configure.py --ensure
-   export TEST_DATABASE_URL=$(/home/timkushmar/.cache/trustagent-orch/pg-url.sh)
+   git worktree add ~/projects/TrustAgent-int6 -b feat/v2-int6 feat/v2-jev-gateway
+   cd ~/projects/TrustAgent-int6 && python3 scripts/configure.py --ensure
+   export TEST_DATABASE_URL=$($ORCH/pg-url.sh)
    free -m      # sets the slot count (§0)
    ```
 2. **Free CORS checks (D100).** $0: no key, or a fake one.
@@ -308,7 +308,7 @@ The web streams start when 0b is done. **The 0a streams run `git merge feat/v2-i
 
    **Constants for Step 0b** (`src/domain/liveScenarios.ts`): `LIVE_CHECKS = true`, `CHAT_FROM_BROWSER = true`, `PKCE_FROM_BROWSER = true`, `ERRORS_READABLE = true`, `DECISIONS_PATH = 'alpha/decisions'`, `STATIC_CONNECT_PRIMARY = 'connect'` (from the CORS result alone, never from D88; the P6 Pages PKCE check may flip it to `paste`, §23 CO-14), `ALLOWED_REQUEST_HEADERS` as in D100. **Scope L.**
 
-   **Test database (substitution, recorded at Step 0a):** wherever this plan or a stream gate names a Docker test Postgres, the wave uses the local PostgreSQL 16 from `export TEST_DATABASE_URL=$(/home/timkushmar/.cache/trustagent-orch/pg-url.sh)` (pgserver, no Docker; `internal/storetest` gives each test its own schema).
+   **Test database (substitution, recorded at Step 0a):** wherever this plan or a stream gate names a Docker test Postgres, the wave uses the local PostgreSQL 16 from `export TEST_DATABASE_URL=$($ORCH/pg-url.sh)` (pgserver, no Docker; `internal/storetest` gives each test its own schema).
 
 3. **Confirm P4 §19.** At P4 I-1, check that no cut-line item slipped: GW-1, GW-2, GW-3, COST-8, DX-6 and EVW-6 all exist on their branches.
 
@@ -505,7 +505,7 @@ test "$(go -C ../backend-go list -deps ./internal/costs | grep -c internal/runti
 Run from the repo root, one command after another:
 
 ```bash
-L="flock /tmp/trustagent-heavy.lock"; export TEST_DATABASE_URL=$(/home/timkushmar/.cache/trustagent-orch/pg-url.sh)
+L="flock /tmp/trustagent-heavy.lock"; export TEST_DATABASE_URL=$($ORCH/pg-url.sh)
 test -z "$(gofmt -l backend-go)" && $L go -C backend-go vet ./...
 $L env -u TEST_DATABASE_URL go -C backend-go test -race -p 2 ./...
 $L go -C backend-go test ./internal/decision/... ./internal/credentials/... ./internal/jev/... -run 'TestVectors|TestPKCEVectors|TestForwardTestHeaders'
@@ -985,7 +985,7 @@ cd .. && $L make recording-check && python3 scripts/check_recording.py frontend-
 ### Gate
 
 ```bash
-L="flock /tmp/trustagent-heavy.lock"; export TEST_DATABASE_URL=$(/home/timkushmar/.cache/trustagent-orch/pg-url.sh)
+L="flock /tmp/trustagent-heavy.lock"; export TEST_DATABASE_URL=$($ORCH/pg-url.sh)
 $L go -C backend-go test -race -p 2 ./internal/proxy/... ./internal/gate/... ./internal/recording/... ./internal/jev/... \
    ./cmd/trafficgen/... ./cmd/mock-upstream/... ./cmd/export-replay/... ./cmd/jevcheck/...
 $L go -C backend-go test -p 1 -v ./cmd/proxy -run 'Fault|Breaker|Budget|RateLimit|EngineDown|Knowledge|DemoScenarios|E2EScenarios|BuildSHA|Status' -count=1 2>&1 | tee /tmp/w6-go.out
@@ -1657,7 +1657,7 @@ $L make check && $L make vectors-ts && $L make recording-check     # pkce and co
 
 ## 23. Carry-overs from P4 (binding addendum)
 
-**How this table was checked.** It was checked read-only against `feat/v2-int5` at `486e6c8`, after P4 I-6 (Docker proof B). I-6 closes no row here: its only fix, `7919ba7`, changes only `StepSeeItWork.tsx`. P4 steps I-7 (the verifier) and I-8 (finish and merge) have not run. `feat/v2-jev-gateway` is still at `e07c455`. The `p4-done` references below use the form `entry#n` and point to `open_issues[n]` in `~/.cache/trustagent-orch/p4-done.json`.
+**How this table was checked.** It was checked read-only against `feat/v2-int5` at `486e6c8`, after P4 I-6 (Docker proof B). I-6 closes no row here: its only fix, `7919ba7`, changes only `StepSeeItWork.tsx`. P4 steps I-7 (the verifier) and I-8 (finish and merge) have not run. `feat/v2-jev-gateway` is still at `e07c455`. The `p4-done` references below use the form `entry#n` and point to `open_issues[n]` in `$ORCH/p4-done.json` (outside the repository).
 
 **Rules for using it:**
 - At Step 0a, re-check each row against the merged `feat/v2-jev-gateway` head. Drop any row that I-7 or I-8 fixed, and note why.

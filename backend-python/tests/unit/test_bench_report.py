@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import pytest
-from test_eval_report import MANIFEST, _run  # the benchmark-run fixtures
+from bench_runs import write_p6_run  # a publishable P6 run
+from test_eval_report import _run  # the benchmark-run fixtures
 
 from evals.report import (
     BenchmarkSchemaError,
@@ -20,7 +21,6 @@ from evals.report import (
     load_load_runs,
     publish,
     schema_errors,
-    write_local_run,
 )
 from truthtable.contracts import contract_path
 
@@ -134,8 +134,7 @@ def test_publish_reads_the_load_runs_beside_the_results(
     paths["load_dir"].mkdir(parents=True)
     run = load_run("20261005T000000Z-abc1234", "2026-10-05T00:00:00Z")
     (paths["load_dir"] / f"{run['run_id']}.json").write_text(json.dumps(run))
-    document, label, records = _run()
-    run_file = write_local_run(tmp_path / "local", document, label, records, MANIFEST)
+    run_file = write_p6_run(tmp_path / "local")
 
     # load_dir defaults to docs/benchmarks/load beside the results directory.
     publish(
@@ -166,8 +165,7 @@ def test_a_load_run_that_is_not_load_run_v1_is_refused(
     with pytest.raises(BenchmarkSchemaError, match="load run bad.json"):
         load_load_runs(paths["load_dir"])
 
-    document, label, records = _run()
-    run_file = write_local_run(tmp_path / "local", document, label, records, MANIFEST)
+    run_file = write_p6_run(tmp_path / "local")
     before = paths["measured_path"].read_text()
     with pytest.raises(BenchmarkSchemaError):
         publish(run_file, **paths)

@@ -247,11 +247,13 @@ below).
 | bandit | `backend-python/src` (all levels) and `scripts/` (medium and above) | **Blocking** |
 | npm audit | `frontend-react` production dependencies, high and above | **Blocking** |
 | gitleaks | the whole git history, with [`.gitleaks.toml`](../.gitleaks.toml) | **Blocking** |
-| Trivy | filesystem, HIGH/CRITICAL, fixed-only | Informational until a scheduled run is reviewed |
+| Trivy | filesystem (dependencies and secrets), HIGH/CRITICAL, fixed-only, with [`trivy-secret.yaml`](../trivy-secret.yaml) | Informational until a scheduled run is reviewed |
 
 gitleaks allows only fake keys in tests (`*_test.go`, `tests/unit/`, `e2e/`), the detector
 vectors, and the project's fake-key conventions: `sk-test-…`, `sk-or-v1-e2e-…` and the leak tests'
-unmatched secret. Never put a real key anywhere in the repository, tests included.
+unmatched secret. Trivy's secret scan keeps its built-in rules and allows one more path only: the
+detector vectors (`contracts/vectors/detectors/`), whose keys are synthetic on purpose. Never put a
+real key anywhere in the repository, tests included.
 
 Accepted findings:
 - gosec G104 (low): unhandled errors on best-effort writes and closes.
@@ -284,5 +286,12 @@ Accepted findings:
 
 ## Reporting
 
-This is a portfolio project; if you find something, open a GitHub issue (without the details for
-anything exploitable: ask for a private channel first).
+Report a vulnerability privately, through GitHub's private vulnerability reporting:
+[Security → Report a vulnerability](https://github.com/timkush1/TrustAgent/security/advisories/new).
+Only the maintainers can read the report, and the fix and the advisory are prepared there before
+anything is public. Please do not open a public issue for anything exploitable, and never include
+a working key: describe where it would leak instead.
+
+TrustAgent is maintained by one person, so there is no service-level promise; a report is
+acknowledged as soon as it is read, and the fixed release names the reporter unless they ask
+otherwise. Conduct problems use the same private form (see [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)).

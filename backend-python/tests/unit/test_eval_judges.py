@@ -72,6 +72,7 @@ async def test_gate_reads_the_decision(gate_eval: FakeGateEval, tmp_path: Path) 
     # The latency is the example's whole gate pipeline, calls included.
     assert record.latency_ms == 180 and record.calls == 1
     assert record.cost_usd == pytest.approx(0.00004) and record.cost_source == "reported"
+    assert record.input_tokens == 950  # what the vendor counted (D229)
     assert record.mock is False
     assert record.details["escalate"] is True
     assert record.details["backend"] == "openrouter-decisions"
@@ -211,14 +212,15 @@ async def test_gate_failures_are_recorded(gate_eval: FakeGateEval, tmp_path: Pat
     gate_eval.set(exit=1, stderr='gate-eval: no route "bench" in config/policies.yaml')
     failed = await _gate(gate_eval).judge(example("f1"), CostBudget(1.0))
     assert failed.status == FAILED and failed.error_kind == "gate_eval_exit_1"
-    assert "no route" in failed.details["stderr"]
+    # Free text goes to the record's note (the run's diagnostics), never its details (D204).
+    assert "no route" in (failed.note or "") and "stderr" not in failed.details
 
     gate_eval.set(exit=0)
     gate_eval.default(**{**gate_line(), "error": "compile: too large", "decision": None})
     budget = CostBudget(1.0)
     in_band = await _gate(gate_eval).judge(example("f2"), budget)
     assert in_band.status == FAILED and in_band.error_kind == "gate_eval_error"
-    assert in_band.details["error"] == "compile: too large"
+    assert in_band.note == "compile: too large" and "error" not in in_band.details
     assert budget.reserved_usd == 0
 
     gate_eval.default(**gate_line(status="timeout", groundedness=None))
@@ -298,6 +300,9 @@ def test_parse_gate_result_fallbacks() -> None:
 
     no_model = parse_gate_result(gate_line(decision_model=False), config)
     assert no_model.calls == 0 and no_model.cost_usd == 0.0 and no_model.backend is None
+    # D229: the vendor's input-token count, which a published cost per answer is shown beside.
+    assert parse_gate_result(gate_line(), config).input_tokens == 950
+    assert no_model.input_tokens is None
 
 
 def test_gate_fingerprint_tracks_the_binary(gate_eval: FakeGateEval) -> None:
@@ -485,6 +490,7 @@ async def test_same_checks_applies_the_evaluator_thresholds(
     assert record.predicted is predicted
     assert record.score == pytest.approx(groundedness)
     assert record.cost_usd == pytest.approx(0.00125) and record.calls == 1
+    assert record.input_tokens == judge_model.tokens  # the provider's count (D229)
     assert record.details["probabilities"]["contradiction__v1"] == pytest.approx(contradiction)
     request = judge_model.requests[0]
     assert request.response_schema is not None and request.temperature == 0.0

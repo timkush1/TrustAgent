@@ -42,12 +42,16 @@ forbidden-check: ## Fail on a superseded identifier (scripts/check-forbidden.mjs
 # against git grep's `path:line:text` output. `P4_` and `P4[A-Z][a-z]` (and the P5 forms) also
 # catch names that run on into an identifier (P4_ERROR_CODES, isP4ErrorCode, TestP4Seams…), which
 # `\bP4\b` misses. Lowercase scenario phase tags such as "p5" are data, not references. Raise
-# PHASE_REFS_RE to the next phase when that phase's cleanup lands.
-PHASE_REFS_RE ?= \bP[45]\b|"p4"|in P[45]|P[45]_|P[45][A-Z][a-z]
+# PHASE_REFS_RE to the next phase when that phase's cleanup lands. The P6 forms (D213) are checked
+# over contracts/ too; TRUSTAGENT_P6_RESULT, the result line every paid step prints (D201), is a
+# protocol name, not a phase reference, so P6_ is not in the pattern.
+PHASE_REFS_RE ?= \bP[456]\b|"p4"|in P[456]|P[45]_|P[456][A-Z][a-z]|\bP6[abc]\b
 PHASE_REFS_PATHS ?= frontend-react/src backend-go backend-python/src scripts
+PHASE_REFS_P6_RE ?= \bP6\b|in P6|\bP6[abc]\b|P6[A-Z][a-z]
+PHASE_REFS_P6_PATHS ?= contracts
 
 phase-refs-check: ## Fail on a code or comment line that names a delivery phase (scripts/phase-refs.allow lists the exceptions)
-	@cd "$(CONTRACTS_MK_DIR).." && hits="$$(git grep -nE '$(PHASE_REFS_RE)' -- $(PHASE_REFS_PATHS) | grep -v -F -f scripts/phase-refs.allow)"; \
+	@cd "$(CONTRACTS_MK_DIR).." && hits="$$({ git grep -nE '$(PHASE_REFS_RE)' -- $(PHASE_REFS_PATHS); git grep -nE '$(PHASE_REFS_P6_RE)' -- $(PHASE_REFS_P6_PATHS); } | grep -v -F -f scripts/phase-refs.allow)"; \
 	if [ -n "$$hits" ]; then printf '%s\n' "$$hits"; echo "phase-refs-check: the lines above name a delivery phase; reword them (or, for a deliberate exception, add the exact line to scripts/phase-refs.allow)"; exit 1; fi; \
 	echo "✅ No code or comment names a delivery phase outside scripts/phase-refs.allow"
 

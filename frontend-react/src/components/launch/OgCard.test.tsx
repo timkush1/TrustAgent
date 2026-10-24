@@ -74,15 +74,34 @@ describe('OgCard', () => {
       label: 'Recorded 28 Sep 2026 · typesafe/jev-1.13 + claude-haiku-4.5 · scripted answers · replayed, not live',
       decision_model: { backend: 'openrouter-systemone', snapshot: 'typesafe/jev-1.13' },
       judge: { provider: 'anthropic', model: 'claude-haiku-4.5', fallback_active: false },
+      // D209: a recorded tape names its featured trace; the card shows that one.
+      featured: { trace_id: featured?.trace_id, rule: 'contradicted_with_span' },
     };
     const { container } = render(withServices(await services(recorded), <OgCard />));
     const card = container.querySelector('[data-og-card]') as HTMLElement;
     await waitFor(() => expect(card).toHaveAttribute('data-og-ready'));
+    expect(card).toHaveAttribute('data-trace-id', featured?.trace_id);
     expect(card).toHaveAttribute('data-recording-kind', 'recorded');
     expect(card.querySelector('[data-og-simulated]')).toBeNull();
     // The recording's own label says the answers were scripted: the card never calls them real.
     expect(card.querySelector('[data-og-recording-label]')).toHaveTextContent(recorded.label);
     expect(card).not.toHaveTextContent(/real answer/i);
+  });
+
+  it("never picks a recorded tape's featured trace itself (D209)", async () => {
+    const { featured: _none, ...unnamed } = { ...committedManifest(), featured: undefined };
+    const recorded = {
+      ...unnamed,
+      kind: 'recorded',
+      label: 'Recorded 28 Sep 2026 · typesafe/jev-1.13 + claude-haiku-4.5 · scripted answers · replayed, not live',
+      decision_model: { backend: 'openrouter-systemone', snapshot: 'typesafe/jev-1.13' },
+      judge: { provider: 'anthropic', model: 'claude-haiku-4.5', fallback_active: false },
+    };
+    const { container } = render(withServices(await services(recorded), <OgCard />));
+    const card = container.querySelector('[data-og-card]') as HTMLElement;
+    expect(await within(card).findByRole('alert')).toBeInTheDocument();
+    expect(card).not.toHaveAttribute('data-og-ready');
+    expect(card).not.toHaveAttribute('data-trace-id');
   });
 
   it('is never ready to capture without a contradicted claim to show', async () => {

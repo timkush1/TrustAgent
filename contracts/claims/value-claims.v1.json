@@ -14,6 +14,7 @@
       "as_of": "2026-09-27",
       "caveat": null,
       "assumption_ref": "fast_check_per_1k",
+      "measured_pair": "fast_check_cost_per_1k_measured",
       "surfaces": ["landing", "readme", "dashboard", "docs"]
     },
     {
@@ -23,7 +24,7 @@
       "unit": "usd",
       "display": "~$0.0002 per check",
       "label": "estimate",
-      "basis": "The fast check on every answer per 1,000 answers (fast_check_cost_per_1k) divided by 1,000: about 5,000 input tokens at the Jev price of $0.042 per million input tokens; output is free.",
+      "basis": "The fast-check cost per 1,000 answers divided by 1,000: about 5,000 input tokens at the Jev price of $0.042 per million input tokens; output is free.",
       "source_url": null,
       "as_of": "2026-10-09",
       "caveat": null,
@@ -37,7 +38,7 @@
       "unit": "usd",
       "display": "~$0.005 per draft",
       "label": "estimate",
-      "basis": "One drafting call of about 1,500 prompt and 700 answer tokens to Claude Haiku 4.5 at $1 and $5 per million tokens (pricing/assumptions.v1.json figure studio_draft_per_1k / 1,000); a repair turn costs about as much again.",
+      "basis": "One drafting call of about 1,500 prompt and 700 answer tokens to Claude Haiku 4.5 at $1 and $5 per million tokens; a repair turn costs about as much again.",
       "source_url": null,
       "as_of": "2026-10-09",
       "caveat": null,
@@ -70,6 +71,7 @@
       "as_of": "2026-09-27",
       "caveat": null,
       "assumption_ref": "llm_full_audit_per_1k",
+      "measured_pair": "llm_full_audit_cost_per_1k_measured",
       "surfaces": ["landing", "readme", "dashboard", "docs"]
     },
     {
@@ -98,6 +100,7 @@
       "as_of": "2026-09-27",
       "caveat": null,
       "assumption_ref": "same_checks_vs_fast_check",
+      "measured_pair": "same_checks_ratio_measured",
       "surfaces": ["readme", "docs"]
     },
     {
@@ -135,10 +138,10 @@
       "unit": "s",
       "display": "P50 0.23 s on OpenRouter",
       "label": "third_party",
-      "basis": "OpenRouter model page for typesafe/jev-1.13.",
+      "basis": "OpenRouter model page for typesafe/jev-1.13: OpenRouter measures it on the live traffic it routes, so it is labelled third-party; its faithfulness test, an evaluation it published of a model it distributes, is labelled vendor.",
       "source_url": "https://openrouter.ai/typesafe/jev-1.13",
       "as_of": "2026-09-27",
-      "caveat": "Latency depends on region and load; independent reports range from about 0.3 s to 0.9 s median.",
+      "caveat": "OpenRouter's rolling figure over the Jev traffic it routes; it moves with region and load, and it is not our measurement.",
       "surfaces": ["landing", "readme", "docs"]
     },
     {
@@ -148,10 +151,10 @@
       "unit": "s",
       "display": "about 0.2 s",
       "label": "third_party",
-      "basis": "Rounded from the OpenRouter P50 (jev_p50_latency_openrouter).",
+      "basis": "Rounded from OpenRouter's P50 for Jev, measured on the live traffic it routes.",
       "source_url": "https://openrouter.ai/typesafe/jev-1.13",
       "as_of": "2026-09-27",
-      "caveat": "Third-party figure, not our measurement; it depends on region and load, and independent reports range from about 0.3 s to 0.9 s median.",
+      "caveat": "Third-party figure, not our measurement; it depends on region and load.",
       "surfaces": ["readme"]
     },
     {
@@ -230,35 +233,7 @@
       "source_url": "https://arize.com/blog/jev-as-a-judge/",
       "as_of": "2026-09-27",
       "caveat": "Shows why thresholds must be calibrated per question and snapshot.",
-      "surfaces": ["landing", "docs"]
-    },
-    {
-      "id": "openrouter_faithfulness_accuracy",
-      "text": "OpenRouter faithfulness test: Jev accuracy",
-      "value": 0.955,
-      "unit": "fraction",
-      "display": "95.5%",
-      "label": "vendor",
-      "basis": "Faithfulness test published by OpenRouter, the model's distributor.",
-      "source_url": "https://openrouter.ai/blog/insights/what-is-jev/",
-      "as_of": "2026-09-27",
-      "caveat": "Published by the model's distributor (vendor-affiliated), not an independent test.",
-      "surfaces": ["landing", "docs"],
-      "reverify": "P6: confirm this page publishes the 95.5% / 171 ms figures before launch."
-    },
-    {
-      "id": "openrouter_faithfulness_median_ms",
-      "text": "OpenRouter faithfulness test: Jev median latency",
-      "value": 171,
-      "unit": "ms",
-      "display": "171 ms median",
-      "label": "vendor",
-      "basis": "Faithfulness test published by OpenRouter, the model's distributor.",
-      "source_url": "https://openrouter.ai/blog/insights/what-is-jev/",
-      "as_of": "2026-09-27",
-      "caveat": "Published by the model's distributor (vendor-affiliated), not an independent test.",
-      "surfaces": ["landing", "docs"],
-      "reverify": "P6: confirm this page publishes the 95.5% / 171 ms figures before launch."
+      "surfaces": ["landing", "readme", "docs"]
     },
     {
       "id": "fast_check_cost_per_1k_measured",
@@ -271,7 +246,7 @@
       "basis": "usage.cost reported on bench-lite fast-check calls.",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "The fast check alone (the LLM audit of risky and sampled answers is extra), on {cost_conditions}. The cost grows with the length of the documents checked.",
       "measured_ref": "fast_check_usd_per_1k",
       "surfaces": ["landing", "readme", "dashboard"]
     },
@@ -286,7 +261,7 @@
       "basis": "Gate latency measured in bench-lite.",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "The fast check's own time per answer, the vendor call included: {gate_conditions}.",
       "measured_ref": "gate_latency_ms_p50",
       "surfaces": ["landing", "readme"]
     },
@@ -301,7 +276,7 @@
       "basis": "Gate latency measured in bench-lite.",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "The fast check's own time per answer, the vendor call included: {gate_conditions}.",
       "measured_ref": "gate_latency_ms_p95",
       "surfaces": ["landing", "readme"]
     },
@@ -337,16 +312,16 @@
     },
     {
       "id": "ragtruth_qa_agreement_measured",
-      "text": "Our RAGTruth-QA agreement",
+      "text": "Our RAGTruth-QA balanced accuracy",
       "value": null,
       "unit": "fraction",
       "display": "{value}",
       "empty_display": "not yet measured",
       "label": "measured",
-      "basis": "Balanced accuracy of the fast check on the bench-lite RAGTruth-QA subset.",
+      "basis": "Balanced accuracy of the fast check on the bench-lite RAGTruth-QA subset, at TrustAgent's default thresholds (each bench evaluator's warn_at).",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "At TrustAgent's default thresholds: an answer is flagged at groundedness 0.8 or contradiction 0.7. The 0.8 came from Arize's tuned cutoff on RAGTruth itself, so this benchmark may favour TrustAgent's figure. Not like for like with Arize's Jev figures: one question, worded differently. RAGTruth is public, so the model may have seen it in training.",
       "measured_ref": "ragtruth_qa_agreement",
       "surfaces": ["landing", "readme", "docs"]
     },
@@ -358,25 +333,57 @@
       "display": "{value}×",
       "empty_display": "not yet measured",
       "label": "measured",
-      "basis": "Validates the token model behind llm_same_checks.",
+      "basis": "Checks the token model behind the estimate for asking an LLM judge the same questions.",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
+      "caveat": "The LLM judge asked the same questions about the same answers: {cost_conditions}.",
       "measured_ref": "same_checks_cost_ratio",
       "surfaces": ["readme", "docs"]
     },
     {
-      "id": "hero_card_latency_ms",
-      "text": "Hero animation: the answer is flagged in",
-      "value": 212,
-      "unit": "ms",
-      "display": "212 ms",
-      "label": "simulated",
-      "basis": "Illustrative animation of the scripted refund-policy example (60 days vs 30 days): replayed, not a live measurement. The fast check's published latency is the third-party figure beside it.",
+      "id": "llm_full_audit_cost_per_1k_measured",
+      "text": "Our measured full LLM audit cost",
+      "value": null,
+      "unit": "usd_per_1k",
+      "display": "${value} / 1,000 answers",
+      "empty_display": "not yet measured",
+      "label": "measured",
+      "basis": "usage.cost of the Claude Haiku full audit (decompose, then verify each claim) on the bench-lite RAGTruth-QA subset.",
       "source_url": null,
       "as_of": null,
-      "caveat": null,
-      "surfaces": ["landing"]
+      "caveat": "Decompose, then verify each claim, on {cost_conditions}.",
+      "measured_ref": "llm_full_audit_usd_per_1k",
+      "surfaces": ["readme", "docs"]
+    },
+    {
+      "id": "ragtruth_qa_accuracy_measured",
+      "text": "Our RAGTruth-QA accuracy",
+      "value": null,
+      "unit": "fraction",
+      "display": "{value}",
+      "empty_display": "not yet measured",
+      "label": "measured",
+      "basis": "Plain accuracy of the fast check on the bench-lite RAGTruth-QA subset, at TrustAgent's default thresholds (each bench evaluator's warn_at).",
+      "source_url": null,
+      "as_of": null,
+      "caveat": "Plain accuracy, as Arize reports it, at TrustAgent's default thresholds: an answer is flagged at groundedness 0.8 or contradiction 0.7. The 0.8 came from Arize's tuned cutoff on RAGTruth itself, so this benchmark may favour TrustAgent's figure. Still not like for like: Arize asks one question, worded differently. RAGTruth is public, so the model may have seen it in training.",
+      "measured_ref": "ragtruth_qa_accuracy",
+      "surfaces": ["readme", "docs"]
+    },
+    {
+      "id": "groundedness_ece_after_measured",
+      "text": "Our groundedness calibration error after calibration (ECE)",
+      "value": null,
+      "unit": "fraction",
+      "display": "{value}",
+      "empty_display": "not yet measured",
+      "label": "measured",
+      "basis": "Expected calibration error of the groundedness check, with the calibration fitted on RAGTruth-QA train and measured on the bench-lite test subset.",
+      "source_url": null,
+      "as_of": null,
+      "caveat": "Held out on RAGTruth-QA test; fitted on train. RAGTruth is public, so the model may have seen it in training.",
+      "measured_ref": "groundedness_ece_after",
+      "surfaces": ["readme", "docs"]
     },
     {
       "id": "hero_card_cost_usd",

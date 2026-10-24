@@ -201,11 +201,12 @@ export function SimpleTab({ spec, onChange, disabled = false, onOpenJson }: { sp
 
       {form.answerType === 'yes_no' ? (
         <div className="grid gap-3 sm:grid-cols-2">
+          {/* Each meaning grows with its text (field-sizing), so a long one is never cut mid-sentence. */}
           <Field label="“Yes” means">
-            <Input value={form.yes} disabled={disabled} onChange={(e) => set({ ...form, yes: e.target.value })} />
+            <Textarea rows={2} className="min-h-9 resize-none [field-sizing:content]" value={form.yes} disabled={disabled} onChange={(e) => set({ ...form, yes: e.target.value })} />
           </Field>
           <Field label="“No” means">
-            <Input value={form.no} disabled={disabled} onChange={(e) => set({ ...form, no: e.target.value })} />
+            <Textarea rows={2} className="min-h-9 resize-none [field-sizing:content]" value={form.no} disabled={disabled} onChange={(e) => set({ ...form, no: e.target.value })} />
           </Field>
           <div className="space-y-1.5 sm:col-span-2">
             <p className="text-sm font-medium text-fg">It's a problem when the answer is</p>

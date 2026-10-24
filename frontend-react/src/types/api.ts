@@ -1490,10 +1490,17 @@ export interface Recording {
   recorded_at: ISODateTime;
   git_sha: string;
   trustagent_version: string;
-  decision_model: { backend: DecisionBackend; snapshot: string | null };
-  judge: { provider: string; model: string; fallback_active: boolean };
+  /** `host`: the bare host the fast check called (D203); a recorded tape names a vendor host. */
+  decision_model: { backend: DecisionBackend; snapshot: string | null; host?: string };
+  /** `host`: the bare host the judge called (D203). */
+  judge: { provider: string; model: string; fallback_active: boolean; host?: string };
   calibration_state: CalibrationState;
-  answer_sources: { scripted: number; generated: number };
+  /** `generated_host`: the upstream that wrote the generated answers (D203, D208); null when there are none. */
+  answer_sources: { scripted: number; generated: number; generated_host?: string | null };
+  /** The trace every launch surface shows, picked by rule and never edited (D209). */
+  featured?: { trace_id: TraceId; rule: 'contradicted_with_span' | 'best_flagged' | 'scripted' };
+  /** The calibration the tape was recorded with (D207, D208); quality none means uncalibrated. */
+  calibration?: { snapshot: string | null; quality: 'measured' | 'provisional' | 'none' };
   totals: { traces: number; decision_usd: number; llm_usd: number };
   /** recording.v1 `roi`: the headline only (Go recording.ROI); the full RoiSummary is recomputed from the traces. */
   roi: Pick<RoiSummary, 'window' | 'gated_responses' | 'simulated'>;

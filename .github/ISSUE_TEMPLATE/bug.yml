@@ -1,0 +1,73 @@
+name: Bug report
+description: Something in TrustAgent does not work as documented.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. A security problem does not belong here: use
+        [private vulnerability reporting](https://github.com/timkush1/TrustAgent/security/advisories/new).
+        Never paste an API key, a `.env` file or a session cookie; `make doctor` output masks keys.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: The smallest steps that show it, such as a request, a policy or a page and a click.
+      placeholder: |
+        1. make demo
+        2. open http://localhost:3000/app/traffic
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`curl -s localhost:8080/health` prints it, or the image tag you pulled."
+      placeholder: "2.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: setup
+    attributes:
+      label: How you run it
+      options:
+        - make demo (zero-key, mocks)
+        - make up (built from source)
+        - pulled images (ghcr.io)
+        - the static site (GitHub Pages)
+        - other (say below)
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - gateway (/v1, policies, fast check)
+        - deep audit (engine, judge)
+        - dashboard
+        - Evaluator Studio
+        - static site or landing page
+        - install, compose or make targets
+        - docs
+  - type: textarea
+    id: doctor
+    attributes:
+      label: make doctor output, logs
+      description: "`make doctor` output and the relevant log lines (`docker compose logs proxy engine`). Check them for secrets first."
+      render: text
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS (and WSL version on Windows), Docker version, browser if it is a page.

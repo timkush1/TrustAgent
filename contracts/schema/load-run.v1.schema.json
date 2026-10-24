@@ -37,7 +37,22 @@
         "trace_flush": {"enum": ["async", "sync"]},
         "k6_image": {"type": "string", "pattern": "^[a-z0-9./-]+(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?$", "description": "The pinned K6_IMAGE (mk/load.mk)."},
         "rate": {"type": "integer", "minimum": 1, "description": "Requests per second of each scenario (LOAD_RATE)."},
-        "duration": {"type": "string", "pattern": "^[0-9]+(ms|s|m|h)$", "description": "Duration of each scenario (LOAD_DURATION)."}
+        "duration": {"type": "string", "pattern": "^[0-9]+(ms|s|m|h)$", "description": "Duration of each scenario (LOAD_DURATION)."},
+        "image_revision": {
+          "anyOf": [{"$ref": "common.v1.schema.json#/$defs/GitSha"}, {"type": "null"}],
+          "description": "The proxy image's org.opencontainers.image.revision label: the commit the measured gateway was built from (null when the image has none)."
+        },
+        "concurrent_load": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["other_projects", "loadavg", "mem_available_mb"],
+          "description": "What else ran on the machine, read right after the passes: the other compose projects with running containers, the load average and the memory available. A quiet run has no other project.",
+          "properties": {
+            "other_projects": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
+            "loadavg": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number", "minimum": 0}},
+            "mem_available_mb": {"type": "integer", "minimum": 0}
+          }
+        }
       }
     },
     "scenarios": {

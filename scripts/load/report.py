@@ -9,7 +9,8 @@
 It merges the `TRUSTAGENT_LOAD_RESULT {json}` lines k6 printed (scripts/load/gateway-overhead.js,
 one k6 run per scenario), collects the environment (the CPU, memory, OS and kernel, the Docker
 server, the proxy's limits and trace flush from the compose config, the pinned k6 image, the rate
-and duration), and writes docs/benchmarks/load/<run_id>.json (contracts/schema/load-run.v1). It
+and duration, the proxy image's revision label, and what else was running: other compose projects,
+the load average and the memory available), and writes docs/benchmarks/load/<run_id>.json (contracts/schema/load-run.v1). It
 refuses, writing nothing, when:
 
   - the tree has uncommitted tracked changes (git status --porcelain --untracked-files=no);
@@ -217,6 +218,8 @@ def merge_results(
 
 # --------------------------------------------------------------------------------- environment
 
+GIT_SHA_RE = re.compile(r"[0-9a-f]{7,40}")
+
 
 def read_text(path: str) -> Optional[str]:
     try:
@@ -282,6 +285,63 @@ def proxy_settings(config: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
     return out, flush
 
 
+def compose_project(compose: str, config: Dict[str, Any]) -> Optional[str]:
+    """The compose project of the load stack: -p/--project-name in the command, else the config's name."""
+    argv = shlex.split(compose)
+    for i, arg in enumerate(argv):
+        if arg in ("-p", "--project-name") and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith("--project-name="):
+            return arg.split("=", 1)[1]
+    name = config.get("name")
+    return name if isinstance(name, str) and name else None
+
+
+def image_revision(run: Runner, config: Dict[str, Any]) -> Optional[str]:
+    """The proxy image's org.opencontainers.image.revision label (a git sha), or None."""
+    proxy = (config.get("services") or {}).get("proxy") or {}
+    image = proxy.get("image") if isinstance(proxy, dict) else None
+    if not image:
+        return None
+    label = run(
+        [
+            "docker",
+            "image",
+            "inspect",
+            "--format",
+            '{{index .Config.Labels "org.opencontainers.image.revision"}}',
+            str(image),
+        ]
+    ).strip()
+    return label if GIT_SHA_RE.fullmatch(label) else None
+
+
+def mem_available_mb(meminfo: Optional[str]) -> Optional[int]:
+    m = re.search(r"^MemAvailable:\s+(\d+)\s*kB", meminfo or "", re.MULTILINE)
+    return int(m.group(1)) // 1024 if m else None
+
+
+def load_average(text: Optional[str]) -> Optional[List[float]]:
+    parts = (text or "").split()
+    try:
+        return [round(float(x), 2) for x in parts[:3]] if len(parts) >= 3 else None
+    except ValueError:
+        return None
+
+
+def concurrent_load(
+    run: Runner, project: Optional[str], files: Callable[[str], Optional[str]]
+) -> Dict[str, Any]:
+    """What else ran beside the load stack, read right after the passes (a quiet run has nothing)."""
+    out = run(["docker", "ps", "--format", '{{.Label "com.docker.compose.project"}}'])
+    others = sorted({p.strip() for p in out.splitlines() if p.strip() and p.strip() != project})
+    return {
+        "other_projects": others,
+        "loadavg": load_average(files("/proc/loadavg")),
+        "mem_available_mb": mem_available_mb(files("/proc/meminfo")),
+    }
+
+
 def collect_environment(
     run: Runner,
     compose: Optional[str],
@@ -312,6 +372,9 @@ def collect_environment(
     env["k6_image"] = k6_image or None
     env["rate"], env["duration"] = rate, duration
     missing = [k for k, v in env.items() if v is None]
+    env["image_revision"] = image_revision(run, config)
+    env["concurrent_load"] = concurrent_load(run, compose_project(compose, config), files)
+    missing += [f"concurrent_load.{k}" for k, v in env["concurrent_load"].items() if v is None]
     if missing:
         raise Refusal(f"the environment is incomplete: {', '.join(missing)} could not be read")
     return env
@@ -418,6 +481,22 @@ def target_words(target: Optional[Dict[str, Any]]) -> str:
     return f"{target['stat'].replace('_ms', '')} < {fmt_ms(float(target['max_ms']))}"
 
 
+def conditions(env: Dict[str, Any]) -> str:
+    """The image revision and concurrent load of a run, when it recorded them (older runs did not)."""
+    parts = []
+    if env.get("image_revision"):
+        parts.append(f"image built from `{env['image_revision']}`")
+    load = env.get("concurrent_load")
+    if isinstance(load, dict):
+        others = load.get("other_projects") or []
+        parts.append(
+            "nothing else running"
+            if not others
+            else "beside the compose project(s) " + ", ".join(f"`{p}`" for p in others)
+        )
+    return f" ({'; '.join(parts)})" if parts else ""
+
+
 def gateway_block(doc: Optional[Dict[str, Any]]) -> str:
     """The GATEWAY.md block (between the markers, markers excluded) for a run, or the placeholder."""
     if doc is None:
@@ -442,7 +521,7 @@ def gateway_block(doc: Optional[Dict[str, Any]]) -> str:
         f"**Measured** (k6, simulated vendors: mock-upstream answers at once) on {env['cpu_model']}, "
         f"{env['cores']} logical CPUs and {env['mem_gb']:g} GB RAM visible to {env['os']}; Docker {env['docker']}; "
         f"proxy {proxy}; {env['rate']} requests/s for {env['duration']} per scenario. "
-        f"Run `{doc['run_id']}` at `{doc['git_sha']}`. These are the gateway's own time, not a vendor's. "
+        f"Run `{doc['run_id']}` at `{doc['git_sha']}`{conditions(env)}. These are the gateway's own time, not a vendor's. "
         "The overhead header counts whole milliseconds, and a gateway-histogram figure is interpolated "
         "inside its bucket (the first ends at 1 ms), so both are good to about 1 ms.",
         "",

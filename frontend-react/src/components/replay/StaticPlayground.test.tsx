@@ -197,6 +197,7 @@ describe('LivePanel', () => {
     expect(within(result).getByTestId('live-check-cost')).toHaveTextContent('This check: $0.000021');
     expect(within(within(result).getByTestId('live-check-cost')).getByRole('button', { name: /^Vendor/ })).toBeInTheDocument();
     expect(within(result).getByText(/does not run in the browser/)).toBeInTheDocument();
+    expect(within(result).getByText('make demo').tagName).toBe('CODE');
     // A screen reader hears that the deep audit does not run here, not that it is waiting.
     expect(within(result).getByRole('heading', { name: `${copy.tiers.deep_audit} (not run here)` })).toBeInTheDocument();
     expect(within(result).queryByRole('link', { name: /Open the full trace/ })).toBeNull();
@@ -443,7 +444,11 @@ describe('LivePanel', () => {
 
   it('without a live scope says how to run it locally (D100 scope R)', () => {
     renderPanel({ liveChecks: false });
-    expect(screen.getByTestId('live-unavailable')).toHaveTextContent("Live checks from the browser aren't available here. Run it yourself: make demo");
+    const unavailable = screen.getByTestId('live-unavailable');
+    expect(unavailable).toHaveTextContent("Live checks from the browser aren't available here. Try it on the zero-key demo: make demo; on your own stack: make up");
+    // Commands read as code, as on every other surface.
+    expect(within(unavailable).getByText('make demo').tagName).toBe('CODE');
+    expect(within(unavailable).getByText('make up').tagName).toBe('CODE');
     expect(screen.queryByRole('button')).toBeNull();
   });
 

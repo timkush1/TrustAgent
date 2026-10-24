@@ -91,7 +91,15 @@ export function OutcomeTimeSeries({
     [buckets, series, formatBucket],
   );
 
-  const ticks = useMemo(() => axisTicks(data.map((d) => d.t)), [data]);
+  const ticks = useMemo(
+    () =>
+      axisTicks(
+        data.map((d) => d.t),
+        6,
+        data.map((d) => d.total > 0),
+      ),
+    [data],
+  );
   const labelOf = useMemo(() => new Map(data.map((d) => [d.t, d.label])), [data]);
   const ids = series.map((s) => s.id);
   const grandTotal = data.reduce((sum, d) => sum + d.total, 0);

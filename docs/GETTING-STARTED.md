@@ -188,7 +188,7 @@ check (Jev) and the deep-audit judge.
      **credit limit** (for example $2): keys created this way have none. **Paste a key** is on the
      same screen if you prefer an existing key.
    - **Step 3, connect your app.** The wizard shows the base URL and a code snippet, and mints an
-     ingest key for your app when none exists yet (shown once). Otherwise create one on
+     app key for your app when none exists yet (shown once). Otherwise create one on
      **Settings → Access**, or use the traffic generator's key from `.env`
      (`python3 scripts/envfile.py get TRAFFICGEN_API_KEY`) for a first test.
 6. **Check the connection:** `make doctor` shows which fast-check backend is active and why, its
@@ -207,7 +207,7 @@ Without signing in, the dashboard shows outcomes and reasons but hides the promp
 
 **Send a first request.** Point your app at the proxy instead of the LLM provider:
 base URL `http://localhost:8080/v1`. Two things change for your app: it sends its TrustAgent key
-(an ingest key, see step 5) in an `X-TrustAgent-Key` header, and it sends the documents the answer
+(an app key, see step 5) in an `X-TrustAgent-Key` header, and it sends the documents the answer
 must stick to, so there is something to check against. A quick test from the terminal, with
 OpenRouter as the LLM too:
 
@@ -216,7 +216,7 @@ OpenRouter as the LLM too:
 echo 'TRUTHTABLE_UPSTREAM_URL=openrouter' >> .env
 
 read -rsp 'OpenRouter key (for the LLM call): ' LLM_KEY; echo          # hidden, not in history
-read -rsp 'TrustAgent ingest key: ' TA_KEY; echo
+read -rsp 'TrustAgent app key: ' TA_KEY; echo
 curl -sS -D - http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $LLM_KEY" \

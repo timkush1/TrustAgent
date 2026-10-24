@@ -165,8 +165,9 @@ func TestPricingLedgerApplySettingsOverrides(t *testing.T) {
 	if !ok || e.InputPerMTok != 0.05 || v != decision.PriceVersionOverride {
 		t.Errorf("Lookup after the override = %+v %s %v", e, v, ok)
 	}
-	if got := len(l.Prices().Effective().Entries); got != 6 {
-		t.Errorf("effective entries = %d, want the 5 contracts entries and 1 valid override", got)
+	contracts := contractsTable(t)
+	if got := len(l.Prices().Effective().Entries); got != len(contracts.Entries)+1 {
+		t.Errorf("effective entries = %d, want the %d contracts entries and 1 valid override", got, len(contracts.Entries))
 	}
 	l.ApplySettings(Caps{}, nil)
 	if _, v, _ := l.Prices().Lookup("openrouter", "typesafe/jev-1.13"); v == decision.PriceVersionOverride {
@@ -239,7 +240,7 @@ func TestCostLedgerRecordsLLMRows(t *testing.T) {
 		r.PriceTableVersion != decision.PriceVersionOverride || !r.OccurredAt.Equal(day1) || r.Selection != "manual" || r.KeyLabel != "admin" {
 		t.Errorf("llm row = %+v", r)
 	}
-	if r := rows[1]; r.Kind != "llm" || r.CostUSD != nil || r.CostSource != "unknown" || r.PriceTableVersion != "2026-09-27" {
+	if r := rows[1]; r.Kind != "llm" || r.CostUSD != nil || r.CostSource != "unknown" || r.PriceTableVersion != contractsTable(t).Version {
 		t.Errorf("an unpriced llm row = %+v", r)
 	}
 	if st := l.LLM().State(); st.SpentUSD != 0 {

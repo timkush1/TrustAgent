@@ -66,6 +66,16 @@ updates:
       # lets Dependabot follow them at all.
       - dependency-name: 'python'
         update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      # Go stays on 1.26 (go.mod toolchain go1.26.x): every gosec release so far
+      # is built on golang.org/x/tools older than v0.50.0, which cannot read Go
+      # 1.27 export data, so the blocking gosec gate would pass without checking
+      # anything. Lift this once gosec reads 1.27.
+      - dependency-name: 'golang'
+        versions: ['>=1.27']
+      # node:22-alpine is the LTS line the dashboard build uses; a new major
+      # (including the odd, non-LTS releases) is moved to deliberately.
+      - dependency-name: 'node'
+        update-types: ['version-update:semver-major']
 
   # Image pins in docker-compose.yml (SPEC §3.4). Keep ollama in step with the
   # service image pinned in .github/workflows/eval.yml.

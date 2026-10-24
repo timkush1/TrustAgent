@@ -64,7 +64,7 @@ func TestReadyWithOpenRouter(t *testing.T) {
 		"Endpoint   "+srv.URL+"/api/alpha/decisions",
 		"Model      typesafe/jev-1.13",
 		"Credential env",
-		"Key        valid · label sk-or-v1-t…789 · usage $0.0123 · no credit limit",
+		"Key        valid · label sk-or-…xxxx · usage $0.0123 · no credit limit",
 		"Probe      OK",
 		"Snapshot   typesafe/jev-1.13-20260917",
 		"Latency", "· 1 attempt\n",
@@ -76,6 +76,27 @@ func TestReadyWithOpenRouter(t *testing.T) {
 	}
 	if decisionCalls(m) != 1 {
 		t.Errorf("%d decision calls", decisionCalls(m))
+	}
+}
+
+// OpenRouter's key label is a truncated form of the key (mock-upstream: "sk-or-v1-t…789"): no part
+// of it is printed, in text or in JSON (D211).
+func TestTheKeyLabelIsNeverPrinted(t *testing.T) {
+	_, srv := mockServer(t)
+	env := map[string]string{"OPENROUTER_API_KEY": "sk-or-v1-test-0123456789", "TRUTHTABLE_OPENROUTER_BASE_URL": srv.URL}
+	for _, args := range [][]string{nil, {"-json"}} {
+		code, out := runCheck(t, env, args...)
+		if code != exitOK {
+			t.Fatalf("%v: exit %d:\n%s", args, code, out)
+		}
+		for _, leak := range []string{"sk-or-v1-t", "…789", "0123456789"} {
+			if strings.Contains(out, leak) {
+				t.Errorf("%v: the output holds %q from the key or its label:\n%s", args, leak, out)
+			}
+		}
+		if !strings.Contains(out, MaskedLabel) {
+			t.Errorf("%v: the output lacks the masked label %q", args, MaskedLabel)
+		}
 	}
 }
 

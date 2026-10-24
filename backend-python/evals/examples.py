@@ -112,6 +112,27 @@ class BenchExample:
         )
 
 
+# Evaluator labels of a response-level example (D206): groundedness@1 fires on any
+# hallucinated span; contradiction@1 only on a conflict span (a baseless-only answer is
+# unsupported, not contradicted, so it is 0 for contradiction@1).
+GROUNDEDNESS = "groundedness@1"
+CONTRADICTION = "contradiction@1"
+SPAN_CONFLICT = "conflict"
+
+
+def evaluator_labels(example: BenchExample) -> Dict[str, bool]:
+    """
+    The label each evaluator should give `example` (True = should fire):
+    groundedness@1 is the example's hallucination label; contradiction@1 is
+    known only when the loader recorded the span kinds (`meta.spans`, RAGTruth).
+    """
+    labels = {GROUNDEDNESS: example.label_hallucinated}
+    spans = example.meta.get("spans")
+    if spans is not None:
+        labels[CONTRADICTION] = SPAN_CONFLICT in spans.split("+")
+    return labels
+
+
 def estimate_tokens(text: str) -> int:
     """A rough token count (CHARS_PER_TOKEN characters per token)."""
     return -(-len(text) // CHARS_PER_TOKEN)

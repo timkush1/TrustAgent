@@ -2,10 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/timkush1/TrustAgent/contracts/schema/measured.v1.schema.json",
   "title": "MeasuredValues",
-  "description": "contracts/claims/measured.json: values derived from docs/benchmarks/results/*.json (accuracy and cost runs) and docs/benchmarks/load/*.json (load-run.v1, D118: the proxy overhead of scenario c folds in with system proxy and its run_id). Written only by make bench-publish, which refuses mock runs; until then every value is an explicit null and the UI shows \"not yet measured\".",
+  "description": "contracts/claims/measured.json: values derived from docs/benchmarks/results/*.json (accuracy and cost runs) and docs/benchmarks/load/*.json (load-run.v1, D118: the proxy overhead of scenario c folds in with system proxy and its run_id). Written only by make bench-publish, which refuses mock runs and runs on a non-vendor host (D203, D204); until then every value is an explicit null and the UI shows \"not yet measured\".",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "status", "tier", "mock", "generated_by", "generated_at", "runs", "values"],
+  "$defs": {
+    "vendor_host": {"$ref": "common.v1.schema.json#/$defs/VendorHost"},
+    "run_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$"},
+    "snapshot": {"type": "string", "minLength": 1, "maxLength": 128}
+  },
   "properties": {
     "schema": {"const": "trustagent.measured/v1"},
     "status": {"enum": ["not_measured", "measured"]},
@@ -16,7 +21,15 @@
     "runs": {
       "type": "array",
       "uniqueItems": true,
-      "items": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$"}
+      "items": {"$ref": "#/$defs/run_id"}
+    },
+    "snapshot": {
+      "description": "The decision-model snapshot every measured value comes from (D207). Two snapshots only when sources.snapshot_split is true, and then every surface names both.",
+      "anyOf": [
+        {"$ref": "#/$defs/snapshot"},
+        {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"$ref": "#/$defs/snapshot"}},
+        {"type": "null"}
+      ]
     },
     "values": {
       "type": "object",
@@ -30,12 +43,94 @@
           "value": {"anyOf": [{"type": "number"}, {"type": "null"}]},
           "unit": {"enum": ["usd_per_1k", "ms", "fraction", "multiplier"]},
           "description": {"type": "string", "minLength": 1},
-          "run_id": {"anyOf": [{"type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$"}, {"type": "null"}]},
+          "run_id": {"anyOf": [{"$ref": "#/$defs/run_id"}, {"type": "null"}]},
           "system": {
             "anyOf": [
               {"enum": ["gate", "llm_same_checks", "llm_full_audit", "cascade_response", "proxy"]},
               {"type": "null"}
             ]
+          }
+        }
+      }
+    },
+    "intervals": {
+      "type": "object",
+      "description": "95% intervals of measured fractions, keyed like values (D212): Wilson for accuracy, a seeded bootstrap for balanced accuracy. n_pos and n_neg are the counts per class shown beside the figure.",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]{1,63}$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lo", "hi", "method"],
+        "properties": {
+          "lo": {"type": "number"},
+          "hi": {"type": "number"},
+          "method": {"enum": ["wilson", "bootstrap"]},
+          "resamples": {"type": "integer", "minimum": 1},
+          "seed": {"type": "integer"},
+          "n_pos": {"type": "integer", "minimum": 0},
+          "n_neg": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Where the measured values come from (D204, D206, D207). Each <key>_usd_per_1k value names its cost source: reported (usage.cost from the vendor) or computed (measured tokens × vendor price); unknown is refused. Each also says what it was measured on (D229).",
+      "properties": {
+        "attempts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bench_runs", "refused_run_ids"],
+          "description": "Every bench-lite run since the measurement began, and the ones publish refused: disclosed, never fished (D204).",
+          "properties": {
+            "bench_runs": {"type": "integer", "minimum": 0},
+            "refused_run_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/run_id"}}
+          }
+        },
+        "snapshot_split": {
+          "type": "boolean",
+          "description": "true when calibration, bench and recording span two decision-model snapshots (D207 option b); snapshot then lists both."
+        },
+        "groundedness_ece": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "calibration_file", "calibration_sha256", "dataset"],
+          "description": "ECE before and after calibration, measured on the bench's held-out test sample with a calibration fitted on the train split (D206).",
+          "properties": {
+            "method": {"const": "holdout"},
+            "calibration_file": {"type": "string", "pattern": "^config/calibration/[A-Za-z0-9._-]+\\.json$"},
+            "calibration_sha256": {"$ref": "common.v1.schema.json#/$defs/Sha256Hex"},
+            "dataset": {"type": "string", "minLength": 1}
+          }
+        },
+        "gate_latency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["connection", "gate_concurrency", "platform", "region", "n", "conditions"],
+          "description": "How the gate latency values were taken (D205, D225), from the bench run that measured them: its latency block (connection, gate_concurrency), its inputs.host_env (platform and region: where it really ran, never assumed) and the gate's scored count n. conditions is the sentence shown after the figure wherever it appears (the {gate_conditions} placeholder in the latency claims' caveat), snapshot included; bench publish writes it. Required whenever a gate latency value is published.",
+          "properties": {
+            "connection": {"enum": ["warm", "cold"]},
+            "gate_concurrency": {"type": "integer", "minimum": 1},
+            "platform": {"type": "string", "minLength": 1, "maxLength": 64},
+            "region": {"type": "string", "minLength": 1, "maxLength": 64},
+            "n": {"type": "integer", "minimum": 1},
+            "conditions": {"type": "string", "minLength": 1, "maxLength": 300}
+          }
+        }
+      },
+      "patternProperties": {
+        "^[a-z][a-z0-9_]{0,50}_usd_per_1k$": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cost_source"],
+          "description": "A cost value's source (D204) and the conditions it was measured under (D229), from the bench run that measured it: the dataset its answers came from, n (the examples the cost is divided over), the mean input tokens per answer as the vendor counted them (a cost per answer grows with the documents' length), the judge model of an LLM system, and conditions, the sentence shown after the figure wherever it appears (the {cost_conditions} placeholder in the cost claims' caveat). bench publish writes it; conditions is required whenever the cost value is published.",
+          "properties": {
+            "cost_source": {"enum": ["reported", "computed"]},
+            "dataset": {"type": "string", "minLength": 1, "maxLength": 120},
+            "n": {"type": "integer", "minimum": 1},
+            "input_tokens_per_answer": {"type": "integer", "minimum": 1},
+            "model": {"type": "string", "minLength": 1, "maxLength": 120},
+            "conditions": {"type": "string", "minLength": 1, "maxLength": 300}
           }
         }
       }

@@ -16,6 +16,10 @@ import (
 
 func utf16Len(s string) int { return len(utf16.Encode([]rune(s))) }
 
+// vendorHosts are the hosts of a real recording: the fast check and the generated answers through
+// OpenRouter, the fixtures' anthropic judge at Anthropic.
+var vendorHosts = recording.Hosts{Decision: "openrouter.ai", Judge: "api.anthropic.com", Generated: "openrouter.ai"}
+
 func TestSanitizer(t *testing.T) {
 	san, err := recording.NewSanitizer()
 	if err != nil {
@@ -113,16 +117,16 @@ func build(t *testing.T, traces []recording.Trace, opt recording.Options) (*reco
 }
 
 func TestBuildRecorded(t *testing.T) {
-	rec, _ := build(t, recordingtest.Set(t), recording.Options{GitSHA: "abc1234", Version: "1.0.0"})
+	rec, _ := build(t, recordingtest.Set(t), recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: vendorHosts})
 	want := "Recorded 2026-10-05 · typesafe/jev-1.13-20260917 + anthropic claude-haiku-4-5 · scripted and generated answers · replayed, not live"
 	if rec.Kind != recording.KindRecorded || rec.Label != want {
 		t.Errorf("kind %s, label %q", rec.Kind, rec.Label)
 	}
-	if rec.Traces[0].TraceID != "01a0e780-fe6b-74b8-a21f-000000000001" || rec.AnswerSources != (recording.AnswerSources{Scripted: 2, Generated: 1}) {
+	if rec.Traces[0].TraceID != "01a0e780-fe6b-74b8-a21f-000000000001" || rec.AnswerSources != (recording.AnswerSources{Scripted: 2, Generated: 1, GeneratedHost: "openrouter.ai"}) {
 		t.Errorf("traces not oldest first or counts wrong: %s, %+v", rec.Traces[0].TraceID, rec.AnswerSources)
 	}
 	if rec.Totals.Traces != 3 || rec.Totals.LLMUSD != 0.0021 || rec.Totals.DecisionUSD < 5e-5 || rec.ROI.Window != "15m" || rec.ROI.Simulated ||
-		rec.ROI.GatedResponses != 3 || rec.Judge != (recording.Judge{Provider: "anthropic", Model: "claude-haiku-4-5"}) || rec.CalibrationState != "none" ||
+		rec.ROI.GatedResponses != 3 || rec.Judge != (recording.Judge{Provider: "anthropic", Model: "claude-haiku-4-5", Host: "api.anthropic.com"}) || rec.CalibrationState != "none" ||
 		!rec.RecordedAt.Equal(time.Date(2026, 10, 5, 10, 0, 0, 0, time.UTC)) {
 		t.Errorf("recording = %+v", rec)
 	}
@@ -163,17 +167,17 @@ func TestRecordedLabelNamesTheAnswerSources(t *testing.T) {
 		want    string
 		counts  recording.AnswerSources
 	}{
-		{[]string{"generated", "generated"}, "generated answers", recording.AnswerSources{Generated: 2}},
+		{[]string{"generated", "generated"}, "generated answers", recording.AnswerSources{Generated: 2, GeneratedHost: "openrouter.ai"}},
 		{[]string{"scripted"}, "scripted answers", recording.AnswerSources{Scripted: 1}},
-		{[]string{"generated", "scripted", "generated"}, "scripted and generated answers", recording.AnswerSources{Scripted: 1, Generated: 2}},
-		{[]string{"live", "generated"}, "generated and live answers", recording.AnswerSources{Generated: 1}},
+		{[]string{"generated", "scripted", "generated"}, "scripted and generated answers", recording.AnswerSources{Scripted: 1, Generated: 2, GeneratedHost: "openrouter.ai"}},
+		{[]string{"live", "generated"}, "generated and live answers", recording.AnswerSources{Generated: 1, GeneratedHost: "openrouter.ai"}},
 	} {
 		var traces []recording.Trace
 		for i, source := range c.sources {
 			id := "01a0e780-fe6b-74b8-a21f-00000000010" + string(rune('0'+i))
 			traces = append(traces, recordingtest.Variant(t, refund, id, base.Add(time.Duration(i)*time.Minute), source))
 		}
-		rec, _ := build(t, traces, recording.Options{GitSHA: "abc1234", Version: "1.0.0"})
+		rec, _ := build(t, traces, recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: vendorHosts})
 		want := "Recorded 2026-10-05 · typesafe/jev-1.13-20260917 + anthropic claude-haiku-4-5 · " + c.want + " · replayed, not live"
 		if rec.Kind != recording.KindRecorded || rec.Label != want || rec.AnswerSources != c.counts {
 			t.Errorf("%v: kind %s, label %q, counts %+v; want %q, %+v", c.sources, rec.Kind, rec.Label, rec.AnswerSources, want, c.counts)
@@ -186,9 +190,25 @@ func TestBuildMock(t *testing.T) {
 	for _, tr := range recordingtest.Set(t) {
 		traces = append(traces, recordingtest.Mock(tr))
 	}
-	rec, m := build(t, traces, recording.Options{GitSHA: "abc1234", Version: "1.0.0"})
+	stand := recording.Hosts{Decision: "mock-upstream", Generated: "mock-upstream"}
+	rec, m := build(t, traces, recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: stand})
 	if rec.Kind != recording.KindMock || rec.Label != recording.MockLabel || !rec.ROI.Simulated || rec.DecisionModel.Backend != "mock" || m["kind"] != "mock" {
 		t.Errorf("recording = %+v", rec)
+	}
+	// D203: the mock fast check and the mock judge call no vendor, so a simulated tape never names
+	// a vendor host for them (an export told otherwise is refused, not relabelled).
+	for _, c := range []struct {
+		hosts recording.Hosts
+		want  string
+	}{
+		{recording.Hosts{Decision: "openrouter.ai"}, "drop --decision-host openrouter.ai"},
+		{recording.Hosts{Judge: "api.anthropic.com"}, "drop --judge-host api.anthropic.com"},
+		{vendorHosts, "the fast check is the mock"},
+	} {
+		_, err := recording.Build(traces, recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: c.hosts})
+		if !errors.Is(err, recording.ErrNotRecordable) || err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("hosts %+v: err = %v, want %q", c.hosts, err, c.want)
+		}
 	}
 }
 
@@ -247,19 +267,186 @@ func TestBuildDefaultJudge(t *testing.T) {
 	for i := range unaudited {
 		unaudited[i].Detail.AuditDetail, unaudited[i].Detail.Audit.AuditID, unaudited[i].LLMUSD = nil, nil, nil
 	}
-	rec, _ := build(t, unaudited, recording.Options{GitSHA: "abc1234", Version: "1.0.0", DefaultJudge: def})
+	rec, _ := build(t, unaudited, recording.Options{GitSHA: "abc1234", Version: "1.0.0", DefaultJudge: def, Hosts: vendorHosts})
 	if rec.Judge.Provider != def.Provider || rec.Judge.Model != def.Model || !strings.Contains(rec.Label, "anthropic/claude-haiku-4.5") {
 		t.Errorf("unaudited: judge %+v label %q", rec.Judge, rec.Label)
 	}
 	// Audits name their judge: the default is ignored, not a clash.
-	rec, _ = build(t, recordingtest.Set(t), recording.Options{GitSHA: "abc1234", Version: "1.0.0", DefaultJudge: def})
+	rec, _ = build(t, recordingtest.Set(t), recording.Options{GitSHA: "abc1234", Version: "1.0.0", DefaultJudge: def, Hosts: vendorHosts})
 	if rec.Judge.Provider != "anthropic" {
 		t.Errorf("audited: judge %+v", rec.Judge)
 	}
 	// A flag wins over the default.
 	flag := &recording.Judge{Provider: "anthropic", Model: "claude-haiku-4-5"}
-	rec, _ = build(t, unaudited, recording.Options{GitSHA: "abc1234", Version: "1.0.0", Judge: flag, DefaultJudge: def})
+	rec, _ = build(t, unaudited, recording.Options{GitSHA: "abc1234", Version: "1.0.0", Judge: flag, DefaultJudge: def, Hosts: vendorHosts})
 	if rec.Judge.Provider != "anthropic" {
 		t.Errorf("flag and default: judge %+v", rec.Judge)
+	}
+}
+
+// TestBuildHosts: a tape is recorded only when the fast check, the judge and (with generated
+// answers) the upstream called vendor hosts (D203). mock-upstream, an unknown host or a gateway
+// in between keeps it from the recorded label, with the reason non_vendor_host; the hosts survive
+// the sanitizer as bare names.
+func TestBuildHosts(t *testing.T) {
+	rec, m := build(t, recordingtest.Set(t), recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: vendorHosts})
+	if rec.Kind != recording.KindRecorded || rec.DecisionModel.Host != "openrouter.ai" || rec.Judge.Host != "api.anthropic.com" ||
+		rec.AnswerSources.GeneratedHost != "openrouter.ai" {
+		t.Fatalf("vendor hosts: %+v %+v %+v", rec.DecisionModel, rec.Judge, rec.AnswerSources)
+	}
+	dm, _ := m["decision_model"].(map[string]any)
+	judge, _ := m["judge"].(map[string]any)
+	sources, _ := m["answer_sources"].(map[string]any)
+	if dm["host"] != "openrouter.ai" || judge["host"] != "api.anthropic.com" || sources["generated_host"] != "openrouter.ai" {
+		t.Errorf("the sanitized manifest lost its hosts: %v %v %v", dm, judge, sources)
+	}
+
+	for name, c := range map[string]struct {
+		hosts recording.Hosts
+		want  string
+	}{
+		"mock-upstream decision": {recording.Hosts{Decision: "mock-upstream", Judge: "api.anthropic.com", Generated: "openrouter.ai"}, "the fast check called mock-upstream"},
+		"mock-upstream judge":    {recording.Hosts{Decision: "openrouter.ai", Judge: "mock-upstream", Generated: "openrouter.ai"}, "the judge called mock-upstream"},
+		"mock-upstream answers":  {recording.Hosts{Decision: "openrouter.ai", Judge: "api.anthropic.com", Generated: "mock-upstream"}, "generated answers called mock-upstream"},
+		"a gateway":              {recording.Hosts{Decision: "ai-gateway.vercel.sh", Judge: "api.anthropic.com", Generated: "openrouter.ai"}, "not a vendor host"},
+		"unknown decision host":  {recording.Hosts{Judge: "api.anthropic.com", Generated: "openrouter.ai"}, "fast check host is unknown"},
+		"unknown judge host":     {recording.Hosts{Decision: "openrouter.ai", Generated: "openrouter.ai"}, "judge host is unknown"},
+		"unknown upstream host":  {recording.Hosts{Decision: "openrouter.ai", Judge: "api.anthropic.com"}, "generated answers host is unknown"},
+	} {
+		_, err := recording.Build(recordingtest.Set(t), recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: c.hosts})
+		if !errors.Is(err, recording.ErrNotRecordable) || !strings.Contains(err.Error(), "non_vendor_host") || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want non_vendor_host and %q", name, err, c.want)
+		}
+	}
+
+	// Scripted answers only: no upstream was called, so none is named or needed.
+	refund := recordingtest.Fixture(t, "refund-contradiction-flag")
+	scripted := []recording.Trace{recordingtest.Variant(t, refund, "01a0e780-fe6b-74b8-a21f-000000000201", time.Date(2026, 10, 5, 10, 0, 0, 0, time.UTC), "scripted")}
+	rec, m = build(t, scripted, recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: recording.Hosts{Decision: "openrouter.ai", Judge: "api.anthropic.com", Generated: "mock-upstream"}})
+	if sources, _ := m["answer_sources"].(map[string]any); rec.Kind != recording.KindRecorded || rec.AnswerSources.GeneratedHost != "" || sources["generated_host"] != nil {
+		t.Errorf("scripted only: kind %s, answer sources %+v", rec.Kind, rec.AnswerSources)
+	}
+
+	// A mock tape may name any host (it is labelled simulated whatever it called).
+	var mock []recording.Trace
+	for _, tr := range recordingtest.Set(t) {
+		mock = append(mock, recordingtest.Mock(tr))
+	}
+	rec, _ = build(t, mock, recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: recording.Hosts{Decision: "mock-upstream", Judge: "mock-upstream", Generated: "mock-upstream"}})
+	if rec.Kind != recording.KindMock || rec.DecisionModel.Host != "mock-upstream" {
+		t.Errorf("mock tape: %s %+v", rec.Kind, rec.DecisionModel)
+	}
+
+	// A URL or a host with a port is a caller's mistake, not a label question.
+	for _, bad := range []string{"https://openrouter.ai", "openrouter.ai:443", "OpenRouter.ai", "openrouter.ai/api"} {
+		_, err := recording.Build(recordingtest.Set(t), recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: recording.Hosts{Decision: bad, Judge: "api.anthropic.com", Generated: "openrouter.ai"}})
+		if err == nil || errors.Is(err, recording.ErrNotRecordable) || !strings.Contains(err.Error(), "bare") {
+			t.Errorf("host %q: err = %v", bad, err)
+		}
+	}
+}
+
+// TestBuildFeatured: the featured trace is picked by rule and never by editing the tape (D209).
+func TestBuildFeatured(t *testing.T) {
+	opt := recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: vendorHosts}
+	// Set: ...01 no evidence (passed), ...02 a flagged refund contradiction (support-bot), ...03
+	// the same scripted. Without scenario ids the first support-bot candidate wins.
+	rec, m := build(t, recordingtest.Set(t), opt)
+	if rec.Featured == nil || *rec.Featured != (recording.Featured{TraceID: "01a0e780-fe6b-74b8-a21f-000000000002", Rule: recording.RuleContradictedWithSpan}) {
+		t.Errorf("featured = %+v", rec.Featured)
+	}
+	if f, _ := m["featured"].(map[string]any); f["rule"] != "contradicted_with_span" {
+		t.Errorf("manifest featured = %v", m["featured"])
+	}
+
+	// The refund contradiction scenario (trafficgen's X-Request-ID) comes first, wherever it is.
+	ts := recordingtest.Set(t)
+	id := "trafficgen:refund-contradiction-flag:7"
+	ts[2].Detail.ClientRequestID = &id
+	rec, _ = build(t, ts, opt)
+	if rec.Featured == nil || rec.Featured.TraceID != "01a0e780-fe6b-74b8-a21f-000000000003" {
+		t.Errorf("scenario preference: featured = %+v", rec.Featured)
+	}
+	if got := recording.ScenarioOf(ts[2].Detail.TraceSummary); got != "refund-contradiction-flag" {
+		t.Errorf("ScenarioOf = %q", got)
+	}
+	for _, other := range []string{"req_9Kd4sT2w", "trafficgen:x", "other:refund-contradiction-flag:1"} {
+		s := store.TraceSummary{ClientRequestID: &other}
+		if got := recording.ScenarioOf(s); got != "" {
+			t.Errorf("ScenarioOf(%q) = %q", other, got)
+		}
+	}
+
+	// Another route's candidate counts only when no support-bot trace does.
+	ts = recordingtest.Set(t)
+	ts[0].Detail.Route = "payments-faq"
+	rec, _ = build(t, ts, opt)
+	if rec.Featured == nil || rec.Featured.TraceID != "01a0e780-fe6b-74b8-a21f-000000000003" {
+		t.Errorf("route preference: featured = %+v", rec.Featured)
+	}
+	ts[2].Detail.Route = "payments-faq"
+	rec, _ = build(t, ts, opt)
+	if rec.Featured == nil || rec.Featured.TraceID != "01a0e780-fe6b-74b8-a21f-000000000002" {
+		t.Errorf("first candidate: featured = %+v", rec.Featured)
+	}
+
+	// No trace meets the rule (a pass, or a contradiction without a span): featured is left out
+	// and the tape is still recorded; the owner reviews it.
+	ts = recordingtest.Set(t)
+	pass := "pass"
+	ts[0].Detail.Action = &pass
+	for i := range ts[2].Detail.AuditDetail.Claims {
+		ts[2].Detail.AuditDetail.Claims[i].Span = nil
+	}
+	rec, m = build(t, ts, opt)
+	if rec.Kind != recording.KindRecorded || rec.Featured != nil || m["featured"] != nil {
+		t.Errorf("no candidate: kind %s, featured %+v", rec.Kind, rec.Featured)
+	}
+	// The owner's pick (best_flagged) must be a flagged trace of the tape.
+	named := opt
+	named.Featured = "01a0e780-fe6b-74b8-a21f-000000000003"
+	rec, _ = build(t, ts, named)
+	if rec.Featured == nil || *rec.Featured != (recording.Featured{TraceID: named.Featured, Rule: recording.RuleBestFlagged}) {
+		t.Errorf("owner's pick: featured = %+v", rec.Featured)
+	}
+	for pick, want := range map[string]string{"01a0e780-fe6b-74b8-a21f-000000000001": "not flagged", "01a0e780-fe6b-74b8-a21f-0000000000ff": "not in the recording"} {
+		named.Featured = pick
+		if _, err := recording.Build(ts, named); !errors.Is(err, recording.ErrNotRecordable) || !strings.Contains(err.Error(), want) {
+			t.Errorf("pick %s: err = %v, want %q", pick, err, want)
+		}
+	}
+
+	// A mock tape's pick is scripted.
+	var mock []recording.Trace
+	for _, tr := range recordingtest.Set(t) {
+		mock = append(mock, recordingtest.Mock(tr))
+	}
+	rec, _ = build(t, mock, recording.Options{GitSHA: "abc1234", Version: "1.0.0"})
+	if rec.Featured == nil || rec.Featured.Rule != recording.RuleScripted {
+		t.Errorf("mock featured = %+v", rec.Featured)
+	}
+}
+
+// TestBuildCalibration: the calibration the tape was recorded with is written as given (D207,
+// D208); quality none is what ALLOW_UNCALIBRATED records.
+func TestBuildCalibration(t *testing.T) {
+	snap := "typesafe/jev-1.13-20260917"
+	for _, c := range []recording.Calibration{{Snapshot: &snap, Quality: "measured"}, {Snapshot: &snap, Quality: "provisional"}, {Snapshot: nil, Quality: "none"}} {
+		rec, m := build(t, recordingtest.Set(t), recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: vendorHosts, Calibration: &c})
+		got, _ := m["calibration"].(map[string]any)
+		if rec.Calibration == nil || rec.Calibration.Quality != c.Quality || got["quality"] != c.Quality {
+			t.Errorf("calibration %+v: written %v", c, m["calibration"])
+		}
+		if (c.Snapshot == nil) != (got["snapshot"] == nil) {
+			t.Errorf("calibration %+v: snapshot written as %v", c, got["snapshot"])
+		}
+	}
+	rec, m := build(t, recordingtest.Set(t), recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: vendorHosts})
+	if rec.Calibration != nil || m["calibration"] != nil {
+		t.Errorf("no calibration given, but one written: %v", m["calibration"])
+	}
+	_, err := recording.Build(recordingtest.Set(t), recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: vendorHosts, Calibration: &recording.Calibration{Quality: "mock"}})
+	if err == nil || !strings.Contains(err.Error(), "calibration quality") {
+		t.Errorf("quality mock: err = %v", err)
 	}
 }

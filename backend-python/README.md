@@ -359,9 +359,8 @@ Performance improvements:
 
 Key dependencies (from `pyproject.toml`):
 - `grpcio` + `grpcio-tools` - gRPC server
-- `langgraph` - Workflow orchestration
-- `langchain` + `langchain-community` - LLM abstractions
-- `langsmith` - Pipeline tracing
+- `langgraph` (1.x) - Workflow orchestration; brings `langchain-core` and `langsmith`
+- `langsmith` - Pipeline tracing (off unless `LANGSMITH_TRACING=true` and a key is set)
 - `qdrant-client` - Vector database client
 - `sentence-transformers` - Embedding generation
 - `torch` - PyTorch (for sentence-transformers)

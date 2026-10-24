@@ -1,0 +1,49 @@
+name: Feature request
+description: A new check, a change to the gateway or the dashboard, or a missing piece.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first; the shape of the solution can follow. A change to the shared
+        contracts (`contracts/`, `proto/`, the decision logic) needs agreement here before a pull
+        request.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: How it could work, from the user's side (a request, a policy, a page).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Other ways around it, including what you do now.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - gateway (/v1, policies, fast check)
+        - deep audit (engine, judge)
+        - dashboard
+        - Evaluator Studio
+        - static site or landing page
+        - install, compose or make targets
+        - docs
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I would like to open a pull request for this (see CONTRIBUTING.md).

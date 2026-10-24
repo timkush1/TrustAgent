@@ -33,6 +33,8 @@ type labelsInput struct {
 	questionSets map[string]int
 	// skipped counts lines not used, by reason.
 	skipped map[string]int
+	// hosts counts the decision hosts the used lines name (endpoint_host, D203).
+	hosts map[string]int
 }
 
 // readOptions say how to read a labelled file.
@@ -58,14 +60,17 @@ type flatLine struct {
 	Snapshot    string          `json:"snapshot"`
 	Backend     string          `json:"backend"`
 	Dataset     string          `json:"dataset"`
+	// EndpointHost is the decision host the risk came from (bench export-labels), if known.
+	EndpointHost string `json:"endpoint_host"`
 }
 
 // gateEvalLine is the part of a cmd/gate-eval output line calibration reads.
 type gateEvalLine struct {
-	ID       string  `json:"id"`
-	Error    *string `json:"error"`
-	Skipped  *string `json:"skipped"`
-	Decision *struct {
+	ID           string  `json:"id"`
+	Error        *string `json:"error"`
+	Skipped      *string `json:"skipped"`
+	EndpointHost *string `json:"endpoint_host"`
+	Decision     *struct {
 		Evaluators map[string]struct {
 			Status  string   `json:"status"`
 			RiskRaw *float64 `json:"risk_raw"`
@@ -86,7 +91,7 @@ type gateEvalLine struct {
 // readLabels reads labelled risks for one target from JSONL: flat lines, or cmd/gate-eval output
 // lines (recognized by their decision member).
 func readLabels(r io.Reader, opt readOptions) (*labelsInput, error) {
-	in := &labelsInput{compositions: map[string]int{}, questionSets: map[string]int{}, skipped: map[string]int{}}
+	in := &labelsInput{compositions: map[string]int{}, questionSets: map[string]int{}, skipped: map[string]int{}, hosts: map[string]int{}}
 	datasets := map[string]bool{}
 	br := bufio.NewReader(r)
 	for n := 1; ; n++ {
@@ -142,6 +147,9 @@ func (in *labelsInput) readLine(b []byte, opt readOptions, datasets map[string]b
 	if l.Dataset != "" {
 		datasets[l.Dataset] = true
 	}
+	if l.EndpointHost != "" {
+		in.hosts[l.EndpointHost]++
+	}
 	return in.add(*l.RiskRaw, fire, l.LabelSource, opt)
 }
 
@@ -194,6 +202,13 @@ func (in *labelsInput) readGateEval(b []byte, opt readOptions) error {
 	if err := in.setModel(snapshot, backend, opt); err != nil {
 		return err
 	}
+	// A gate-eval line that names no host (a build from before D203 stamped none, and the stamp drops
+	// an over-long host) counts as an unknown host: nothing shows a vendor answered it (D203).
+	host := ""
+	if l.EndpointHost != nil {
+		host = *l.EndpointHost
+	}
+	in.hosts[host]++
 	if l.Compile != nil {
 		fields := slices.Clone(l.Compile.StateFields)
 		slices.Sort(fields)

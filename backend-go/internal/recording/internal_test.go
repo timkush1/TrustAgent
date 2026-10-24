@@ -38,3 +38,25 @@ func TestWindowAndCalibrationState(t *testing.T) {
 		}
 	}
 }
+
+func TestJudgeHostAndHostOf(t *testing.T) {
+	for _, c := range []struct{ provider, base, want string }{
+		{"openrouter", "", "openrouter.ai"},
+		{"openrouter", "https://openrouter.ai", "openrouter.ai"},
+		{"OpenRouter", "http://mock-upstream:8090/", "mock-upstream"},
+		{"anthropic", "http://mock-upstream:8090", "api.anthropic.com"},
+		{"openai", "", "api.openai.com"},
+		{"ollama", "", ""},
+		{"mock", "", ""},
+		{"none", "", ""},
+	} {
+		if got := JudgeHost(c.provider, c.base); got != c.want {
+			t.Errorf("JudgeHost(%q, %q) = %q, want %q", c.provider, c.base, got, c.want)
+		}
+	}
+	for in, want := range map[string]string{"https://OpenRouter.ai/api": "openrouter.ai", "http://127.0.0.1:18090": "127.0.0.1", "": "", "::bad": ""} {
+		if got := HostOf(in); got != want {
+			t.Errorf("HostOf(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

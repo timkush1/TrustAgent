@@ -216,7 +216,7 @@
       "advanced": false,
       "restart": true,
       "group": "core",
-      "description": "Public dashboard URL: base of the OpenRouter PKCE callback, the cookie Secure default and the CSRF origin."
+      "description": "Public dashboard URL: base of the OpenRouter PKCE callback, the cookie Secure default and the CSRF origin. The public demo's Caddy (docker-compose.public.yml) serves this site and gets the certificate for its host."
     },
     {
       "name": "TRUTHTABLE_TRUSTED_PROXIES",

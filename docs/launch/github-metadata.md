@@ -1,8 +1,8 @@
 # GitHub repository metadata
 
-What the repository page shows before anyone opens the README. Apply it at launch, after the
-[launch checklist](launch-checklist.md)'s release section, so the website link and the social
-card point at a real, recorded demo.
+What the repository page shows before anyone opens the README. Apply it at sitting S3c (step G12
+of the [launch checklist](launch-checklist.md)), after the release, so the website link and the
+social card point at a real, recorded demo.
 
 ## Values
 
@@ -26,7 +26,19 @@ Why these words:
 
 ## Apply it
 
-With the GitHub CLI, signed in as the owner:
+In the web UI (the GitHub CLI is optional and not installed here):
+
+1. On the repository page, the **gear next to About**:
+   - **Description**: the description above;
+   - **Website**: `https://timkush1.github.io/TrustAgent/`;
+   - **Topics**: type the 16 topics above one by one (Enter after each);
+   - under "Include in the home page", keep **Releases**, **Packages** and **Deployments**
+     ticked;
+   - Save changes.
+2. **Settings → General → Social preview → Edit** → upload `docs/launch/og.png`.
+3. **Settings → General → Features**: untick **Wikis** and **Projects**.
+
+With the GitHub CLI, if it is installed and signed in as the owner, the same in one go:
 
 ```bash
 gh repo edit timkush1/TrustAgent \
@@ -35,8 +47,14 @@ gh repo edit timkush1/TrustAgent \
   --enable-wiki=false --enable-projects=false \
   --add-topic llm,hallucination-detection,ai-gateway,guardrails,llm-evaluation,llm-as-a-judge \
   --add-topic rag,golang,react,grpc,langgraph,openrouter,jev,ai-safety,prompt-injection,observability
-gh repo view timkush1/TrustAgent --json description,homepageUrl,repositoryTopics
 ```
 
-The social preview has no CLI: Settings → General → Social preview → Edit → upload
-`docs/launch/og.png`.
+Check it without signing in (the public API):
+
+```bash
+curl -s https://api.github.com/repos/timkush1/TrustAgent | python3 -c \
+  'import json,sys; r=json.load(sys.stdin); print(r["description"]); print(r["homepage"]); print(len(r["topics"]), sorted(r["topics"]))'
+```
+
+It prints the description, the website and `16` with the topics. The social preview has no API:
+open the repository link in LinkedIn's Post Inspector to see the card.

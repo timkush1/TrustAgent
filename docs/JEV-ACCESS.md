@@ -27,7 +27,7 @@ pick-one and scale questions and returns probabilities. It does not write text.
 | | |
 |---|---|
 | Price | <!-- claim:jev_input_price_per_mtok --> $0.042 / M input tokens [vendor]; <!-- claim:jev_output_price_per_mtok --> output free [vendor] |
-| Latency | <!-- claim:jev_p50_latency_openrouter --> P50 0.23 s on OpenRouter [third-party]. Latency depends on region and load; independent reports range from about 0.3 s to 0.9 s median. |
+| Latency | <!-- claim:jev_p50_latency_openrouter --> P50 0.23 s on OpenRouter [third-party]. OpenRouter's rolling figure over the Jev traffic it routes; it moves with region and load, and it is not our measurement. |
 | Cost model | **It is not free.** HTTP 402 means your account has no credits. |
 
 **How TrustAgent uses it.** Each answer that passes through the proxy is checked with one Jev
@@ -53,6 +53,7 @@ it, and it never reaches the browser: the dashboard only ever shows a masked for
 | 2 | **Paste a key** (Settings → Connections, or step 2) | Works for OpenRouter, TypeSafe, Anthropic and OpenAI keys. Stored encrypted and checked first; it is used only when the check passes. |
 | 3 | **Environment:** `OPENROUTER_API_KEY=…` in `.env`, then `make up` | An environment key always wins and shows as read-only in the dashboard. |
 | 4 | **Headless:** `make configure WITH_SECRETS=1`, then `make up` | Asks for the OpenRouter, TypeSafe, Anthropic and OpenAI keys at hidden prompts (Enter skips one) and writes them to `.env` (mode 0600). Nothing you type is shown or logged. |
+| 5 | **A hosted session or CI:** `OPENROUTER_API_KEY` as an environment variable of the environment itself (for example a Claude cloud session's environment settings, or a CI secret), never pasted into a chat or a file | The make targets, the bench, `jevcheck` and `make record-demo` read the process environment before `.env`, so nothing is written to disk. |
 
 ### What "checked" means
 
@@ -254,6 +255,7 @@ curl -sS -w '\nHTTP %{http_code}\n' https://openrouter.ai/api/v1/key \
   -H "Authorization: Bearer $(grep -m1 '^OPENROUTER_API_KEY=' .env | cut -d= -f2- | tr -d '\r"')"
 ```
 
+With the key in the environment instead (option 5), use `-H "Authorization: Bearer $OPENROUTER_API_KEY"`.
 `HTTP 200` with a JSON description of the key (including its usage and limit) means the key is
 good; `HTTP 401` means it is not. Run the command from the repository root: it reads the key from
 `.env` (dropping any quotes or Windows line ending), so the key itself never appears in your shell

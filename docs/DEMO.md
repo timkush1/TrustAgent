@@ -1,9 +1,14 @@
 # The demo
 
+<!-- pages-pending (D220): the hosted demo is not on until S3b turns Pages on. At C2 drop the
+     "(from the 2.0.0 release ...)" notes below and delete this comment (make check-claims-launch
+     refuses it). -->
+
 TrustAgent has two demos:
 
 - **[The live demo in your browser](#the-live-demo-in-your-browser)**, at
-  <https://timkush1.github.io/TrustAgent/>: nothing to install. It replays a tape of demo traffic
+  <https://timkush1.github.io/TrustAgent/> (from the 2.0.0 release; until then
+  [build it locally](#5-share-it)): nothing to install. It replays a tape of demo traffic
   through the real dashboard, and its Playground can run real checks with your own OpenRouter key.
 - **`make demo`**, which runs all of TrustAgent on your machine with **no keys and no cost**: the
   fast check (Jev) and the deep-audit judge are mocks, and a traffic generator replays scripted
@@ -16,7 +21,8 @@ the gateway's behaviour is in [GATEWAY.md](GATEWAY.md).
 
 ## The live demo in your browser
 
-Open <https://timkush1.github.io/TrustAgent/>. The landing page explains the idea in a minute;
+Open <https://timkush1.github.io/TrustAgent/> (from the 2.0.0 release; until then
+[build it locally](#5-share-it)). The landing page explains the idea in a minute;
 **Try the demo** opens the dashboard, which has no server behind it: it replays a tape of the demo
 scenarios in compressed time, so Traffic fills up as you watch.
 
@@ -222,7 +228,7 @@ Expect `X-TrustAgent-Action: flag`, `X-TrustAgent-Would-Action: block` and, in
   export-replay` reads the revision from your checkout, and images built by `make` know theirs
   (`GIT_SHA`, also on the `org.opencontainers.image.revision` label). A proxy built without it
   answers 409 and asks for `?git_sha=<revision>`.
-- **The live demo on a public URL.** [Cloudflare quick
+- **The live demo on a public URL, for an hour.** [Cloudflare quick
   tunnels](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) need
   no account. The dashboard's nginx serves `/api`, `/v1`, `/ws` and `/health` on the same
   origin, so one tunnel to port 3000 is enough:
@@ -240,8 +246,25 @@ Expect `X-TrustAgent-Action: flag`, `X-TrustAgent-Would-Action: block` and, in
   TRUTHTABLE_READONLY=true make demo OPEN=0
   ```
 
+  **Every viewer shares one address.** The tunnel arrives at nginx from your own machine, and
+  nginx hands the proxy its own address, not the viewer's. The proxy's per-address limits,
+  10 live connections (`TRUTHTABLE_WS_MAX_PER_IP`) and 120 requests a minute
+  (`TRUTHTABLE_RATE_LIMIT_PER_MINUTE`), are then shared by everyone watching. Each open dashboard
+  tab holds one live connection, so one interviewer is fine; for a small audience, raise both on
+  the same command line:
+
+  ```bash
+  TRUTHTABLE_WS_MAX_PER_IP=50 TRUTHTABLE_RATE_LIMIT_PER_MINUTE=1200 \
+  TRUTHTABLE_ALLOWED_ORIGINS=https://<random>.trycloudflare.com \
+  TRUTHTABLE_PUBLIC_URL=https://<random>.trycloudflare.com \
+  TRUTHTABLE_READONLY=true make demo OPEN=0
+  ```
+
   Never tunnel Grafana, Prometheus or the metrics ports. Stop `cloudflared` when you are done;
   nothing stays published.
+- **The live demo on a public URL, always on.** [DEPLOY-DEMO.md](DEPLOY-DEMO.md) puts this demo
+  on a small VM behind Caddy with HTTPS (`make public-demo-up`): read-only, `/v1` closed, each
+  visitor counted on their own address, from €5.99 a month excl. VAT [vendor].
 
 ## 6. Known environment caveats
 

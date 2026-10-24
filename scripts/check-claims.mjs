@@ -30,9 +30,27 @@
  *                         --write generates (proxy overhead in a table of its own, D118);
  *                         [block-unpaired] when the markers do not pair up
  *   [load-run-missing]    a measured overhead value names a run with no docs/benchmarks/load file
+ *   [latency-conditions]  a measured gate latency has no sources.gate_latency.conditions in
+ *                         measured.json (D205): the figure would show without how it was taken
+ *   [cost-conditions]     a measured cost (or the same-checks ratio) has no sources.<key>.conditions
+ *                         in measured.json (D229): the figure would show without the dataset and the
+ *                         input tokens per answer it paid for
+ *   [empty-measured-chip] a measured claim with no value carries the [measured] chip: an absent
+ *                         value is not a measurement, so "not yet measured" goes without it
+ *   [pair-unknown]        an estimate's measured_pair names no measured claim
+ *   [pair-divergence]     an estimate and its measured pair differ by more than 2× (a warning;
+ *                         an error with --launch until the estimate's figure or wording is updated)
+ *   [agreement-alone]     our RAGTruth agreement or accuracy is shown in a section without both of
+ *                         Arize's figures for Jev (accuracy at a 0.5 threshold and at its tuned
+ *                         one; neither is like for like, D233); a warning once the value is
+ *                         measured, an error with --launch (D212)
  *   [third-party-stale]   (warning) a third-party claim's as_of is more than 120 days old
- *   [launch-*]            with --launch: the recorded dataset, a measured run, a reviewed
- *                         comparison table and the og.png card (see launchChecks)
+ *   [reverify-open]       (warning) a claim still says what must be re-checked before launch
+ *                         (an error with --launch)
+ *   [launch-*]            with --launch: the recorded dataset (its vendor hosts, version and
+ *                         snapshot), a measured run (its failure rate and one snapshot), a reviewed
+ *                         comparison table, the og.png card, no open reverify, no licence
+ *                         placeholder, no demo link still waiting for Pages (see launchChecks)
  *
  * Markers, chips and figures inside code (fenced blocks and inline code spans) are not read, so a
  * doc can show the syntax. A display, chip, caveat or link inside an HTML comment does not count
@@ -72,11 +90,37 @@ export const SPEC_PATH = 'docs/v2/SPEC.md';
 export const RECORDED_MANIFEST_PATH = 'frontend-react/demo-data/recorded/manifest.json';
 export const OG_PATHS = ['docs/launch/og.png', 'frontend-react/public/og.png'];
 export const LOAD_RUNS_DIR = 'docs/benchmarks/load';
+export const RESULTS_DIR = 'docs/benchmarks/results';
+export const VERSION_PATH = 'VERSION';
+/** The schema whose VendorHost enum names the hosts a recorded tape may name (D203). */
+export const COMMON_SCHEMA_PATH = 'contracts/schema/common.v1.schema.json';
 export const OG_WIDTH = 1280;
 export const OG_HEIGHT = 640;
 export const OG_MAX_BYTES = 1_000_000;
 export const THIRD_PARTY_MAX_AGE_DAYS = 120;
 export const CAVEAT_WINDOW_LINES = 3;
+/** D212: an estimate and its measured pair may differ by at most this factor before launch. */
+export const PAIR_MAX_RATIO = 2;
+/** D204: a published run fails at most this share of its examples. */
+export const MAX_FAILURE_RATE = 0.05;
+/** The measured values that are our agreement with RAGTruth's labels (D212). */
+export const AGREEMENT_REFS = ['ragtruth_qa_agreement', 'ragtruth_qa_accuracy'];
+/**
+ * Arize's figures for Jev on RAGTruth that every agreement of ours is shown beside (D212, D233):
+ * its accuracy at a 0.5 threshold, then at its tuned one. Neither is like for like: Arize asks one
+ * question, worded differently, and our bench flags at each evaluator's own warn_at.
+ */
+export const ARIZE_FIGURE_IDS = ['arize_ragtruth_accuracy_at_default_threshold', 'arize_ragtruth_jev_accuracy'];
+/** The files whose holder or author stays a placeholder until the owner names it (D216, S1). */
+export const OWNER_PLACEHOLDER = '{{OWNER_LEGAL_NAME}}';
+export const OWNER_FILES = ['LICENSE', 'frontend-react/package.json', 'backend-python/pyproject.toml'];
+/**
+ * D220: until S3b turns Pages on, these pages point their demo links at `make demo` (the hosted
+ * demo would be a 404 on `main`) and say so in a pages-pending comment. C2 points them back at the
+ * site and deletes the comment; the launch gate refuses one left behind.
+ */
+export const PAGES_PENDING_FILES = ['README.md', 'docs/DEMO.md'];
+export const PAGES_PENDING_MARK = '<!-- pages-pending';
 
 /** The chip each label is written with in prose. */
 export const LABEL_CHIPS = {
@@ -242,6 +286,20 @@ function startsBlock(maskedLine) {
   );
 }
 
+/** The line ranges [from, to) between headings, on code-masked lines (a heading in code is not one). */
+function sections(maskedLines) {
+  const out = [];
+  let from = 0;
+  maskedLines.forEach((line, i) => {
+    if (i > from && /^ {0,3}#{1,6}(\s|$)/.test(line)) {
+      out.push({ from, to: i });
+      from = i;
+    }
+  });
+  out.push({ from, to: maskedLines.length });
+  return out;
+}
+
 function isTableRow(maskedLine) {
   return /^\s*\|/.test(maskedLine);
 }
@@ -291,10 +349,14 @@ function caveatPattern(caveat) {
 // ---------------------------------------------------------------------------------------------
 // Claims and measured values
 
-/** Same formatting as the landing page (frontend-react/src/landing/claims.ts). */
+/**
+ * Same formatting as the landing page (frontend-react/src/landing/claims.ts), the release notes and
+ * the post. A multiple is whole from 10 up (27×, not a spurious 26.84×), one decimal below.
+ */
 export function formatValue(value, unit) {
   if (unit === 'fraction') return `${Math.round(value * 1000) / 10}%`;
   if (unit === 'usd_per_1k') return value >= 1 ? value.toFixed(2) : value.toFixed(3);
+  if (unit === 'multiplier') return String(value >= 10 ? Math.round(value) : Math.round(value * 10) / 10);
   return String(Math.round(value * 100) / 100);
 }
 
@@ -307,34 +369,45 @@ function isMeasuredRun(measured) {
  * (only from a measured run with mock:false) or its empty display.
  */
 export function expectedDisplay(claim, measured) {
-  if (claim.label !== 'measured') return { text: claim.display, problem: null };
-  const entry = measured?.values?.[claim.measured_ref];
-  const value = entry ? entry.value : null;
+  if (claim.label !== 'measured') return { text: claim.display, problem: null, empty: false };
+  const value = measuredValue(claim, measured);
   const empty = claim.empty_display ?? 'not yet measured';
-  if (value === null || value === undefined) return { text: empty, problem: null };
+  if (value === null) return { text: empty, problem: null, empty: true };
   if (!isMeasuredRun(measured)) {
     return {
       text: empty,
+      empty: true,
       problem:
         `${MEASURED_PATH} holds a value for ${claim.measured_ref} but is not a measured run ` +
         `(status ${measured?.status}, mock ${measured?.mock}); a measured figure comes only from a measured run with mock:false`,
     };
   }
-  return { text: claim.display.replace('{value}', formatValue(value, claim.unit)), problem: null };
+  return { text: claim.display.replace('{value}', formatValue(value, claim.unit)), problem: null, empty: false };
 }
 
-/** Says where the latest load run is when a load run is published but no measured run adopts it. */
-export const LOAD_RUN_NOT_ADOPTED = 'not adopted yet: the latest laptop load run is in GATEWAY.md (Load test)';
+/** The value measured.json holds for a measured claim, or null (absent, or not yet measured). */
+function measuredValue(claim, measured) {
+  const value = measured?.values?.[claim.measured_ref]?.value;
+  return value === null || value === undefined ? null : value;
+}
+
+/** A measured value that may be shown: from a measured run with mock:false, else null. */
+function shownValue(claim, measured) {
+  return isMeasuredRun(measured) ? measuredValue(claim, measured) : null;
+}
+
+/** Says where the latest load run is when a measured run did not adopt one. */
+export const LOAD_RUN_NOT_ADOPTED = 'not part of this run; the latest load run against simulated vendors is in GATEWAY.md, section "Load test"';
 
 /**
- * The run machine for a caveat's {machine}, from the load run that measured the claim. Before a
- * measured run adopts one, it says where a published load run is (loadRuns, the files of
+ * The run machine for a caveat's {machine}, from the load run that measured the claim. When the
+ * measured run did not adopt one, it says where a published load run is (loadRuns, the files of
  * docs/benchmarks/load), or that none is published.
  */
 function machineText(claim, measured, read, loadRuns = []) {
   const runId = measured?.values?.[claim.measured_ref]?.run_id;
   if (!isMeasuredRun(measured) || !runId) {
-    return { text: loadRuns.length > 0 ? LOAD_RUN_NOT_ADOPTED : 'no run published yet', problem: null };
+    return { text: loadRuns.length > 0 ? LOAD_RUN_NOT_ADOPTED : 'no load run is published yet', problem: null };
   }
   const path = `${LOAD_RUNS_DIR}/${runId}.json`;
   const raw = read(path);
@@ -345,6 +418,50 @@ function machineText(claim, measured, read, loadRuns = []) {
   } catch (err) {
     return { text: 'machine unknown', problem: `${path}: ${err.message}` };
   }
+}
+
+/**
+ * The words for a latency caveat's {gate_conditions} (D205, D225): measured.json
+ * sources.gate_latency.conditions, as bench publish wrote it (connection, requests at a time,
+ * where the run really ran, snapshot, n). Nothing for a value not measured yet: the caveat is
+ * then dropped, never shown with a raw placeholder.
+ */
+export function gateConditions(claim, measured, empty) {
+  if (empty) return { text: null, problem: null };
+  const text = measured?.sources?.gate_latency?.conditions;
+  if (typeof text === 'string' && text.trim()) return { text: text.trim(), problem: null };
+  return {
+    text: 'conditions not recorded',
+    problem: `${MEASURED_PATH} publishes ${claim.measured_ref} without sources.gate_latency.conditions (D205): rerun make bench-publish`,
+  };
+}
+
+/**
+ * The measured.json sources key whose conditions fill a caveat's {cost_conditions} (D229): a cost
+ * per 1,000 answers its own (not the proxy's), the same-checks ratio the LLM judge's cost, which
+ * names the judge. Mirrors contracts/validate.mjs costConditionsKey; null when none applies.
+ */
+export function costConditionsKey(ref, entry) {
+  if (ref === 'same_checks_cost_ratio') return 'llm_same_checks_usd_per_1k';
+  if (entry?.unit === 'usd_per_1k' && entry.system !== 'proxy') return ref;
+  return null;
+}
+
+/**
+ * The words for a cost caveat's {cost_conditions} (D229): measured.json sources.<key>.conditions,
+ * as bench publish wrote it (the dataset, n, the input tokens per answer, the judge model). A cost
+ * per answer grows with the documents' length, so it is never shown without them. Nothing for a
+ * value not measured yet: the caveat is then dropped, never shown with a raw placeholder.
+ */
+export function costConditions(claim, measured, empty) {
+  if (empty) return { text: null, problem: null };
+  const key = costConditionsKey(claim.measured_ref, measured?.values?.[claim.measured_ref]);
+  const text = key ? measured?.sources?.[key]?.conditions : null;
+  if (typeof text === 'string' && text.trim()) return { text: text.trim(), problem: null };
+  return {
+    text: 'conditions not recorded',
+    problem: `${MEASURED_PATH} publishes ${claim.measured_ref} without sources.${key ?? claim.measured_ref}.conditions (D229): rerun make bench-publish`,
+  };
 }
 
 function inMeasuredBlock(claim) {
@@ -358,38 +475,118 @@ function isProxyOverhead(claim, measured) {
 
 export const OVERHEAD_INTRO = "The gateway's own overhead, measured separately by a load test against simulated vendors:";
 
+/** The block before any measured run is published: one sentence, no empty tables. */
+export const NOT_MEASURED_TEXT =
+  'No benchmark run of our own is published yet, so there are no measured results here: every other figure is ' +
+  'labelled as an estimate, a vendor price or a third-party result.';
+export const LOAD_RUN_PUBLISHED_TEXT =
+  'The gateway\'s own overhead, from a load test against simulated vendors, is in GATEWAY.md, section "Load test".';
+
+const INTERVAL_METHODS = { wilson: 'Wilson', bootstrap: 'bootstrap' };
+
+/** The snapshot words of a measured run: one snapshot, or both when the run is split (D207). */
+export function snapshotText(measured) {
+  const snap = measured?.snapshot;
+  if (Array.isArray(snap)) return `decision-model snapshots ${snap.join(' and ')}`;
+  return snap ? `decision-model snapshot ${snap}` : '';
+}
+
+/**
+ * What a measured row's note says before its caveat: where a cost comes from (D204), the 95%
+ * interval with n per class (D212), the value before calibration beside an "after" one.
+ */
+function measuredNote(claim, measured) {
+  const ref = claim.measured_ref;
+  const parts = [];
+  const source = measured?.sources?.[ref]?.cost_source;
+  if (source === 'reported') parts.push('Cost as the vendor reported it.');
+  else if (source === 'computed') parts.push('Measured tokens × vendor price.');
+  const iv = measured?.intervals?.[ref];
+  if (iv && typeof iv.lo === 'number' && typeof iv.hi === 'number') {
+    const method = INTERVAL_METHODS[iv.method] ?? iv.method;
+    const how = iv.method === 'bootstrap' && iv.resamples ? `${method}, ${iv.resamples} resamples` : method;
+    let text = `95% interval ${formatValue(iv.lo, claim.unit)} to ${formatValue(iv.hi, claim.unit)} (${how})`;
+    if (Number.isInteger(iv.n_pos) && Number.isInteger(iv.n_neg)) {
+      text += `; ${iv.n_pos} answers with a hallucination and ${iv.n_neg} without`;
+    }
+    parts.push(`${text}.`);
+  }
+  if (ref.endsWith('_after')) {
+    const before = measured?.values?.[`${ref.slice(0, -'_after'.length)}_before`]?.value;
+    if (typeof before === 'number') parts.push(`Before calibration: ${formatValue(before, claim.unit)}.`);
+  }
+  return parts.join(' ');
+}
+
+/**
+ * Arize's figures for Jev, written after a measured agreement (D212, D233), each with its caveat:
+ * with its marker where the claim is written for both the readme and the docs, as plain text
+ * otherwise. Our thresholds are in the agreement row's caveat just above.
+ */
+export const ARIZE_COMPARISON_LEAD = "Not like for like: Arize's RAGTruth test of Jev asks one question, worded differently.";
+function arizeComparisonLine(claims) {
+  const figures = ARIZE_FIGURE_IDS.map((id) => claims.claims.find((x) => x.id === id));
+  if (figures.some((c) => !c)) return null;
+  const said = figures.map((c, i) => {
+    const marked = SURFACES.every((s) => c.surfaces.includes(s));
+    const figure = `${marked ? `<!-- claim:${c.id} --> ` : ''}${c.display} [${LABEL_CHIPS[c.label]}]`;
+    return `${i === 0 ? 'Its accuracy' : 'At its best'}: ${figure}. ${c.caveat ?? ''}`.trimEnd();
+  });
+  return [ARIZE_COMPARISON_LEAD, ...said].join(' ');
+}
+
 /**
  * The lines between <!-- measured:start --> and <!-- measured:end -->, as --write writes them.
- * Proxy overhead gets a table of its own after the fast-check results, so it never sits next to
- * the fast check's latency (D118).
+ * Before a measured run is published, one sentence. After it, proxy overhead gets a table
+ * of its own after the fast-check results, so it never sits next to the fast check's latency
+ * (D118); a value the run did not cover says "not yet measured" without the [measured] chip; an
+ * agreement row is followed by Arize's figures, said not to be like for like (D212, D233).
  */
 export function renderMeasuredBlock(claims, measured, read, loadRuns = []) {
   const problems = [];
+  const lines = [BLOCK_HEADER, ''];
+  if (!isMeasuredRun(measured)) {
+    lines.push(loadRuns.length ? `${NOT_MEASURED_TEXT} ${LOAD_RUN_PUBLISHED_TEXT}` : NOT_MEASURED_TEXT);
+    return { lines, problems };
+  }
   const cell = (s) => s.replace(/\|/g, '\\|');
   const row = (c) => {
     const shown = expectedDisplay(c, measured);
-    let note = c.caveat ?? '';
-    if (note.includes('{machine}')) {
+    let caveat = c.caveat ?? '';
+    if (caveat.includes('{machine}')) {
       const machine = machineText(c, measured, read, loadRuns);
       if (machine.problem) problems.push(machine.problem);
-      note = note.replace('{machine}', machine.text);
+      caveat = caveat.replace('{machine}', machine.text);
     }
-    return `| ${cell(c.text)} | <!-- claim:${c.id} --> ${cell(shown.text)} [${LABEL_CHIPS.measured}] |${note ? ` ${cell(note)} ` : ' '}|`;
+    if (caveat.includes('{gate_conditions}')) {
+      const filled = gateConditions(c, measured, shown.empty);
+      if (filled.problem) problems.push(filled.problem);
+      caveat = filled.text === null ? '' : caveat.replace('{gate_conditions}', filled.text);
+    }
+    if (caveat.includes('{cost_conditions}')) {
+      const filled = costConditions(c, measured, shown.empty);
+      if (filled.problem) problems.push(filled.problem);
+      caveat = filled.text === null ? '' : caveat.replace('{cost_conditions}', filled.text);
+    }
+    const note = [shown.empty ? '' : measuredNote(c, measured), caveat].filter(Boolean).join(' ');
+    const result = shown.empty ? shown.text : `${shown.text} [${LABEL_CHIPS.measured}]`;
+    return `| ${cell(c.text)} | <!-- claim:${c.id} --> ${cell(result)} |${note ? ` ${cell(note)} ` : ' '}|`;
   };
   const table = (rows) => ['| What we measure | Our result | Note |', '|---|---|---|', ...rows];
   const listed = claims.claims.filter(inMeasuredBlock);
-  const results = listed.filter((c) => !isProxyOverhead(c, measured)).map(row);
+  const resultClaims = listed.filter((c) => !isProxyOverhead(c, measured));
+  const results = resultClaims.map(row);
   const overhead = listed.filter((c) => isProxyOverhead(c, measured)).map(row);
-  const details = [measured?.generated_by, measured?.generated_at?.slice(0, 10)].filter(Boolean).join(', ');
-  const footer = isMeasuredRun(measured)
-    ? `From ${measured.runs.length === 1 ? 'the measured run' : 'the measured runs'} ${measured.runs.join(', ')}` +
-      `${details ? ` (${details})` : ''}. A row without a measured value says "not yet measured".`
-    : 'No benchmark run is published yet, so every row says "not yet measured". The other figures here are ' +
-      'labelled estimates, vendor prices or third-party results, not our measurements.';
-  const lines = [BLOCK_HEADER, ''];
   if (results.length) lines.push(...table(results), '');
+  const agreement = resultClaims.some((c) => AGREEMENT_REFS.includes(c.measured_ref) && shownValue(c, measured) !== null);
+  const comparison = agreement ? arizeComparisonLine(claims) : null;
+  if (comparison) lines.push(comparison, '');
   if (overhead.length) lines.push(OVERHEAD_INTRO, '', ...table(overhead), '');
-  lines.push(footer);
+  const details = [measured.generated_by, measured.generated_at?.slice(0, 10), snapshotText(measured)].filter(Boolean).join(', ');
+  lines.push(
+    `From ${measured.runs.length === 1 ? 'the measured run' : 'the measured runs'} ${measured.runs.join(', ')}` +
+      `${details ? ` (${details})` : ''}. A row that says "not yet measured" was not part of ${measured.runs.length === 1 ? 'that run' : 'those runs'}.`,
+  );
   return { lines, problems };
 }
 
@@ -583,8 +780,13 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
   const problems = [];
   const report = (level, rule, file, line, message) => problems.push({ level, rule, file, line, message });
   const byId = new Map(claims.claims.map((c) => [c.id, c]));
+  const arize = ARIZE_FIGURE_IDS.map((id) => byId.get(id));
   const block = renderMeasuredBlock(claims, measured, read, loadRuns);
-  for (const p of block.problems) report('error', 'load-run-missing', MEASURED_PATH, null, p);
+  const blockRule = (p) => {
+    if (p.includes('sources.gate_latency')) return 'latency-conditions';
+    return p.includes('(D229)') ? 'cost-conditions' : 'load-run-missing';
+  };
+  for (const p of block.problems) report('error', blockRule(p), MEASURED_PATH, null, p);
   const pkce = pkceStatus(specText);
   const rewrites = new Map();
   let markerCount = 0;
@@ -620,6 +822,14 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
         report('error', 'display-missing', file, line,
           `claim ${claim.id}: the text after the marker must say "${expected.text}"` +
             (claim.label === 'measured' ? ` (from ${MEASURED_PATH}; measured blocks: ${WRITE_HINT})` : ''));
+      } else if (expected.empty) {
+        // An absent value is not a measurement: "not yet measured" goes without the [measured] chip.
+        const after = said.slice(at + mk.expected.length);
+        const chip = [...after.matchAll(CHIP_RE)][0];
+        if (chip && chip[1].toLowerCase() === LABEL_CHIPS.measured) {
+          report('error', 'empty-measured-chip', file, line,
+            `claim ${claim.id} has no measured value: "${expected.text}" goes without the [measured] chip (${WRITE_HINT} for a measured block)`);
+        }
       } else {
         const want = LABEL_CHIPS[claim.label];
         const after = said.slice(at + mk.expected.length);
@@ -631,7 +841,10 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
             `claim ${claim.id} is labelled ${claim.label}: its chip is [${want}], not [${chip[1]}]`);
         }
       }
-      if (claim.caveat && !checkCaveat(claim, mk, file, lines, visible, prose, files, read)) {
+      // A caveat filled from the run ({gate_conditions}, {cost_conditions}) exists only once the
+      // value is measured.
+      const runCaveat = /\{(gate|cost)_conditions\}/.test(claim.caveat ?? '') && expected.empty;
+      if (claim.caveat && !runCaveat && !checkCaveat(claim, mk, file, lines, visible, prose, files, read)) {
         report('error', 'caveat-missing', file, line,
           `claim ${claim.id}: its caveat ("${claim.caveat}") or a link to an anchor holding it must follow within ${CAVEAT_WINDOW_LINES} lines`);
       }
@@ -649,6 +862,8 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
     for (let k = 0; paired && k < starts.length; k += 1) {
       if (!(starts[k] < ends[k] && (k === 0 || ends[k - 1] < starts[k]))) paired = false;
     }
+    // A generated block's figures come from the contract and are held by [block-stale].
+    const inBlock = (i) => paired && starts.some((s, k) => i > s && i < ends[k]);
     if (!paired) {
       report('error', 'block-unpaired', file, (starts[0] ?? ends[0]) + 1,
         'every <!-- measured:start --> needs its own <!-- measured:end --> after it, with no nesting');
@@ -688,6 +903,7 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
     // is part of that claim's display, so a second, unmarked number in the same sentence still fails.
     if (file.startsWith('docs/launch/')) {
       prose.forEach((l, i) => {
+        if (inBlock(i)) return;
         // Only a {measured:KEY} placeholder stands in for a figure; any other braces hide nothing.
         const placeholders = [...l.matchAll(PLACEHOLDER_RE)].map((m) => [m.index, m.index + m[0].length]);
         for (const m of l.matchAll(FIGURE_RE)) {
@@ -704,6 +920,46 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
       report('error', 'pkce-wording', file, hit.line,
         `"${hit.sentence.slice(0, 120)}" calls OpenRouter PKCE verified, but ${SPEC_PATH} Appendix D records no dated verification for it`);
     }
+
+    // D212, D233: our agreement is read beside both of Arize's figures (at a 0.5 threshold and at
+    // its tuned one), never alone and never beside one of them only: neither is like for like.
+    if (arize.every(Boolean)) {
+      for (const section of sections(masked)) {
+        const agreed = markers.filter((mk) => mk.line >= section.from && mk.line < section.to)
+          .map((mk) => byId.get(mk.id))
+          .filter((c) => c && c.label === 'measured' && AGREEMENT_REFS.includes(c.measured_ref));
+        if (!agreed.length) continue;
+        const text = normalize(visible.slice(section.from, section.to).join(' '));
+        if (arize.every((c) => text.includes(normalize(c.display)))) continue;
+        const shown = agreed.filter((c) => shownValue(c, measured) !== null);
+        if (!launch && !shown.length) continue;
+        report(launch ? 'error' : 'warn', 'agreement-alone', file, section.from + 1,
+          `${agreed.map((c) => c.id).join(', ')} must be shown beside Arize's figures ` +
+            `${arize.map((c) => `${c.id} ("${c.display}")`).join(' and ')} in the same section, and neither is like for like (D212, D233)`);
+      }
+    }
+  }
+
+  // D212: an estimate that a measured value contradicts is updated before launch.
+  for (const c of claims.claims) {
+    if (!c.measured_pair) continue;
+    const pair = byId.get(c.measured_pair);
+    if (!pair || pair.label !== 'measured') {
+      report('error', 'pair-unknown', CLAIMS_PATH, null, `${c.id}: measured_pair ${c.measured_pair} is not a measured claim`);
+      continue;
+    }
+    const value = shownValue(pair, measured);
+    if (value === null || typeof c.value !== 'number' || c.value <= 0 || value <= 0) continue;
+    const ratio = Math.max(c.value, value) / Math.min(c.value, value);
+    if (ratio > PAIR_MAX_RATIO) {
+      report(launch ? 'error' : 'warn', 'pair-divergence', CLAIMS_PATH, null,
+        `${c.id} (${c.display}) and its measured pair ${pair.id} (${formatValue(value, pair.unit)}) differ by ` +
+          `${Math.round(ratio * 10) / 10}×, over ${PAIR_MAX_RATIO}×: update the estimate's figure or wording, or take it off the surfaces that show the measured value`);
+    }
+  }
+
+  for (const c of claims.claims) {
+    if (c.reverify && !launch) report('warn', 'reverify-open', CLAIMS_PATH, null, `${c.id}: re-check before launch: ${c.reverify}`);
   }
 
   // Third-party figures go stale.
@@ -721,7 +977,7 @@ export function checkClaims({ files, claims, measured, compare = null, specText 
     }
   }
 
-  if (launch) problems.push(...launchChecks({ measured, compare, read }));
+  if (launch) problems.push(...launchChecks({ claims, measured, compare, read }));
   return { problems, markers: markerCount, blocks: blockCount, files: files.size, rewrites };
 }
 
@@ -732,35 +988,166 @@ export function pngSize(buf) {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
 
+/** The vendor hosts of the contract (common.v1 VendorHost), or null when the schema cannot be read. */
+export function vendorHosts(read) {
+  const raw = read(COMMON_SCHEMA_PATH);
+  if (raw === null) return null;
+  const hosts = parseJson(raw).value?.$defs?.VendorHost?.enum;
+  return Array.isArray(hosts) && hosts.length && hosts.every((h) => typeof h === 'string') ? hosts : null;
+}
+
 /**
- * --launch: nothing goes public on simulated or unreviewed material. Refuses a missing or mock
- * recorded dataset, a not_measured measured.json, any comparison cell that is unverified or not
- * reviewed by the owner, and a missing or malformed og.png.
+ * D203: a tape is recorded only when the answers came from the vendors. Its kind alone is a word
+ * the recorder wrote; the hosts it names are the evidence. The fast check's and the judge's host
+ * must be vendor hosts, and so must the upstream that wrote any generated answers. A tape that
+ * names no host, or mock-upstream, a proxy or a gateway, is simulated whatever its kind says.
  */
-export function launchChecks({ measured, compare, read }) {
+export function tapeHostProblems(tape, hosts) {
+  if (!hosts) return [`${COMMON_SCHEMA_PATH} gives no VendorHost list, so the tape's hosts cannot be checked (D203)`];
+  const out = [];
+  const need = (what, host) => {
+    if (typeof host !== 'string' || !hosts.includes(host)) {
+      out.push(`the tape names ${what} host ${host ? `"${host}"` : 'none'}, not a vendor host (${hosts.join(', ')}): ` +
+        'a tape from mock-upstream or a non-vendor host is simulated, never launched as a recording (D203)');
+    }
+  };
+  need('the fast check', tape?.decision_model?.host);
+  need('the judge', tape?.judge?.host);
+  const generated = tape?.answer_sources?.generated;
+  if (typeof generated === 'number' && generated > 0) need('the generated answers\'', tape?.answer_sources?.generated_host);
+  return out;
+}
+
+/** The snapshots a measured.json names: [] when none, one, or both of a split run (D207). */
+function measuredSnapshots(measured) {
+  const snap = measured?.snapshot;
+  if (Array.isArray(snap)) return snap.filter((s) => typeof s === 'string' && s);
+  return typeof snap === 'string' && snap ? [snap] : [];
+}
+
+function parseJson(buf) {
+  try {
+    return { value: JSON.parse(buf.toString('utf8')), error: null };
+  } catch (err) {
+    return { value: undefined, error: err.message };
+  }
+}
+
+/**
+ * --launch: nothing goes public on simulated or unreviewed material. Refuses:
+ *   - a missing or mock recorded dataset, one whose fast-check, judge or generated-answer host is
+ *     not a vendor host (D203), or one stamped with another version than VERSION, or recorded on
+ *     another snapshot than the measured run (D207, D216);
+ *   - a not_measured measured.json, a bench run of it that failed more than 5% of its examples or
+ *     whose file is missing, no snapshot, or two snapshots without snapshot_split (D204, D207);
+ *   - a measured.json without the held-out ECE before and after calibration, unless the tape says
+ *     it was recorded without a measured calibration (D206);
+ *   - any comparison cell that is unverified or not reviewed by the owner;
+ *   - a missing or malformed og.png;
+ *   - a claim that still says what must be re-checked (reverify, D212);
+ *   - the owner's name still a placeholder in the licence or the package metadata (D216);
+ *   - a page whose demo links still wait for Pages (a pages-pending comment, D220).
+ */
+export function launchChecks({ claims = { claims: [] }, measured, compare, read }) {
   const problems = [];
   const report = (rule, file, message) => problems.push({ level: 'error', rule, file, line: null, message });
 
+  let recorded = null;
   const manifest = read(RECORDED_MANIFEST_PATH);
   if (manifest === null) {
     report('launch-recorded', RECORDED_MANIFEST_PATH, 'no recorded dataset: run `make record-demo` (the site would replay simulated traffic)');
   } else {
-    let parsed;
-    try {
-      parsed = JSON.parse(manifest.toString('utf8'));
-    } catch (err) {
-      report('launch-recorded', RECORDED_MANIFEST_PATH, `not valid JSON: ${err.message}`);
-    }
+    const parsed = parseJson(manifest);
+    if (parsed.error) report('launch-recorded', RECORDED_MANIFEST_PATH, `not valid JSON: ${parsed.error}`);
     // Only an explicit kind "recorded" launches; a manifest without one is not evidence of a recording.
-    if (parsed !== undefined && parsed?.kind !== 'recorded') {
-      const kind = parsed !== null && typeof parsed === 'object' && 'kind' in parsed ? `"${parsed.kind}"` : 'missing';
+    else if (parsed.value?.kind !== 'recorded') {
+      const v = parsed.value;
+      const kind = v !== null && typeof v === 'object' && 'kind' in v ? `"${v.kind}"` : 'missing';
       report('launch-recorded', RECORDED_MANIFEST_PATH, `kind is ${kind}, not "recorded": a simulated tape is never launched as a recording`);
+    } else {
+      recorded = parsed.value;
     }
+  }
+
+  if (recorded) {
+    const version = read(VERSION_PATH)?.toString('utf8').trim() ?? null;
+    if (!version) report('launch-version', VERSION_PATH, 'missing: the recording cannot be checked against the version');
+    else if (recorded.trustagent_version !== version) {
+      report('launch-version', RECORDED_MANIFEST_PATH,
+        `the tape says trustagent_version ${recorded.trustagent_version ?? 'missing'}, VERSION says ${version}: record after the version bump (D216)`);
+    }
+    for (const message of tapeHostProblems(recorded, vendorHosts(read))) report('launch-recorded', RECORDED_MANIFEST_PATH, message);
   }
 
   if (!isMeasuredRun(measured)) {
     report('launch-not-measured', MEASURED_PATH,
       `status is ${measured?.status ?? 'missing'}: publish a measured run first (make bench-lite, then make bench-publish)`);
+  } else {
+    // D204: every bench run behind the figures failed at most 5% of its examples.
+    for (const runId of measured.runs ?? []) {
+      const bench = read(`${RESULTS_DIR}/${runId}.json`);
+      if (bench === null) {
+        if (read(`${LOAD_RUNS_DIR}/${runId}.json`) === null) {
+          report('launch-run-missing', MEASURED_PATH, `run ${runId} has no file in ${RESULTS_DIR} or ${LOAD_RUNS_DIR}`);
+        }
+        continue;
+      }
+      const path = `${RESULTS_DIR}/${runId}.json`;
+      const run = parseJson(bench);
+      const q = run.value?.quality;
+      if (run.error) report('launch-quality', path, `not valid JSON: ${run.error}`);
+      else if (!q || typeof q.failure_rate !== 'number' || typeof q.n !== 'number' || typeof q.scored !== 'number') {
+        report('launch-quality', path, 'no quality {n, scored, failure_rate}: a published run states how many examples failed (D204)');
+      } else {
+        if (q.failure_rate > MAX_FAILURE_RATE) {
+          report('launch-quality', path, `failure_rate ${q.failure_rate} is over ${MAX_FAILURE_RATE} (D204)`);
+        }
+        if (q.scored < 0.95 * q.n) report('launch-quality', path, `scored ${q.scored} of ${q.n}, under 95% (D204)`);
+      }
+    }
+    // D207: one snapshot, or two with snapshot_split, shared with the recording.
+    const snaps = measuredSnapshots(measured);
+    const split = measured.sources?.snapshot_split === true;
+    if (!snaps.length) report('launch-snapshot', MEASURED_PATH, 'names no decision-model snapshot (D207)');
+    else if (snaps.length > 1 && !split) {
+      report('launch-snapshot', MEASURED_PATH, `names two snapshots (${snaps.join(', ')}) without sources.snapshot_split: true (D207)`);
+    } else if (snaps.length === 1 && split) {
+      report('launch-snapshot', MEASURED_PATH, 'sources.snapshot_split is true but only one snapshot is named: name both (D207)');
+    }
+    const tape = recorded?.decision_model?.snapshot;
+    if (recorded && snaps.length && !snaps.includes(tape)) {
+      report('launch-snapshot', RECORDED_MANIFEST_PATH,
+        `the tape was recorded on snapshot ${tape ?? 'missing'}, the measured run on ${snaps.join(' and ')}: they must match (D207)`);
+    }
+    // D206: the held-out ECE before and after calibration is published with its method, unless
+    // the tape says it was recorded without a measured calibration (ALLOW_UNCALIBRATED=1), when
+    // there is no measured calibration to hold out.
+    const ece = (key) => measured.values?.[key]?.value;
+    const heldOut = typeof ece('groundedness_ece_before') === 'number' && typeof ece('groundedness_ece_after') === 'number' &&
+      measured.sources?.groundedness_ece?.method === 'holdout';
+    const quality = recorded?.calibration?.quality;
+    if (!heldOut && !(typeof quality === 'string' && quality !== 'measured')) {
+      report('launch-ece', MEASURED_PATH,
+        'the held-out ECE before and after calibration is not published: run `make calib-holdout RUN=<abs run.json>`, ' +
+          'then `make bench-publish RUN=<abs run.json> HOLDOUT=<the holdout-groundedness.json beside it>` (D206)');
+    }
+  }
+
+  for (const c of claims.claims ?? []) {
+    if (c.reverify) report('launch-reverify', CLAIMS_PATH, `${c.id} must be re-checked first: ${c.reverify}`);
+  }
+
+  for (const path of OWNER_FILES) {
+    if (read(path)?.toString('utf8').includes(OWNER_PLACEHOLDER)) {
+      report('launch-license', path, `still says ${OWNER_PLACEHOLDER}: write the owner's legal name (D216)`);
+    }
+  }
+
+  for (const path of PAGES_PENDING_FILES) {
+    if (read(path)?.toString('utf8').includes(PAGES_PENDING_MARK)) {
+      report('launch-pages-pending', path,
+        'its demo links still point at `make demo` while Pages was off: point them back at the hosted demo as its pages-pending comment lists, then delete the comment (C2, D220)');
+    }
   }
 
   if (!compare) {
@@ -904,7 +1291,8 @@ const FIXTURE_CLAIMS = {
   as_of: TODAY,
   claims: [
     { id: 'est_cost', text: 'Fast check', value: 0.21, unit: 'usd_per_1k', display: '~$0.21 / 1,000 answers',
-      label: 'estimate', basis: 'b', source_url: null, as_of: TODAY, caveat: null, surfaces: ['landing', 'readme', 'docs'] },
+      label: 'estimate', basis: 'b', source_url: null, as_of: TODAY, caveat: null, measured_pair: 'meas_cost',
+      surfaces: ['landing', 'readme', 'docs'] },
     { id: 'vendor_price', text: 'Jev price', value: 0.042, unit: 'usd_per_mtok', display: '$0.042 / M input tokens',
       label: 'vendor', basis: 'b', source_url: 'https://example.com/p', as_of: TODAY, caveat: null, surfaces: ['readme'] },
     { id: 'tp_latency', text: 'Jev p50', value: 0.23, unit: 's', display: 'P50 0.23 s on OpenRouter', label: 'third_party',
@@ -916,14 +1304,23 @@ const FIXTURE_CLAIMS = {
       source_url: null, as_of: null, caveat: 'Replayed illustration.', surfaces: ['landing'] },
     { id: 'meas_cost', text: 'Our fast-check cost per 1,000 answers', value: null, unit: 'usd_per_1k',
       display: '${value} / 1,000 answers', empty_display: 'not yet measured', label: 'measured', basis: 'b',
-      source_url: null, as_of: null, caveat: null, measured_ref: 'fast_check_usd_per_1k', surfaces: ['readme'] },
+      source_url: null, as_of: null, caveat: 'The fast check alone, on {cost_conditions}.', measured_ref: 'fast_check_usd_per_1k', surfaces: ['readme'] },
     { id: 'meas_overhead', text: 'Gateway overhead, p50', value: null, unit: 'ms', display: '{value} ms p50',
       empty_display: 'not yet measured', label: 'measured', basis: 'b', source_url: null, as_of: null,
       caveat: "Gateway's own time with simulated vendors; {machine}", measured_ref: 'proxy_overhead_ms_p50',
       surfaces: ['readme', 'docs'] },
     { id: 'meas_latency', text: 'Fast-check latency, p50', value: null, unit: 'ms', display: '{value} ms p50',
+      empty_display: 'not yet measured', label: 'measured', basis: 'b', source_url: null, as_of: null,
+      caveat: 'The fast check\'s own time per answer: {gate_conditions}.', measured_ref: 'gate_latency_ms_p50', surfaces: ['readme'] },
+    { id: 'meas_agree', text: 'Our RAGTruth-QA agreement', value: null, unit: 'fraction', display: '{value}',
       empty_display: 'not yet measured', label: 'measured', basis: 'b', source_url: null, as_of: null, caveat: null,
-      measured_ref: 'gate_latency_ms_p50', surfaces: ['readme'] },
+      measured_ref: 'ragtruth_qa_agreement', surfaces: ['readme', 'docs'] },
+    { id: ARIZE_FIGURE_IDS[0], text: 'Arize RAGTruth test: Jev accuracy at a 0.5 threshold', value: 0.76, unit: 'fraction',
+      display: '76% at 0.5', label: 'third_party', basis: 'b', source_url: 'https://example.com/a', as_of: TODAY,
+      caveat: 'Thresholds need calibrating.', surfaces: ['landing', 'readme', 'docs'] },
+    { id: ARIZE_FIGURE_IDS[1], text: 'Arize RAGTruth test: Jev accuracy', value: 0.87, unit: 'fraction',
+      display: '88%', label: 'third_party', basis: 'b', source_url: 'https://example.com/a', as_of: TODAY,
+      caveat: 'Only at a tuned threshold.', surfaces: ['landing', 'readme', 'docs'] },
   ],
 };
 
@@ -934,8 +1331,11 @@ const NOT_MEASURED = {
     fast_check_usd_per_1k: { value: null, unit: 'usd_per_1k', description: 'd', run_id: null, system: 'gate' },
     proxy_overhead_ms_p50: { value: null, unit: 'ms', description: 'd', run_id: null, system: 'proxy' },
     gate_latency_ms_p50: { value: null, unit: 'ms', description: 'd', run_id: null, system: 'gate' },
+    ragtruth_qa_agreement: { value: null, unit: 'fraction', description: 'd', run_id: null, system: 'gate' },
   },
 };
+
+const SNAPSHOT = 'jev-1.13-20260917';
 
 const MEASURED = {
   ...NOT_MEASURED,
@@ -944,14 +1344,36 @@ const MEASURED = {
   generated_by: 'bench-publish',
   generated_at: '2026-11-02T10:00:00Z',
   runs: ['bench-1', 'load-1'],
+  snapshot: SNAPSHOT,
   values: {
     fast_check_usd_per_1k: { ...NOT_MEASURED.values.fast_check_usd_per_1k, value: 0.2134, run_id: 'bench-1' },
     proxy_overhead_ms_p50: { ...NOT_MEASURED.values.proxy_overhead_ms_p50, value: 1.234, run_id: 'load-1' },
     gate_latency_ms_p50: { ...NOT_MEASURED.values.gate_latency_ms_p50, value: 212.4, run_id: 'bench-1' },
+    ragtruth_qa_agreement: { ...NOT_MEASURED.values.ragtruth_qa_agreement, value: 0.8125, run_id: 'bench-1' },
+    groundedness_ece_before: { value: 0.21, unit: 'fraction', description: 'd', run_id: 'bench-1', system: 'gate' },
+    groundedness_ece_after: { value: 0.04, unit: 'fraction', description: 'd', run_id: 'bench-1', system: 'gate' },
+  },
+  intervals: {
+    ragtruth_qa_agreement: { lo: 0.75, hi: 0.86, method: 'bootstrap', resamples: 2000, seed: 13, n_pos: 40, n_neg: 160 },
+  },
+  sources: {
+    fast_check_usd_per_1k: {
+      cost_source: 'reported', dataset: 'RAGTruth-QA test split', n: 200, input_tokens_per_answer: 640,
+      conditions: 'RAGTruth-QA test split, n=200, about 640 input tokens per answer',
+    },
+    groundedness_ece: {
+      method: 'holdout', calibration_file: `config/calibration/${SNAPSHOT}.json`, calibration_sha256: 'a'.repeat(64), dataset: 'ragtruth:qa-train@c103204',
+    },
+    gate_latency: {
+      connection: 'warm', gate_concurrency: 1, platform: 'Linux', region: 'cloud us-east', n: 199,
+      conditions: `warm connection, one request at a time, run on Linux, region cloud us-east, snapshot ${'jev-1.13-20260917'}, n=199`,
+    },
   },
 };
 
 const LOAD_RUN = { environment: { cpu_model: 'Test CPU', cores: 10, mem_gb: 8, os: 'Linux' } };
+const BENCH_RUN = (quality) => JSON.stringify({ run_id: 'bench-1', quality });
+const GOOD_QUALITY = { n: 200, scored: 198, failed: 2, excluded: 0, failure_rate: 0.01 };
 
 const SPEC_UNVERIFIED = [
   '## Appendix D: assumptions to verify (gate)',
@@ -985,7 +1407,26 @@ function png(width, height, extra = 0) {
   return buf;
 }
 
-const RECORDED = Buffer.from(JSON.stringify({ schema: 'trustagent.recording/v1', kind: 'recorded' }));
+const RECORDED_TAPE = {
+  schema: 'trustagent.recording/v1', kind: 'recorded', trustagent_version: '2.0.0',
+  decision_model: { backend: 'openrouter-decisions', snapshot: SNAPSHOT, host: 'openrouter.ai' },
+  judge: { provider: 'openrouter', model: 'anthropic/claude-haiku', fallback_active: false, host: 'openrouter.ai' },
+  answer_sources: { scripted: 10, generated: 2, generated_host: 'openrouter.ai' },
+};
+const RECORDED = Buffer.from(JSON.stringify(RECORDED_TAPE));
+const VENDOR_HOSTS = ['openrouter.ai', 'api.typesafe.ai', 'api.anthropic.com'];
+const COMMON_SCHEMA = JSON.stringify({ $defs: { VendorHost: { enum: VENDOR_HOSTS } } });
+/** Every file a launch-ready repository holds besides the docs (measured: MEASURED). */
+const LAUNCH_READY = {
+  [COMMON_SCHEMA_PATH]: COMMON_SCHEMA,
+  'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN),
+  'docs/benchmarks/results/bench-1.json': BENCH_RUN(GOOD_QUALITY),
+  [RECORDED_MANIFEST_PATH]: RECORDED,
+  VERSION: '2.0.0\n',
+  LICENSE: 'MIT License\n\nCopyright (c) 2026 Jane Doe\n',
+  'docs/launch/og.png': png(OG_WIDTH, OG_HEIGHT),
+  'frontend-react/public/og.png': png(OG_WIDTH, OG_HEIGHT),
+};
 const MOCK_RECORDING = Buffer.from(JSON.stringify({ schema: 'trustagent.recording/v1', kind: 'mock' }));
 
 /** Each case: files, optional overrides, the exact sorted set of rule ids it must report. */
@@ -1108,8 +1549,18 @@ const CASES = [
     expect: [],
   },
   {
-    name: 'a measured claim with no value says its empty display',
+    name: 'a measured claim with no value says its empty display, without a chip',
+    files: { 'README.md': "Ours: <!-- claim:meas_overhead --> not yet measured. Gateway's own time with simulated vendors; no run yet" },
+    expect: [],
+  },
+  {
+    name: 'an absent value is not tagged [measured]',
     files: { 'README.md': "Ours: <!-- claim:meas_overhead --> not yet measured [measured]. Gateway's own time with simulated vendors; no run yet" },
+    expect: ['empty-measured-chip'],
+  },
+  {
+    name: 'another label after an absent value is not this claim\'s chip',
+    files: { 'README.md': "Ours: <!-- claim:meas_overhead --> not yet measured, against ~$0.21 [estimate]. Gateway's own time with simulated vendors; no run yet" },
     expect: [],
   },
   {
@@ -1121,8 +1572,18 @@ const CASES = [
     name: 'a measured value is read from a measured run',
     measured: MEASURED,
     read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
-    files: { 'README.md': 'Ours: <!-- claim:meas_cost --> $0.213 / 1,000 answers [measured]' },
+    files: {
+      'README.md': 'Ours: <!-- claim:meas_cost --> $0.213 / 1,000 answers [measured]. The fast check alone, on ' +
+        'RAGTruth-QA test split, n=200, about 640 input tokens per answer.',
+    },
     expect: [],
+  },
+  {
+    name: 'a measured cost outside the block carries its conditions (D229)',
+    measured: MEASURED,
+    read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
+    files: { 'README.md': 'Ours: <!-- claim:meas_cost --> $0.213 / 1,000 answers [measured]' },
+    expect: ['caveat-missing'],
   },
   {
     name: 'a value in a file that is not a measured run is refused',
@@ -1134,7 +1595,7 @@ const CASES = [
     name: 'a measured value from a mock run is refused',
     measured: { ...MEASURED, mock: true },
     read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
-    files: { 'README.md': 'Ours: <!-- claim:meas_cost --> not yet measured [measured]' },
+    files: { 'README.md': 'Ours: <!-- claim:meas_cost --> not yet measured' },
     expect: ['measured-mock'],
   },
   {
@@ -1240,13 +1701,175 @@ const CASES = [
     launch: true,
     measured: MEASURED,
     compare: COMPARE(REVIEWED_CELL),
+    read: LAUNCH_READY,
+    files: {},
+    expect: [],
+  },
+  {
+    name: 'launch: a run over 5% failures, under 95% scored, or without quality; a run with no file',
+    launch: true,
+    measured: { ...MEASURED, runs: ['bench-1', 'bench-2', 'bench-3', 'load-1', 'gone-1'] },
+    compare: COMPARE(REVIEWED_CELL),
     read: {
-      'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN),
-      [RECORDED_MANIFEST_PATH]: RECORDED,
-      'docs/launch/og.png': png(OG_WIDTH, OG_HEIGHT),
-      'frontend-react/public/og.png': png(OG_WIDTH, OG_HEIGHT),
+      ...LAUNCH_READY,
+      'docs/benchmarks/results/bench-1.json': BENCH_RUN({ ...GOOD_QUALITY, failed: 12, failure_rate: 0.06 }),
+      'docs/benchmarks/results/bench-2.json': BENCH_RUN({ ...GOOD_QUALITY, scored: 180 }),
+      'docs/benchmarks/results/bench-3.json': JSON.stringify({ run_id: 'bench-3' }),
     },
     files: {},
+    expect: ['launch-quality', 'launch-quality', 'launch-quality', 'launch-run-missing'],
+  },
+  {
+    name: 'launch: no snapshot; two without snapshot_split; a split with one',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE(REVIEWED_CELL),
+    read: LAUNCH_READY,
+    files: {},
+    variants: [
+      { measured: { ...MEASURED, snapshot: null }, expect: ['launch-snapshot'] },
+      { measured: { ...MEASURED, snapshot: [SNAPSHOT, 'jev-1.14-20261101'] }, expect: ['launch-snapshot'] },
+      { measured: { ...MEASURED, snapshot: [SNAPSHOT, 'jev-1.14-20261101'], sources: { ...MEASURED.sources, snapshot_split: true } }, expect: [] },
+      { measured: { ...MEASURED, sources: { ...MEASURED.sources, snapshot_split: true } }, expect: ['launch-snapshot'] },
+      { measured: { ...MEASURED, sources: { fast_check_usd_per_1k: MEASURED.sources.fast_check_usd_per_1k, groundedness_ece: MEASURED.sources.groundedness_ece } }, expect: ['latency-conditions'] },
+      { measured: { ...MEASURED, sources: { ...MEASURED.sources, fast_check_usd_per_1k: { cost_source: 'reported' } } }, expect: ['cost-conditions'] },
+    ],
+    expect: [],
+  },
+  {
+    name: 'launch: the held-out ECE is published with its method, unless the tape is uncalibrated (D206)',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE(REVIEWED_CELL),
+    read: LAUNCH_READY,
+    files: {},
+    variants: [
+      // The C1 card once passed the wrong make variable: measured.json came out without the ECE.
+      { measured: { ...MEASURED, values: { ...MEASURED.values, groundedness_ece_after: { ...MEASURED.values.groundedness_ece_after, value: null } } }, expect: ['launch-ece'] },
+      { measured: { ...MEASURED, sources: { fast_check_usd_per_1k: MEASURED.sources.fast_check_usd_per_1k, gate_latency: MEASURED.sources.gate_latency } }, expect: ['launch-ece'] },
+      {
+        measured: { ...MEASURED, values: { ...MEASURED.values, groundedness_ece_after: { ...MEASURED.values.groundedness_ece_after, value: null } } },
+        read: { ...LAUNCH_READY, [RECORDED_MANIFEST_PATH]: JSON.stringify({ ...RECORDED_TAPE, calibration: { snapshot: null, quality: 'none' } }) },
+        expect: [],
+      },
+      {
+        measured: { ...MEASURED, values: { ...MEASURED.values, groundedness_ece_after: { ...MEASURED.values.groundedness_ece_after, value: null } } },
+        read: { ...LAUNCH_READY, [RECORDED_MANIFEST_PATH]: JSON.stringify({ ...RECORDED_TAPE, calibration: { snapshot: SNAPSHOT, quality: 'measured' } }) },
+        expect: ['launch-ece'],
+      },
+    ],
+    expect: [],
+  },
+  {
+    name: 'launch: the tape was recorded on another snapshot and another version',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE(REVIEWED_CELL),
+    read: {
+      ...LAUNCH_READY,
+      [RECORDED_MANIFEST_PATH]: JSON.stringify({
+        ...RECORDED_TAPE, trustagent_version: '1.0.0', decision_model: { ...RECORDED_TAPE.decision_model, snapshot: 'jev-1.12' },
+      }),
+    },
+    files: {},
+    expect: ['launch-snapshot', 'launch-version'],
+  },
+  {
+    name: 'launch: an open reverify and a licence placeholder',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE(REVIEWED_CELL),
+    claims: { ...FIXTURE_CLAIMS, claims: FIXTURE_CLAIMS.claims.map((c) => (c.id === 'vendor_price' ? { ...c, reverify: 'Re-read the page.' } : c)) },
+    read: {
+      ...LAUNCH_READY,
+      LICENSE: `MIT License\n\nCopyright (c) 2026 ${OWNER_PLACEHOLDER}\n`,
+      'frontend-react/package.json': `{"author": "${OWNER_PLACEHOLDER}"}`,
+    },
+    files: {},
+    expect: ['launch-license', 'launch-license', 'launch-reverify'],
+  },
+  {
+    name: 'launch: a demo link still waiting for Pages (D220)',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE(REVIEWED_CELL),
+    read: {
+      ...LAUNCH_READY,
+      'README.md': `# TrustAgent\n\n${PAGES_PENDING_MARK} (D220): point the demo links back at the site. -->\n`,
+      'docs/DEMO.md': '# The demo\n\nOpen <https://timkush1.github.io/TrustAgent/>.\n',
+    },
+    files: {},
+    expect: ['launch-pages-pending'],
+  },
+  {
+    name: 'an open reverify warns without --launch',
+    claims: { ...FIXTURE_CLAIMS, claims: FIXTURE_CLAIMS.claims.map((c) => (c.id === 'vendor_price' ? { ...c, reverify: 'Re-read the page.' } : c)) },
+    files: {},
+    expect: [],
+    warnings: ['reverify-open', 'third-party-stale'],
+  },
+  {
+    name: 'an estimate twice off its measured pair warns; --launch refuses it',
+    measured: { ...MEASURED, values: { ...MEASURED.values, fast_check_usd_per_1k: { ...MEASURED.values.fast_check_usd_per_1k, value: 0.9 } } },
+    read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
+    files: {},
+    expect: [],
+    warnings: ['pair-divergence', 'third-party-stale'],
+  },
+  {
+    name: 'launch: a divergent pair is an error',
+    launch: true,
+    measured: { ...MEASURED, values: { ...MEASURED.values, fast_check_usd_per_1k: { ...MEASURED.values.fast_check_usd_per_1k, value: 0.05 } } },
+    compare: COMPARE(REVIEWED_CELL),
+    read: LAUNCH_READY,
+    files: {},
+    expect: ['pair-divergence'],
+  },
+  {
+    name: 'a measured_pair that names no measured claim',
+    claims: { ...FIXTURE_CLAIMS, claims: FIXTURE_CLAIMS.claims.map((c) => (c.id === 'est_cost' ? { ...c, measured_pair: 'vendor_price' } : c)) },
+    files: {},
+    expect: ['pair-unknown'],
+  },
+  {
+    name: "a measured agreement beside both of Arize's figures passes (D233)",
+    measured: MEASURED,
+    read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
+    files: {
+      'README.md': [
+        '## Accuracy',
+        'Ours: <!-- claim:meas_agree --> 81.3% [measured].',
+        '',
+        'Not like for like: <!-- claim:arize_ragtruth_accuracy_at_default_threshold --> 76% at 0.5 [third-party]. Thresholds need calibrating.',
+        'At its best: <!-- claim:arize_ragtruth_jev_accuracy --> 88% [third-party]. Only at a tuned threshold.',
+      ].join('\n'),
+    },
+    expect: [],
+  },
+  {
+    name: "a measured agreement alone, or beside one of Arize's figures only, warns; --launch refuses it",
+    measured: MEASURED,
+    read: { 'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN) },
+    files: {
+      'README.md': [
+        '## Accuracy',
+        'Ours: <!-- claim:meas_agree --> 81.3% [measured], against <!-- claim:tp_fresh --> 87% [third-party].',
+        '',
+        '## At 0.5 only',
+        'Ours: <!-- claim:meas_agree --> 81.3% [measured].',
+        '<!-- claim:arize_ragtruth_accuracy_at_default_threshold --> 76% at 0.5 [third-party]. Thresholds need calibrating.',
+        '',
+        '## Elsewhere',
+        '<!-- claim:arize_ragtruth_jev_accuracy --> 88% [third-party]. Only at a tuned threshold.',
+      ].join('\n'),
+    },
+    expect: [],
+    warnings: ['agreement-alone', 'agreement-alone', 'third-party-stale'],
+    variants: [{ launch: true, compare: COMPARE(REVIEWED_CELL), read: LAUNCH_READY, expect: ['agreement-alone', 'agreement-alone'], warnings: ['third-party-stale'] }],
+  },
+  {
+    name: 'an agreement not measured yet does not need the comparison until --launch',
+    files: { 'docs/GUIDE.md': 'Ours: <!-- claim:meas_agree --> not yet measured.' },
     expect: [],
   },
   {
@@ -1261,14 +1884,45 @@ const CASES = [
     launch: true,
     measured: MEASURED,
     compare: COMPARE(REVIEWED_CELL),
-    read: {
-      'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN),
-      [RECORDED_MANIFEST_PATH]: JSON.stringify({ schema: 'trustagent.recording/v1' }),
-      'docs/launch/og.png': png(OG_WIDTH, OG_HEIGHT),
-      'frontend-react/public/og.png': png(OG_WIDTH, OG_HEIGHT),
-    },
+    read: { ...LAUNCH_READY, [RECORDED_MANIFEST_PATH]: JSON.stringify({ schema: 'trustagent.recording/v1' }) },
     files: {},
     expect: ['launch-recorded'],
+  },
+  {
+    name: 'launch: a tape that says recorded but names mock-upstream, or no host, is not a recording (D203)',
+    launch: true,
+    measured: MEASURED,
+    compare: COMPARE(REVIEWED_CELL),
+    read: {
+      ...LAUNCH_READY,
+      [RECORDED_MANIFEST_PATH]: JSON.stringify({
+        ...RECORDED_TAPE,
+        decision_model: { ...RECORDED_TAPE.decision_model, host: 'mock-upstream' },
+        judge: { ...RECORDED_TAPE.judge, host: undefined },
+        answer_sources: { scripted: 10, generated: 2, generated_host: 'mock-upstream' },
+      }),
+    },
+    files: {},
+    expect: ['launch-recorded', 'launch-recorded', 'launch-recorded'],
+    variants: [
+      {
+        // Scripted answers only: no generated host is needed; the two model hosts still are.
+        read: {
+          ...LAUNCH_READY,
+          [RECORDED_MANIFEST_PATH]: JSON.stringify({ ...RECORDED_TAPE, answer_sources: { scripted: 12, generated: 0 } }),
+        },
+        expect: [],
+      },
+      {
+        read: {
+          ...LAUNCH_READY,
+          [RECORDED_MANIFEST_PATH]: JSON.stringify({ ...RECORDED_TAPE, judge: { ...RECORDED_TAPE.judge, host: 'api.openai.com' } }),
+        },
+        expect: ['launch-recorded'],
+      },
+      // Without the contract's host list nothing can vouch for the tape.
+      { read: { ...LAUNCH_READY, [COMMON_SCHEMA_PATH]: '{}' }, expect: ['launch-recorded'] },
+    ],
   },
   {
     name: 'launch: a mock recording, a cell the owner has not reviewed, a wrong-size og.png',
@@ -1276,7 +1930,7 @@ const CASES = [
     measured: MEASURED,
     compare: COMPARE({ ...REVIEWED_CELL, reviewed: false }),
     read: {
-      'docs/benchmarks/load/load-1.json': JSON.stringify(LOAD_RUN),
+      ...LAUNCH_READY,
       [RECORDED_MANIFEST_PATH]: MOCK_RECORDING,
       'docs/launch/og.png': png(1200, 630),
       'frontend-react/public/og.png': png(OG_WIDTH, OG_HEIGHT, OG_MAX_BYTES),
@@ -1293,7 +1947,7 @@ function runCase(c) {
   const read = (p) => (p in extra ? Buffer.from(extra[p]) : files.has(p) ? Buffer.from(files.get(p)) : null);
   return checkClaims({
     files,
-    claims: FIXTURE_CLAIMS,
+    claims: c.claims ?? FIXTURE_CLAIMS,
     measured: c.measured ?? NOT_MEASURED,
     compare: c.compare ?? null,
     specText: c.spec ?? SPEC_UNVERIFIED,
@@ -1339,9 +1993,8 @@ function selfTestRun(check) {
     check('run: --write fixes the block and exits 0', written.code === 0, JSON.stringify(written.out));
     const text = readFileSync(join(dir, 'README.md'), 'utf8');
     check('run: --write keeps the prose around the block', text.startsWith('# Fixture\n\n<!-- measured:start -->\n') && text.endsWith('[estimate]\n'));
-    check('run: the block holds a marker per measured readme or docs claim',
-      text.includes('<!-- claim:meas_cost --> not yet measured [measured]') &&
-        text.includes("<!-- claim:meas_overhead --> not yet measured [measured] | Gateway's own time with simulated vendors; no run published yet |"));
+    check('run: before a measured run the block is one sentence, without a [measured] chip',
+      text.includes(`<!-- measured:start -->\n${BLOCK_HEADER}\n\n${NOT_MEASURED_TEXT}\n<!-- measured:end -->`) && !text.includes('[measured]'), text);
     const again = scan({ write: true });
     check('run: a second --write changes nothing', again.code === 0 && !again.out.some((l) => l.includes('regenerated')), JSON.stringify(again.out));
 
@@ -1351,7 +2004,7 @@ function selfTestRun(check) {
     check('run: a published load run makes the block stale', published.code === 1 && published.out.some((l) => l.includes('[block-stale]')), JSON.stringify(published.out));
     scan({ write: true });
     check('run: the block says where the published load run is',
-      readFileSync(join(dir, 'README.md'), 'utf8').includes(`not yet measured [measured] | Gateway's own time with simulated vendors; ${LOAD_RUN_NOT_ADOPTED} |`));
+      readFileSync(join(dir, 'README.md'), 'utf8').includes(`${NOT_MEASURED_TEXT} ${LOAD_RUN_PUBLISHED_TEXT}`));
 
     write(MEASURED_PATH, JSON.stringify(MEASURED));
     write(`${LOAD_RUNS_DIR}/load-1.json`, JSON.stringify(LOAD_RUN));
@@ -1364,7 +2017,10 @@ function selfTestRun(check) {
         measuredText.includes('<!-- claim:meas_overhead --> 1.23 ms p50 [measured]') &&
         measuredText.includes('<!-- claim:meas_latency --> 212.4 ms p50 [measured]') &&
         measuredText.includes('measured on Test CPU, 10 logical CPUs and 8 GB RAM visible to Linux') &&
-        measuredText.includes('From the measured runs bench-1, load-1 (bench-publish, 2026-11-02).'),
+        measuredText.includes(`From the measured runs bench-1, load-1 (bench-publish, 2026-11-02, decision-model snapshot ${SNAPSHOT}).`) &&
+        measuredText.includes('<!-- claim:meas_agree --> 81.3% [measured]') &&
+        measuredText.includes(`<!-- claim:${ARIZE_FIGURE_IDS[0]} --> 76% at 0.5 [third-party]`) &&
+        measuredText.includes(`<!-- claim:${ARIZE_FIGURE_IDS[1]} --> 88% [third-party]`),
       measuredText);
 
     const launch = scan({ launch: true });
@@ -1396,7 +2052,9 @@ export function selfTest() {
     else failures.push(detail ? `${name}: ${detail}` : name);
   };
 
-  for (const c of CASES) {
+  // A case may list variants: the same case with some fields replaced (its own expect and warnings).
+  const runs = CASES.flatMap((c) => [c, ...(c.variants ?? []).map((v, k) => ({ ...c, variants: undefined, ...v, name: `${c.name} [${k + 1}]` }))]);
+  for (const c of runs) {
     let result;
     try {
       result = runCase(c);
@@ -1409,8 +2067,8 @@ export function selfTest() {
     check(c.name, JSON.stringify(errors) === JSON.stringify([...c.expect].sort()),
       `expected ${JSON.stringify(c.expect)}, got ${JSON.stringify(result.problems.map(formatProblem))}`);
     // The fixture's one stale third-party claim warns in every case; the age rule has its own case.
-    const wantWarnings = ['third-party-stale'];
-    check(`${c.name} (warnings)`, JSON.stringify(warnings) === JSON.stringify(wantWarnings), `got ${JSON.stringify(warnings)}`);
+    const wantWarnings = [...(c.warnings ?? ['third-party-stale'])].sort();
+    check(`${c.name} (warnings)`, JSON.stringify(warnings) === JSON.stringify(wantWarnings), `got ${JSON.stringify(result.problems.map(formatProblem))}`);
   }
 
   // The age rule: only the claim older than 120 days warns, and it names the age.
@@ -1418,28 +2076,84 @@ export function selfTest() {
   check('age: one warning, for tp_latency at 222 days', aged.length === 1 && aged[0].message.startsWith('tp_latency: as_of 2026-03-01 is 222 days old'),
     JSON.stringify(aged));
 
-  // Generated blocks pass their own rules, measured or not.
-  for (const measured of [NOT_MEASURED, MEASURED]) {
+  // Generated blocks pass their own rules, measured or not, in the README and in a launch draft
+  // (whose figures need markers: the block's interval and notes are exempt, being generated).
+  const PARTIAL = { ...MEASURED, values: { ...MEASURED.values, gate_latency_ms_p50: { ...MEASURED.values.gate_latency_ms_p50, value: null } } };
+  for (const [name, measured, markers] of [['not measured', NOT_MEASURED, 0], ['measured', MEASURED, 6], ['partly measured', PARTIAL, 6]]) {
     const read = (p) => (p === `${LOAD_RUNS_DIR}/load-1.json` ? Buffer.from(JSON.stringify(LOAD_RUN)) : null);
     const block = renderMeasuredBlock(FIXTURE_CLAIMS, measured, read);
     const text = ['<!-- measured:start -->', ...block.lines, '<!-- measured:end -->'].join('\n');
-    const result = checkClaims({ files: new Map([['README.md', text]]), claims: FIXTURE_CLAIMS, measured, specText: SPEC_UNVERIFIED, read, today: TODAY });
-    const errors = result.problems.filter((p) => p.level === 'error');
-    check(`generated block (${measured.status}) passes`, errors.length === 0 && result.markers === 3 && result.blocks === 1,
-      JSON.stringify(result.problems.map(formatProblem)));
+    for (const file of ['README.md', 'docs/launch/post.md']) {
+      const result = checkClaims({ files: new Map([[file, text]]), claims: FIXTURE_CLAIMS, measured, specText: SPEC_UNVERIFIED, read, today: TODAY });
+      const problems = result.problems.filter((p) => p.rule !== 'third-party-stale');
+      check(`generated block (${name}) passes in ${file}`, problems.length === 0 && result.markers === markers && result.blocks === 1,
+        JSON.stringify(result.problems.map(formatProblem)));
+    }
+  }
+  const notMeasured = renderMeasuredBlock(FIXTURE_CLAIMS, NOT_MEASURED, () => null);
+  check('generated block (not measured): one sentence, no table and no [measured] chip',
+    JSON.stringify(notMeasured.lines) === JSON.stringify([BLOCK_HEADER, '', NOT_MEASURED_TEXT]), JSON.stringify(notMeasured.lines));
+  check('generated block (not measured, a load run published): says where it is',
+    renderMeasuredBlock(FIXTURE_CLAIMS, NOT_MEASURED, () => null, ['load-1.json']).lines[2] === `${NOT_MEASURED_TEXT} ${LOAD_RUN_PUBLISHED_TEXT}`);
+  {
+    const read = (p) => (p === `${LOAD_RUNS_DIR}/load-1.json` ? Buffer.from(JSON.stringify(LOAD_RUN)) : null);
+    const lines = renderMeasuredBlock(FIXTURE_CLAIMS, MEASURED, read).lines;
     // D118: the overhead row has a table of its own, after the fast-check results and their latency.
-    const at = (id) => block.lines.findIndex((l) => l.includes(`<!-- claim:${id} -->`));
-    const intro = block.lines.indexOf(OVERHEAD_INTRO);
-    check(`generated block (${measured.status}): proxy overhead is a separate table after the latency`,
+    const at = (id) => lines.findIndex((l) => l.includes(`<!-- claim:${id} -->`));
+    const intro = lines.indexOf(OVERHEAD_INTRO);
+    check('generated block (measured): proxy overhead is a separate table after the latency',
       at('meas_latency') >= 0 && at('meas_latency') < intro && intro < at('meas_overhead') &&
-        block.lines[at('meas_overhead') - 1] === '|---|---|---|' && block.lines[at('meas_latency') + 1] === '',
-      JSON.stringify(block.lines));
+        lines[at('meas_overhead') - 1] === '|---|---|---|', JSON.stringify(lines));
+    const agree = lines[at('meas_agree')] ?? '';
+    check('generated block (measured): the agreement row has its interval and n per class (D212)',
+      agree.includes('81.3% [measured]') && agree.includes('95% interval 75% to 86% (bootstrap, 2000 resamples); 40 answers with a hallucination and 160 without.'),
+      agree);
+    const arizeLine = lines[at(ARIZE_FIGURE_IDS[0])] ?? '';
+    check("generated block (measured): Arize's figures follow the results, neither said to be like for like (D212, D233)",
+      at(ARIZE_FIGURE_IDS[0]) > at('meas_agree') && at(ARIZE_FIGURE_IDS[0]) < intro &&
+        at(ARIZE_FIGURE_IDS[1]) === at(ARIZE_FIGURE_IDS[0]) &&
+        arizeLine === `${ARIZE_COMPARISON_LEAD} Its accuracy: <!-- claim:${ARIZE_FIGURE_IDS[0]} --> 76% at 0.5 [third-party]. ` +
+          `Thresholds need calibrating. At its best: <!-- claim:${ARIZE_FIGURE_IDS[1]} --> 88% [third-party]. Only at a tuned threshold.` &&
+        !/like for like \(|same threshold/i.test(lines.join('\n')),
+      JSON.stringify(lines));
+    check('generated block (measured): a reported cost says so', (lines[at('meas_cost')] ?? '').includes('Cost as the vendor reported it.'));
+    check('generated block (measured): the footer names the snapshot',
+      lines[lines.length - 1].includes(`decision-model snapshot ${SNAPSHOT}`), lines[lines.length - 1]);
+    check('generated block (measured): the latency names its conditions, where it ran and n (D205, D225)',
+      (lines[at('meas_latency')] ?? '').includes("212.4 ms p50 [measured] | The fast check's own time per answer: warm connection, " +
+        'one request at a time, run on Linux, region cloud us-east, snapshot jev-1.13-20260917, n=199. |'),
+      lines[at('meas_latency')]);
+    const partial = renderMeasuredBlock(FIXTURE_CLAIMS, PARTIAL, read).lines;
+    check('generated block (partly measured): a value the run lacks has no [measured] chip and no conditions',
+      partial.some((l) => l.endsWith('<!-- claim:meas_latency --> not yet measured | |')), JSON.stringify(partial));
+    const bare = renderMeasuredBlock(FIXTURE_CLAIMS, { ...MEASURED, sources: { fast_check_usd_per_1k: { cost_source: 'reported' } } }, read);
+    check('generated block (measured): a latency without its conditions is a problem, never a raw placeholder',
+      bare.problems.some((p) => p.includes('without sources.gate_latency.conditions')) && !bare.lines.join('\n').includes('{gate_conditions}'),
+      JSON.stringify(bare.problems));
+    check('generated block (measured): the cost names the dataset, n and the input tokens per answer (D229)',
+      (lines[at('meas_cost')] ?? '').includes('$0.213 / 1,000 answers [measured] | Cost as the vendor reported it. The fast check alone, on ' +
+        'RAGTruth-QA test split, n=200, about 640 input tokens per answer. |'),
+      lines[at('meas_cost')]);
+    check('generated block (measured): a cost without its conditions is a problem, never a raw placeholder',
+      bare.problems.some((p) => p.includes('without sources.fast_check_usd_per_1k.conditions (D229)')) && !bare.lines.join('\n').includes('{cost_conditions}'),
+      JSON.stringify(bare.problems));
+    check('cost conditions: a cost is its own key, the ratio is the judge\'s cost, a proxy figure has none',
+      costConditionsKey('fast_check_usd_per_1k', { unit: 'usd_per_1k', system: 'gate' }) === 'fast_check_usd_per_1k' &&
+        costConditionsKey('same_checks_cost_ratio', { unit: 'multiplier', system: 'gate' }) === 'llm_same_checks_usd_per_1k' &&
+        costConditionsKey('proxy_overhead_ms_p50', { unit: 'ms', system: 'proxy' }) === null);
+    const split = renderMeasuredBlock(FIXTURE_CLAIMS, { ...MEASURED, snapshot: [SNAPSHOT, 'jev-1.14'], sources: { snapshot_split: true } }, read).lines;
+    check('generated block (split snapshots): the footer names both', split[split.length - 1].includes(`snapshots ${SNAPSHOT} and jev-1.14`));
+    const computed = renderMeasuredBlock(FIXTURE_CLAIMS, { ...MEASURED, sources: { fast_check_usd_per_1k: { cost_source: 'computed' } } }, read).lines;
+    check('generated block (measured): a computed cost is labelled measured tokens × vendor price',
+      computed.some((l) => l.includes('<!-- claim:meas_cost -->') && l.includes('Measured tokens × vendor price.')));
   }
 
   // Helpers.
   check('format: usd_per_1k under $1 keeps 3 decimals', formatValue(0.2134, 'usd_per_1k') === '0.213');
   check('format: fraction as a percentage', formatValue(0.873, 'fraction') === '87.3%');
   check('format: ms to 2 decimals', formatValue(1.234, 'ms') === '1.23');
+  check('format: a multiple is whole from 10 up, one decimal below, as the post says it',
+    formatValue(26.84, 'multiplier') === '27' && formatValue(9.96, 'multiplier') === '10' && formatValue(3.14, 'multiplier') === '3.1');
   check('slug: GitHub heading anchors', slug('Latency `caveat` (P50)!') === 'latency-caveat-p50');
   check('pkce: unverified rows', JSON.stringify(pkceStatus(SPEC_UNVERIFIED)) === '{"localhost":false,"pages":false,"found":true}');
   check('pkce: dated rows', JSON.stringify(pkceStatus(SPEC_VERIFIED)) === '{"localhost":true,"pages":true,"found":true}');
@@ -1449,6 +2163,10 @@ export function selfTest() {
       pkceWordingHits(['PKCE from the Pages site is verified.'], pkceStatus(half)).length === 1);
   check('png: size from IHDR', JSON.stringify(pngSize(png(1280, 640))) === '{"width":1280,"height":640}' && pngSize(Buffer.from('nope')) === null);
   check('mask: inline code keeps columns', maskCode(['a `<!-- x -->` b'])[0] === `a ${' '.repeat(12)} b`);
+  const realRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const realHosts = vendorHosts((rel) => (existsSync(join(realRoot, rel)) ? readFileSync(join(realRoot, rel)) : null));
+  check('hosts: the contract names the vendor hosts, and mock-upstream is not one',
+    Array.isArray(realHosts) && realHosts.includes('openrouter.ai') && !realHosts.includes('mock-upstream'), JSON.stringify(realHosts));
   check('mask: comments span lines', JSON.stringify(maskComments(['a <!-- x', 'y --> b'])) === JSON.stringify(['a       ', '      b']));
 
   try {

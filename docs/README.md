@@ -19,6 +19,7 @@ Start with the [project README](../README.md) for the overview and quick start. 
 |---|---|
 | [GETTING-STARTED.md](GETTING-STARTED.md) | Running TrustAgent locally (WSL, Linux or macOS; Docker 25+, Compose 2.24+): the zero-key `make demo`, real mode with your keys, the setup link, images built or pulled, memory, troubleshooting, and the maintainer targets (`pages-build`, `record-demo`, `first-run`) |
 | [DEMO.md](DEMO.md) | The live demo in your browser (the replay, its tapes and labels, Try it live with your own key) and the zero-key `make demo`: starting it, the setup link, a five-minute tour, the 27 scenarios, checking it from the terminal, sharing it |
+| [DEPLOY-DEMO.md](DEPLOY-DEMO.md) | The always-on public demo on a small VM, step by step: the demo stack behind Caddy (HTTPS, read-only, `/v1` closed, each visitor's own rate limits), the server and its firewall, sslip.io or your own domain, `make public-demo-up` and its checks, cost, running, upgrading and removing it, a local rehearsal, why not Oracle's free tier |
 | [JEV-ACCESS.md](JEV-ACCESS.md) | Getting Jev access for the fast check: Connect OpenRouter, paste a key, `.env` or `make configure WITH_SECRETS=1`; which value wins, Jev from the browser (and the CORS result), simulated mode, credit limits, costs, settings, errors and fixes |
 | [CONFIGURATION.md](CONFIGURATION.md) | Every configuration key with its default, who reads it, whether it is secret and whether it needs a restart (generated from the key registry; `proxy -check-config` checks a configuration against it) |
 | [CI-CD.md](CI-CD.md) | The GitHub Actions pipelines (CI, Security, Eval, Pages, release images) and Dependabot: what each job does, how to read a failure, and the release runbook |
@@ -53,12 +54,14 @@ Start with the [project README](../README.md) for the overview and quick start. 
 
 | Doc | What's inside |
 |---|---|
-| [launch/launch-checklist.md](launch/launch-checklist.md) | What must be true before anything is posted, in order, with the command that proves each item |
+| [launch/launch-checklist.md](launch/launch-checklist.md) | What must be true before anything is pushed, released or posted, in the order of the owner's sittings, with the command that proves each item |
+| [launch/terms-check.md](launch/terms-check.md) | Whether Jev figures and outputs may be published (the terms read, the mode chosen) and the benchmark datasets' licences |
+| [launch/release-pr.md](launch/release-pr.md) | The release pull request's body: summary, phases, breaking changes, how to verify, checks |
+| [launch/ruleset.md](launch/ruleset.md) | The `main` ruleset: the minimal rules at the first push, then the exact required check names |
 | [launch/demo-script.md](launch/demo-script.md) | The 60-second demo, beat by beat |
 | [launch/github-metadata.md](launch/github-metadata.md) | Repository description, topics and social preview |
 | [launch/og-spec.md](launch/og-spec.md) | The 1280×640 social card: layout, content, how it is captured (`make og`; `make hero-gif` and `make screenshots` capture the README's hero and pictures) |
-| [launch/linkedin-post.md](launch/linkedin-post.md) | The launch post draft; its figures stay placeholders until `measured.json` has them |
-| [launch/interview-talking-points.md](launch/interview-talking-points.md) | Ten engineering stories: decision, alternatives, result, what went wrong |
+| [launch/linkedin-post.md](launch/linkedin-post.md) | The launch post's templates (and the mode-R variant); `make linkedin-post` fills them from the measured run and the recorded tape, and exits 1 on any missing value |
 
 ## Component deep-dives
 

@@ -34,7 +34,11 @@
       "required": ["backend", "snapshot"],
       "properties": {
         "backend": {"$ref": "common.v1.schema.json#/$defs/DecisionBackend"},
-        "snapshot": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+        "snapshot": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "host": {
+          "$ref": "common.v1.schema.json#/$defs/Hostname",
+          "description": "The host the fast check called (D203), bare: the sanitizer scrubs hosts inside URLs. A recorded tape names a vendor host."
+        }
       }
     },
     "judge": {
@@ -44,7 +48,11 @@
       "properties": {
         "provider": {"type": "string", "minLength": 1},
         "model": {"type": "string", "minLength": 1},
-        "fallback_active": {"type": "boolean"}
+        "fallback_active": {"type": "boolean"},
+        "host": {
+          "$ref": "common.v1.schema.json#/$defs/Hostname",
+          "description": "The host the judge called (D203), bare. A recorded tape names a vendor host."
+        }
       }
     },
     "calibration_state": {"$ref": "common.v1.schema.json#/$defs/CalibrationState"},
@@ -54,7 +62,31 @@
       "required": ["scripted", "generated"],
       "properties": {
         "scripted": {"type": "integer", "minimum": 0},
-        "generated": {"type": "integer", "minimum": 0}
+        "generated": {"type": "integer", "minimum": 0},
+        "generated_host": {
+          "anyOf": [{"$ref": "common.v1.schema.json#/$defs/Hostname"}, {"type": "null"}],
+          "description": "The upstream host that wrote the generated answers (D203, D208), bare; null when there are none. A recorded tape with generated answers names a vendor host."
+        }
+      }
+    },
+    "featured": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trace_id", "rule"],
+      "description": "The trace every launch surface shows (/og, the hero, screenshots, the video, the post), picked by rule and never edited (D209): contradicted_with_span is the first flag, fallback or block trace with a CONTRADICTED claim that has a span (refund-contradiction-flag first, then support-bot); best_flagged is the owner's pick when no trace meets that rule; scripted is the simulated tape's fixed choice.",
+      "properties": {
+        "trace_id": {"$ref": "common.v1.schema.json#/$defs/Uuid"},
+        "rule": {"enum": ["contradicted_with_span", "best_flagged", "scripted"]}
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot", "quality"],
+      "description": "The calibration the tape was recorded with (D207, D208): the snapshot of config/calibration/<snapshot>.json and its quality; none when recorded with ALLOW_UNCALIBRATED=1 (the UI then says uncalibrated).",
+      "properties": {
+        "snapshot": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+        "quality": {"enum": ["measured", "provisional", "none"]}
       }
     },
     "totals": {
@@ -112,8 +144,31 @@
       "if": {"properties": {"kind": {"const": "recorded"}}},
       "then": {
         "properties": {
-          "decision_model": {"properties": {"backend": {"not": {"enum": ["mock", "off"]}}}},
-          "judge": {"properties": {"fallback_active": {"const": false}}},
+          "decision_model": {
+            "required": ["host"],
+            "properties": {
+              "backend": {"not": {"enum": ["mock", "off"]}},
+              "host": {"$ref": "common.v1.schema.json#/$defs/VendorHost"}
+            }
+          },
+          "judge": {
+            "required": ["host"],
+            "properties": {
+              "fallback_active": {"const": false},
+              "host": {"$ref": "common.v1.schema.json#/$defs/VendorHost"}
+            }
+          },
+          "answer_sources": {
+            "properties": {
+              "generated_host": {"anyOf": [{"$ref": "common.v1.schema.json#/$defs/VendorHost"}, {"type": "null"}]}
+            },
+            "if": {"required": ["generated"], "properties": {"generated": {"minimum": 1}}},
+            "then": {
+              "required": ["generated_host"],
+              "properties": {"generated_host": {"$ref": "common.v1.schema.json#/$defs/VendorHost"}}
+            }
+          },
+          "featured": {"properties": {"rule": {"enum": ["contradicted_with_span", "best_flagged"]}}},
           "traces": {
             "items": {"properties": {"answer_source": {"$ref": "common.v1.schema.json#/$defs/AnswerSource"}}}
           },

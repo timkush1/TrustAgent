@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-27",
+  "version": "2026-10-23",
   "currency": "USD",
   "entries": [
     {
@@ -41,6 +41,26 @@
       "label": "vendor_price",
       "as_of": "2026-06-24",
       "note": "[A] Taken to equal the Anthropic list price as of 2026-06-24, not re-checked on openrouter.ai since."
+    },
+    {
+      "match": "claude-sonnet-5-5*",
+      "provider": "anthropic",
+      "input_per_mtok": 2,
+      "output_per_mtok": 10,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "label": "vendor_price",
+      "as_of": "2026-10-23",
+      "note": "Anthropic list price for base input and output, read 2026-10-23 (cache and batch prices differ). Sonnet 5.5 counts tokens with a newer tokenizer than Haiku 4.5, so the same text can be a different number of tokens."
+    },
+    {
+      "match": "anthropic/claude-sonnet-5.5",
+      "provider": "openrouter",
+      "input_per_mtok": 2,
+      "output_per_mtok": 10,
+      "source": "https://openrouter.ai/api/v1/models",
+      "label": "vendor_price",
+      "as_of": "2026-10-23",
+      "note": "OpenRouter's listed price (GET /api/v1/models, read 2026-10-23); the same as the Anthropic list price."
     },
     {
       "match": "*",

@@ -88,7 +88,8 @@ func (s *server) handleExportReplay(c *gin.Context) {
 		s.exportFailed(c, "read the traces", err)
 		return
 	}
-	rec, err := recording.Build(traces, recording.Options{GitSHA: gitSHA, Version: version.Version, DefaultJudge: s.engineJudge()})
+	judge := s.engineJudge()
+	rec, err := recording.Build(traces, recording.Options{GitSHA: gitSHA, Version: version.Version, DefaultJudge: judge, Hosts: s.recordingHosts(judge)})
 	if errors.Is(err, recording.ErrNoJudge) {
 		abortAPI(c, http.StatusConflict, codeConflict,
 			"No exported trace has a deep audit that names its judge, and the audit engine reports none: widen since/until or raise limit to include audited traces.")
@@ -152,6 +153,25 @@ func (s *server) engineJudge() *recording.Judge {
 		return nil
 	}
 	return &recording.Judge{Provider: provider, Model: model, FallbackActive: r.GetJudgeFallbackActive()}
+}
+
+// recordingHosts are the hosts this gateway's traffic goes to (D203), which a recorded manifest
+// must name as vendor hosts: the decision endpoint it calls, the judge's host (its provider, and
+// for OpenRouter the shared TRUTHTABLE_OPENROUTER_BASE_URL) and the default upstream, which writes
+// generated answers. A host that is not a vendor's (mock-upstream in the e2e stacks) keeps the
+// export from the recorded label.
+func (s *server) recordingHosts(judge *recording.Judge) recording.Hosts {
+	var h recording.Hosts
+	if s.status != nil {
+		h.Decision = recording.HostOf(s.status.jevStatus().Endpoint)
+	}
+	if judge != nil && s.cfg != nil {
+		h.Judge = recording.JudgeHost(judge.Provider, s.cfg.Jev.OpenRouterBaseURL)
+	}
+	if s.cfg != nil {
+		h.Generated = recording.HostOf(s.cfg.UpstreamURL)
+	}
+	return h
 }
 
 func (s *server) exportFailed(c *gin.Context, what string, err error) {

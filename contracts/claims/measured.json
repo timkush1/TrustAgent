@@ -21,6 +21,13 @@
       "run_id": null,
       "system": "llm_same_checks"
     },
+    "llm_full_audit_usd_per_1k": {
+      "value": null,
+      "unit": "usd_per_1k",
+      "description": "Measured cost of a full claim-level LLM audit (decompose, then verify each claim), per 1,000 answers.",
+      "run_id": null,
+      "system": "llm_full_audit"
+    },
     "same_checks_cost_ratio": {
       "value": null,
       "unit": "multiplier",
@@ -59,7 +66,14 @@
     "ragtruth_qa_agreement": {
       "value": null,
       "unit": "fraction",
-      "description": "Balanced accuracy of the fast check on the RAGTruth-QA subset.",
+      "description": "Balanced accuracy of the fast check on the RAGTruth-QA subset, at TrustAgent's default thresholds.",
+      "run_id": null,
+      "system": "gate"
+    },
+    "ragtruth_qa_accuracy": {
+      "value": null,
+      "unit": "fraction",
+      "description": "Plain accuracy of the fast check on the RAGTruth-QA subset, at TrustAgent's default thresholds (the measure third-party tests report; not like for like with them).",
       "run_id": null,
       "system": "gate"
     },

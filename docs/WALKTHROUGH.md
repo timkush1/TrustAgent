@@ -103,7 +103,7 @@ graph LR
 
 | Service | Language | Job |
 |---|---|---|
-| **proxy** (the gateway) | Go 1.25, gin | The `/v1` LLM APIs, Tier 0 and Tier 1, policies, the REST API, the WebSocket stream, the audit queue, credentials, costs and budgets |
+| **proxy** (the gateway) | Go 1.26, gin | The `/v1` LLM APIs, Tier 0 and Tier 1, policies, the REST API, the WebSocket stream, the audit queue, credentials, costs and budgets |
 | **engine** | Python 3.11, LangGraph, gRPC | The deep audit: decompose an answer into claims, verify each against the evidence with an LLM judge, score it; the Studio's AI drafter; the optional knowledge base |
 | **postgres** | Postgres 16 | Traces, gate decisions, audits, policy versions, keys, encrypted credentials, the cost ledger, the admin audit log |
 | **dashboard** | React 19, served by nginx | Overview, Traffic, trace detail, Policies, Playground, Evaluators and the Studio, Savings, Settings |
@@ -134,6 +134,11 @@ can reach the stack unless you change it.
 The add-on ports (Qdrant, Ollama, Prometheus, Grafana, Redis) are in
 [ARCHITECTURE.md](ARCHITECTURE.md#ports). Why does the dashboard proxy the API? So the browser
 talks to one origin: no CORS configuration, and session cookies stay first-party.
+
+The always-on public demo is the one exception ([DEPLOY-DEMO.md](DEPLOY-DEMO.md)):
+`docker-compose.public.yml` adds Caddy, the only service with host ports there (80 and 443, with a
+Let's Encrypt certificate). It sends `/api`, `/ws` and `/health` straight to the gateway, so each
+visitor keeps their own address for the per-address limits, and answers 404 to `/v1`.
 
 ---
 
@@ -483,7 +488,9 @@ health checks, `127.0.0.1` binds and no fixed container names (use
 `docker compose exec <service>`; the engine service is `engine`). Profiles add `knowledge`,
 `local-llm`, `observability` and `redis`. Overlay files define the other stacks:
 `docker-compose.demo.yml` (the zero-key demo, project `truthtable-demo`), and overlays for e2e,
-onboarding, load tests, the recording run and the knowledge stack.
+onboarding, load tests, the recording run, the knowledge stack and the public demo
+(`docker-compose.public.yml`: the demo behind Caddy, read-only, on a 4 GB VM; the demo stack itself
+stays under 1 GB [estimate]).
 
 The app images are `ghcr.io/timkush1/truthtable-{proxy,engine,dashboard}:<version>`, the version
 defaulting to the `VERSION` file. **Build or pull:** on a release tag, `make demo` and `make up`
@@ -599,6 +606,7 @@ each workflow, and how to read a failure.
 make demo                         # the zero-key demo; opens the setup link
 make doctor ARGS="--expect demo"  # check every part of it
 make demo-down                    # stop it (make demo-clean also deletes its data)
+make public-demo-up               # the demo on a VM behind Caddy, read-only (DEPLOY-DEMO.md)
 
 make up                           # the real stack with your OpenRouter key
 make doctor                       # which fast-check backend is live and why, cost, keys, budgets

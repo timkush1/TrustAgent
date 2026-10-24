@@ -19,7 +19,7 @@ File:line references point at the analysed commits. If a line has moved, find it
   - Then make one "seams" commit. It changes no behaviour and holds every edit to a shared wiring file. After it, no two streams need the same file.
 - **Six parallel streams: GH, GS, GD, API, WEB, DX.**
   - Each works on branch `feat/v2-w4-<id>`, cut from `feat/v2-int4` after Step 0.
-  - Each has its own worktree at `/home/timkushmar/projects/TrustAgent-w4-<id>`.
+  - Each has its own worktree at `~/projects/TrustAgent-w4-<id>`.
 - **Three mid-wave checkpoints (CP-GS, CP-GH, CP-GD):**
   - The lead merges the stream's branch into `feat/v2-int4` once its checkpoint gate passes.
   - A stream that consumes the checkpoint then runs `git merge feat/v2-int4`.
