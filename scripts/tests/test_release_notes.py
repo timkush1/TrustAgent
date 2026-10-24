@@ -172,6 +172,17 @@ CLAIMS = {
 }
 
 
+README = """# TrustAgent
+
+## How it was built
+
+TrustAgent was built with AI coding agents (Claude Code) to plans the developer approved.
+Agents wrote the code. The developer merged the pull requests.
+
+## License
+"""
+
+
 def make_root(
     version: str = "2.0.0",
     changelog: str = CHANGELOG,
@@ -179,9 +190,11 @@ def make_root(
     measured: Dict[str, Any] = MEASURED,
     tape: Dict[str, Any] | None = None,
     claims_doc: Dict[str, Any] = CLAIMS,
+    readme: str = README,
 ) -> Path:
     tmp = Path(tempfile.mkdtemp(prefix="release-notes-"))
     (tmp / "VERSION").write_text(version + "\n", encoding="utf-8")
+    (tmp / "README.md").write_text(readme, encoding="utf-8")
     (tmp / "CHANGELOG.md").write_text(changelog, encoding="utf-8")
     (tmp / "LICENSE").write_text("MIT License\n\n" + licence, encoding="utf-8")
     claims = tmp / rn.CLAIMS_PATH
@@ -287,6 +300,69 @@ class ReleaseNotesTest(unittest.TestCase):
         self.assertNotIn("~$0.21", out)  # an estimate is not a measured figure
         self.assertIn(f"decision-model snapshot {SNAPSHOT}", out)
         self.assertIn("simulated tape", out)
+
+    def test_the_notes_say_how_it_was_built_in_the_readmes_words(self) -> None:
+        """D227 d, D230: the release page says it too, as the README, the PR body, the post and
+        the landing do, with the README's own first sentence and a link to the account."""
+        code, out, err = run(self.root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+        self.assertEqual(code, 0, err)
+        self.assertIn(
+            "## How it was built\n\nTrustAgent was built with AI coding agents (Claude Code) to "
+            "plans the developer approved. The whole account is in the [README]"
+            "(https://github.com/timkush1/TrustAgent/blob/v2.0.0/README.md#how-it-was-built).\n",
+            out,
+        )
+        self.assertLess(out.index("## How it was built"), out.index("## Numbers in this release"))
+        # The real README has the section, and its first sentence names the agents.
+        lines = rn.build_section(ROOT, "v2.0.0")
+        self.assertIn("built with AI coding agents (Claude Code)", lines[2])
+
+    def test_refuses_a_readme_that_does_not_say_how_it_was_built(self) -> None:
+        root = make_root(readme="# TrustAgent\n\n## License\n")
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("no '## How it was built' section", err)
+
+    def test_the_ece_after_calibration_says_its_value_before(self) -> None:
+        """D229: the held-out ECE is published before and after, as the README block says it."""
+        measured = copy.deepcopy(MEASURED)
+        for key, value in (("groundedness_ece_before", 0.0912), ("groundedness_ece_after", 0.041)):
+            measured["values"][key] = {
+                "value": value,
+                "unit": "fraction",
+                "description": "d",
+                "run_id": "20261102T100000Z-abc1234",
+                "system": "gate",
+            }
+        claims = copy.deepcopy(CLAIMS)
+        claims["claims"].append(
+            {
+                "id": "groundedness_ece_after_measured",
+                "text": "Our groundedness calibration error after calibration (ECE)",
+                "unit": "fraction",
+                "display": "{value}",
+                "label": "measured",
+                "measured_ref": "groundedness_ece_after",
+                "caveat": "Held out on RAGTruth-QA test; fitted on train.",
+            }
+        )
+        root = make_root(measured=measured, claims_doc=claims)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+        self.assertEqual(code, 0, err)
+        self.assertIn(
+            "- Our groundedness calibration error after calibration (ECE): 4.1% [measured] "
+            "(run 20261102T100000Z-abc1234). Before calibration: 9.1%. Held out on RAGTruth-QA "
+            "test; fitted on train.\n",
+            out,
+        )
+        # Without the value before, the after value stands as it did.
+        del measured["values"]["groundedness_ece_before"]
+        root = make_root(measured=measured, claims_doc=claims)
+        self.addCleanup(shutil.rmtree, root, True)
+        _, out, _ = run(root, "--tag", "v2.0.0", "--inspect", str(FIXTURE))
+        self.assertNotIn("Before calibration", out)
 
     def test_values_are_formatted_as_the_readme_and_the_post_say_them(self) -> None:
         self.assertEqual(rn.format_value(26.84, "multiplier"), "27")

@@ -10,10 +10,13 @@ The notes are Markdown on stdout, in this order:
 1. The CHANGELOG.md section of the tag's version, without its heading (the release title says it)
    and without its "Build log by phase" (a link to the tagged CHANGELOG replaces it). Relative
    links become links into the tagged tree, so they work on the release page.
-2. "Numbers in this release": every measured figure with its [measured] label, the run and the
-   decision-model snapshot, from contracts/claims/measured.json and value-claims.v1.json; only a
-   measured run with mock:false counts. The demo tape's kind (recorded or simulated) is named too.
-3. "Images": each image's digest and platforms, read anonymously with
+2. "How it was built": the first sentence of the README's "How it was built" section (built with
+   AI coding agents, D227 d and D230) and a link to the whole account in the tagged README;
+   refused when the README has no such section.
+3. "Numbers in this release": every measured figure with its [measured] label, the run and the
+   decision-model snapshot, from contracts/claims/measured.json and value-claims.v1.json (the ECE
+   after calibration with its value before); only a measured run with mock:false counts. The demo tape's kind (recorded or simulated) is named too.
+4. "Images": each image's digest and platforms, read anonymously with
    ``docker buildx imagetools inspect --format '{{json .Manifest}}'`` (DOCKER_CONFIG points at an
    empty directory, so no saved login is used: what a stranger can pull is what is listed), then
    the commands that verify them (``gh attestation verify`` per digest).
@@ -66,6 +69,8 @@ BUILD_LOG_HEADING = re.compile(r"^### Build log by phase\s*$", re.MULTILINE)
 # A Markdown link or image target that is relative to the repository (not a URL, not an anchor).
 RELATIVE_LINK = re.compile(r"(\]\()(?!https?://|mailto:|#)([^)\s]+)(\))")
 OWNER_PLACEHOLDER = "{{OWNER_LEGAL_NAME}}"
+README_PATH = "README.md"
+BUILD_HEADING = "## How it was built"
 MEASURED_PATH = "contracts/claims/measured.json"
 CLAIMS_PATH = "contracts/claims/value-claims.v1.json"
 RECORDED_MANIFEST = "frontend-react/demo-data/recorded/manifest.json"
@@ -141,6 +146,30 @@ def release_body(body: str, tag: str) -> str:
     base = f"{REPO_URL}/blob/{tag}/"
     body = RELATIVE_LINK.sub(lambda m: f"{m.group(1)}{base}{m.group(2)}{m.group(3)}", body)
     return body.strip()
+
+
+def build_section(root: Path, tag: str) -> List[str]:
+    """How TrustAgent was built (D227 d, D230), in the README's own words: the first sentence of
+    its "How it was built" section, then a link to the whole account in the tagged tree. Refused
+    when the README has no such section: every public text says it."""
+    try:
+        readme = (root / README_PATH).read_text(encoding="utf-8")
+    except OSError:
+        readme = ""
+    m = re.search(rf"(?m)^{re.escape(BUILD_HEADING)}[ \t]*\n+((?:[^\n#].*\n?)+)", readme)
+    paragraph = " ".join(m.group(1).split()) if m else ""
+    sentence = re.match(r"(.+?[.!?])(?:\s|$)", paragraph)
+    if not sentence:
+        raise Refused(
+            f"{README_PATH} has no '{BUILD_HEADING}' section to quote: every public text says how "
+            "TrustAgent was built (D227, D230)"
+        )
+    link = f"{REPO_URL}/blob/{tag}/{README_PATH}#how-it-was-built"
+    return [
+        BUILD_HEADING,
+        "",
+        f"{sentence.group(1)} The whole account is in the [README]({link}).",
+    ]
 
 
 # ------------------------------------------------------------------------------ images
@@ -292,22 +321,35 @@ def _read_json(root: Path, rel: str) -> Optional[Any]:
         raise UsageError(f"{rel}: {exc}") from None
 
 
+def _number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def measured_note(measured: Dict[str, Any], ref: str, unit: str) -> str:
-    """The 95% interval with n per class (D212), as scripts/check-claims.mjs writes it; or ""."""
+    """What a measured figure says before its caveat, as scripts/check-claims.mjs writes it: the
+    95% interval with n per class (D212), and beside an "after" value the value before
+    calibration (D229: the held-out ECE is published before and after); or "". No final period."""
+    parts: List[str] = []
     iv = (measured.get("intervals") or {}).get(ref)
-    if not isinstance(iv, dict):
-        return ""
-    lo, hi = iv.get("lo"), iv.get("hi")
-    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (lo, hi)):
-        return ""
-    method = INTERVAL_METHODS.get(iv.get("method"), str(iv.get("method") or ""))
-    if iv.get("method") == "bootstrap" and iv.get("resamples"):
-        method = f"{method}, {iv['resamples']} resamples"
-    text = f"95% interval {format_value(lo, unit)} to {format_value(hi, unit)} ({method})"
-    n_pos, n_neg = iv.get("n_pos"), iv.get("n_neg")
-    if isinstance(n_pos, int) and isinstance(n_neg, int):
-        text += f"; {n_pos} answers with a hallucination and {n_neg} without"
-    return text
+    if isinstance(iv, dict) and _number(iv.get("lo")) and _number(iv.get("hi")):
+        method = INTERVAL_METHODS.get(iv.get("method"), str(iv.get("method") or ""))
+        if iv.get("method") == "bootstrap" and iv.get("resamples"):
+            method = f"{method}, {iv['resamples']} resamples"
+        text = (
+            f"95% interval {format_value(iv['lo'], unit)} to {format_value(iv['hi'], unit)} "
+            f"({method})"
+        )
+        n_pos, n_neg = iv.get("n_pos"), iv.get("n_neg")
+        if isinstance(n_pos, int) and isinstance(n_neg, int):
+            text += f"; {n_pos} answers with a hallucination and {n_neg} without"
+        parts.append(text)
+    if ref.endswith("_after"):
+        before = ((measured.get("values") or {}).get(f"{ref[: -len('_after')]}_before") or {}).get(
+            "value"
+        )
+        if _number(before):
+            parts.append(f"Before calibration: {format_value(before, unit)}")
+    return ". ".join(parts)
 
 
 def cost_conditions_key(measured: Dict[str, Any], ref: Any) -> Optional[str]:
@@ -531,6 +573,7 @@ def build_notes(
             f"the image digests come from {canned}, not the registry: the notes say so at the top"
         )
     out += [release_body(body, tag), ""]
+    out += build_section(root, tag) + [""]
     out += numbers_section(root) + [""]
     out += images_section(found, tag)
     return "\n".join(out).rstrip() + "\n", warnings
