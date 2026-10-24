@@ -758,8 +758,8 @@ def region_note(region: str, systems: Sequence[str]) -> Optional[str]:
         return None
     return (
         f"region {region or DEFAULT_REGION}: a published gate latency would say "
-        f'"region {region or DEFAULT_REGION}". Set BENCH_REGION to where this runs (israel on '
-        "the laptop, cloud-<region> in the cloud session, D225)"
+        f'"region {region or DEFAULT_REGION}". Set BENCH_REGION to where this runs (the region or country '
+        "on a laptop, cloud-<region> in the cloud session, D225)"
     )
 
 

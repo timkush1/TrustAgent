@@ -121,7 +121,7 @@ KEY_RESERVE_USD = 0.10
 # The key's usage settles this long after the last call before it is read (D208).
 SETTLE_S = 30.0
 # The gateway's daily caps reset at 00:00 UTC (D208): an attempt that crossed it could spend its
-# caps twice, so none starts this close to it (cards never cross 03:00 Israel time).
+# caps twice, so none starts this close to it (cards never cross 03:00 in the owner's local time).
 MIDNIGHT_GUARD_MIN = 60
 # What one pass costs at list prices (an estimate; the caps bound it whatever happens).
 ESTIMATE_USD_PER_PASS = 0.5

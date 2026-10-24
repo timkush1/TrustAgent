@@ -499,7 +499,7 @@ def test_the_default_region_is_named_before_anything_is_spent(
     assert 'note        region local: a published gate latency would say "region local"' in out
     assert "Set BENCH_REGION" in out
 
-    assert bench.main(_run_args(tmp_path, dataset, fake, "--dry-run", "--region", "israel")) == 0
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--dry-run", "--region", "eu-west")) == 0
     assert "Set BENCH_REGION" not in capsys.readouterr().out
     # Without the gate there is no latency to place.
     args = _run_args(tmp_path, dataset, fake, "--dry-run", "--systems", "llm_same_checks")
