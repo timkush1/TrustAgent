@@ -11,7 +11,7 @@
 # (pyproject.toml, __init__.py, package.json, package-lock.json, version.go and the compose default
 # image tag), renames the CHANGELOG "Unreleased — X.Y.Z" heading and regenerates the recording.
 # RELEASE_DATE (YYYY-MM-DD, default today) dates that heading: the 2.0.0 bump passes the planned
-# tag date, since it is made on the P6b branch before the tag, never at Gate A (P6 D234).
+# tag date, since it is made on the release branch days before the tag, never at Gate A (D234).
 V       ?=
 DRY_RUN ?=
 RELEASE_TAG ?=

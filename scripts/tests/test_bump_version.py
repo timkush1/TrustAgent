@@ -298,9 +298,9 @@ class RecordedTapeTest(unittest.TestCase):
 
 
 class MakeTargetTest(unittest.TestCase):
-    """make version-bump passes RELEASE_DATE as --date: the 2.0.0 bump is made on the P6b branch
-    before the tag, so its CHANGELOG heading carries the planned tag date, not the day of the
-    bump (P6 D234)."""
+    """make version-bump passes RELEASE_DATE as --date: the 2.0.0 bump is made on the branch the
+    release is prepared on, days before the tag, so its CHANGELOG heading carries the planned tag
+    date, not the day of the bump (D234)."""
 
     def test_the_target_passes_the_release_date(self) -> None:
         release_mk = (ROOT / "mk" / "release.mk").read_text(encoding="utf-8")
