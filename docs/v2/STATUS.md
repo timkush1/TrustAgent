@@ -8,21 +8,18 @@ D220 to D233 record the move to the cloud and the review rounds of 23 October).
 
 ## Where things stand
 
-- **`feat/v2-jev-gateway` holds everything.** All of v2 (phases P0 to P5), the CI fixes since,
-  the dependency-security update (Go 1.26 toolchain, gRPC 1.84, LangGraph 1.x and the other Python
-  updates, a narrow Trivy secret allow-list; PR #45, every check green) and the finished P6a
-  preparation. **Build on this branch.**
-- **`main`** holds v2 P0 to P5 and the CI fixes. It gets the rest when the owner merges pull
-  request [#46](https://github.com/timkush1/TrustAgent/pull/46) on GitHub (A-8). Until then public `main` has no "How it was built" disclosure,
-  README demo links that point at a Pages site that is not on yet, and a few local paths and a
-  personal address in old design notes (D220, D223); the PR fixes all of that in the tree. It
-  carries no 2.0.0: the version stays 1.0.0 until the release (D234).
+- **`main` holds everything** since the owner merged pull request
+  [#46](https://github.com/timkush1/TrustAgent/pull/46) on 24 October 2026: all of v2 (phases P0
+  to P5), the CI fixes, the dependency-security update (Go 1.26 toolchain, gRPC 1.84, LangGraph
+  1.x and the other Python updates, a narrow Trivy secret allow-list; PR #45) and the finished P6a
+  preparation. Every GitHub check passed on the pull request. It carries no 2.0.0: the version
+  stays 1.0.0 until the release (D234).
 - **P6a passed Gate A on 24 October 2026.** Every paid command was rehearsed against mocks: each
   is a dry run until `CONFIRM=1`, has a dollar cap, reads the key's remaining credit, and refuses to
   label mock or non-vendor output as measured or recorded. Four review rounds plus a final round:
   the independent verifier (`make check`, scanners, no key anywhere) and the task-coverage check
-  passed; the launch-honesty review's last two findings are owner decisions, listed under "Before
-  you merge" below. Not re-run: R-5 (the public demo under `docker stats`), planned for the cloud
+  passed; the launch-honesty review's last two findings were owner decisions, settled before the
+  merge (the licence holder, private vulnerability reporting on). Not re-run: R-5 (the public demo under `docker stats`), planned for the cloud
   session before C14.
 - **What is left is P6b and P6c:** measure with the owner's OpenRouter key (capped at $8),
   publish the measured numbers, release v2.0.0, and post on LinkedIn.
@@ -31,11 +28,11 @@ D220 to D233 record the move to the cloud and the review rounds of 23 October).
 
 | Branch | What it holds |
 |---|---|
-| `feat/v2-jev-gateway` | **Build on this.** Everything, including P6a. Claude pushes here. |
-| `main` | The public default branch. It moves only when the owner merges a pull request on GitHub (D220). |
-| `feat/v2-int7`, `feat/v2-w7-{meas,vend,ship,cloud}` | The P6a integration and stream branches, all merged. History only. |
-| `fix/deps-security` | The dependency-security fix (PR #45), already inside `feat/v2-jev-gateway`. |
-| `v1.0.0` (tag) | TrustAgent 1.0.0, the async auditor of June 2026. |
+| `main` | **Build on this.** The public default branch. It moves only when the owner merges a pull request on GitHub (D220). |
+| `feat/v2-jev-gateway` | The development branch Claude pushes to; same content as `main` after each merge. |
+
+The P6a branches, the dependency-fix branch and the old Dependabot and Copilot branches were
+deleted on 24 October 2026 after their work reached `main`.
 
 ## Phase status
 
@@ -66,20 +63,14 @@ push tags or merge into `main`; those stay on GitHub's web pages, which work fro
 
 ## What only the owner can do, in order
 
-### Before you merge the pull request (5 minutes)
+### Done on 24 October 2026
 
-1. **Your legal name for the licence: done** (24 October 2026). `LICENSE`,
-   `frontend-react/package.json` and `backend-python/pyproject.toml` name **Tim Kushmaro**.
-2. **Turn on private vulnerability reporting:** repository **Settings → Code security → Private
-   vulnerability reporting → Enable**. The new `SECURITY.md`, `CONTRIBUTING.md` and issue forms
-   send security reports there, and it is off today.
-3. **Your interview talking points: private (done, 24 October 2026, H-7).** They left the
-   repository and are kept by the owner outside it.
-
-### Then: merge the pull request
-
-Open https://github.com/timkush1/TrustAgent/pull/46 → **Merge pull request** → **Create a merge commit** → Confirm. That brings
-everything above onto `main` (PR #45 then shows as merged too).
+- The licence holder is **Tim Kushmaro** (`LICENSE`, `frontend-react/package.json`,
+  `backend-python/pyproject.toml`).
+- Private vulnerability reporting is on (Settings → Code security).
+- The interview talking points and other private material are kept outside the repository (H-7);
+  the public plan names no private files, location or credentials.
+- Pull request #46 is merged; the 14 outdated Dependabot and Copilot pull requests are closed.
 
 ### S1: no money, about 45 minutes (P6-PLAN §10)
 
@@ -157,6 +148,10 @@ line ok/…"**.
 - **CI status and logs:** the public GitHub API or `gh`; there is no `$ORCH/ci_logs.py` (D220).
 - **Long commands** (bench, record, CI waits) run in the background; a foreground command stops
   after 10 minutes.
+- **Dependabot's Go updater fails** (`git_dependencies_not_reachable` for
+  `github.com/truthtable/backend-go`): it cannot follow the local `replace` of the `contracts`
+  module. Builds and tests are unaffected; Go modules are updated by hand meanwhile. Fix it or drop
+  the `gomod` entry in `.github/dependabot.yml`.
 - **Open P7 note** (SPEC H-20): `export-replay` takes the vendor hosts a caller passes for a
   recorded tape on trust beyond the mock cross-check.
 
