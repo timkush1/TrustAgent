@@ -227,15 +227,17 @@ class PostTest(unittest.TestCase):
         )
         # D229: what the cost was measured on, and the judge the ratio compares with, by name.
         self.assertIn(f"The benchmark: {COST_CONDITIONS}; cost grows with document length.", out)
+        # The cost above is the fast check's alone: the LLM audit is said to cost extra.
+        self.assertIn("get a claim-by-claim LLM audit, at extra cost.", out)
         # D205: the median is the benchmark's, with how it was taken; the ratio is rounded.
         self.assertIn(
             f"took 241 ms at the median ({CONDITIONS}) and was 27× cheaper than Claude Haiku 4.5 "
-            "asking the same questions [measured].",
+            "on the same questions [measured].",
             out,
         )
         # First person throughout: the post never hints at a team.
-        self.assertIn("Mine above come from one benchmark run on 2026-10-24.", out)
-        self.assertNotRegex(out, r"\b(Our|our) own\b")
+        self.assertIn("Mine come from one benchmark run on 2026-10-24.", out)
+        self.assertNotRegex(out, r"\b([Oo]ur|[Oo]urs|[Ww]e)\b")
         self.assertIn("risky answers plus a small sample get a claim-by-claim LLM audit", out)
         self.assertNotRegex(out, r"\{[a-z][a-z0-9_.:]*\}", "every placeholder is filled")
 
@@ -355,19 +357,20 @@ class PostTest(unittest.TestCase):
             text,
         )
         self.assertIn(
-            "matched the human labels on 80.4% (95% interval 75.2% to 84.8%) [measured]", text
+            "matched the human labels on 80.4% of answers (95% interval 75.2% to 84.8%) [measured]",
+            text,
         )
         self.assertIn("balanced accuracy 78.1% (73.3% to 82.6%) [measured]", text)
         # D233: the thresholds the bench really flags at (each evaluator's warn_at), where the
         # groundedness one came from, and Arize's two figures, said not to be like for like.
         self.assertIn(
             "It flags at groundedness 0.8 (Arize's tuned cutoff on RAGTruth itself, which may "
-            "favour it) or contradiction 0.7.",
+            "favour my figure) or contradiction 0.7.",
             text,
         )
         self.assertIn(
-            "Arize's test of Jev, one question worded differently: 76% at 0.5 [third-party], "
-            "87% at a tuned 0.80 [third-party]. Not like for like;",
+            "Arize asked Jev one question, worded differently from mine: 76% at 0.5 "
+            "[third-party], 87% at a tuned 0.80 [third-party]. Not like for like;",
             text,
         )
         self.assertNotRegex(text, r"(?i)same (model|threshold)|not TrustAgent's doing")
@@ -401,6 +404,21 @@ class PostTest(unittest.TestCase):
             out,
         )
         self.assertNotIn("the judge's cost", out)
+
+    def test_two_computed_costs_are_said_once(self) -> None:
+        measured = copy.deepcopy(MEASURED)
+        for key in ("fast_check_usd_per_1k", "llm_same_checks_usd_per_1k"):
+            measured["sources"][key]["cost_source"] = "computed"
+        root = make_root(measured=measured)
+        self.addCleanup(shutil.rmtree, root, True)
+        code, out, err = run(root)
+        self.assertEqual(code, 0, err)
+        self.assertIn(
+            f"The benchmark: {COST_CONDITIONS}; both costs are tokens × price; cost grows with "
+            "document length.",
+            out,
+        )
+        self.assertNotIn("the fast check's cost is", out)
 
     def test_an_opening_counts_as_linkedin_counts(self) -> None:
         root = make_root()
@@ -438,7 +456,8 @@ class PostTest(unittest.TestCase):
 
     def test_the_post_fits_linkedin_with_room_to_spare(self) -> None:
         """D229: realistic values (the real refund scenario, a long cloud region and snapshot)
-        leave the post well inside LinkedIn's 3,000 characters, roles line and agreement in."""
+        leave the post well inside LinkedIn's 3,000 characters, roles line and agreement in,
+        whether the vendor reported the costs or they were computed (the longer wording)."""
         scenarios = json.loads((ROOT / "contracts/demo/scenarios.v1.json").read_text("utf-8"))
         refund = next(s for s in scenarios["scenarios"] if s["id"] == "refund-contradiction-flag")
         answer = refund["response"]
@@ -458,13 +477,17 @@ class PostTest(unittest.TestCase):
         measured["sources"]["fast_check_usd_per_1k"][
             "conditions"
         ] = "RAGTruth-QA test split, n=200, about 1,240 input tokens per answer"
-        root = make_root(measured=measured, trace=trace)
-        self.addCleanup(shutil.rmtree, root, True)
-        code, out, err = run(root, "--roles")
-        self.assertEqual(code, 0, err)
-        self.assertIn("matched the human labels", out, "the agreement paragraph is in")
-        self.assertIn(answer.rstrip("."), out)
-        self.assertLessEqual(lp.post_length(out), lp.MAX_POST_CHARS - 100, out)
+        for cost_source in ("reported", "computed"):
+            for key in ("fast_check_usd_per_1k", "llm_same_checks_usd_per_1k"):
+                measured["sources"][key]["cost_source"] = cost_source
+            root = make_root(measured=measured, trace=trace)
+            self.addCleanup(shutil.rmtree, root, True)
+            code, out, err = run(root, "--roles")
+            self.assertEqual(code, 0, err)
+            self.assertIn("matched the human labels", out, "the agreement paragraph is in")
+            self.assertIn(answer.rstrip("."), out)
+            self.assertEqual(cost_source == "computed", "tokens × price" in out, cost_source)
+            self.assertLessEqual(lp.post_length(out), lp.MAX_POST_CHARS - 100, cost_source)
         self.assertLess(lp.MAX_POST_CHARS, lp.LINKEDIN_MAX_CHARS)
 
     def test_a_post_longer_than_linkedin_takes_is_refused(self) -> None:

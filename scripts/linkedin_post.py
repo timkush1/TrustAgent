@@ -345,6 +345,7 @@ COMPUTED_COSTS = (
     ("fast_check_usd_per_1k", "the fast check's cost is tokens × price"),
     ("llm_same_checks_usd_per_1k", "the judge's cost is tokens × price"),
 )
+BOTH_COMPUTED = "both costs are tokens × price"
 
 
 def cost_conditions(src: Sources) -> Optional[str]:
@@ -361,6 +362,9 @@ def cost_conditions(src: Sources) -> Optional[str]:
         for key, words in COMPUTED_COSTS
         if (sources.get(key) or {}).get("cost_source") == "computed"
     ]
+    if len(computed) == len(COMPUTED_COSTS):
+        # Both computed: said once, so the post keeps its room under MAX_POST_CHARS.
+        computed = [BOTH_COMPUTED]
     return "; ".join([text.strip(), *computed])
 
 
@@ -455,12 +459,12 @@ def agreement(src: Sources) -> Tuple[Optional[str], List[str]]:
         acc_words = f"{acc_int[0]}, {_answers(acc_int[1])}"
         bal_words = f"{bal_int[0]}, {_answers(bal_int[1])}"
     text = (
-        f"{sample}, the fast check matched the human labels on {show(accuracy, 'fraction')} "
-        f"({acc_words}) [measured]; balanced accuracy {show(balanced, 'fraction')} ({bal_words}) "
-        f"[measured]. It flags at groundedness {thresholds['groundedness']} (Arize's tuned cutoff "
-        f"on RAGTruth itself, which may favour it) or contradiction "
-        f"{thresholds['contradiction']}. Arize's test of Jev, one question worded differently: "
-        f"{arize}. Not like for like; RAGTruth is public, so the model may have seen it in "
+        f"{sample}, the fast check matched the human labels on {show(accuracy, 'fraction')} of "
+        f"answers ({acc_words}) [measured]; balanced accuracy {show(balanced, 'fraction')} "
+        f"({bal_words}) [measured]. It flags at groundedness {thresholds['groundedness']} "
+        f"(Arize's tuned cutoff on RAGTruth itself, which may favour my figure) or contradiction "
+        f"{thresholds['contradiction']}. Arize asked Jev one question, worded differently from "
+        f"mine: {arize}. Not like for like; RAGTruth is public, so Jev may have seen it in "
         f"training."
     )
     return text, []
