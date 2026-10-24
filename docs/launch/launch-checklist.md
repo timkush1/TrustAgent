@@ -60,6 +60,11 @@ paid runs and the release steps run from a Claude cloud session (D221).
       environment's variables only.
 - [ ] **Handoff**: `docs/v2/STATUS.md` rewritten for the cloud session; int7 merged into
       `feat/v2-jev-gateway` and both pushed.
+- [ ] **The pull request into `main`** (A-8, D220), opened by the lead right after Gate A from
+      `feat/v2-jev-gateway`, and merged by the owner with **Create a merge commit**. Public `main`
+      then says how TrustAgent was built (the README "How it was built" section, the landing's
+      build line, talking-points story 11), passes the hygiene grep, points its demo links at
+      `make demo` until Pages is on, and no longer calls our accuracy like for like.
 
 ## S2: the measured run and the recording (owner in the loop)
 
@@ -92,10 +97,17 @@ paid runs and the release steps run from a Claude cloud session (D221).
       are committed (mode R: the subset in terms-check.md only).
       `python3 scripts/check_recording.py frontend-react/demo-data/recorded --require-recorded`
       passes.
-- [ ] **C2 fill and look**: `make claims-write`; `make og`; `make hero-gif`; `make screenshots`;
-      `make launch-video`; `make linkedin-post`; the README Roadmap and Known limits brought up to
-      date. The session sends the card, the GIF, the video and the post text; the owner opens them
-      and says "looks good" (or names a change).
+- [ ] **C2 fill and look**: `make claims-write`; `make og`; `make hero-gif`; `make screenshots`,
+      then the README words about the pictures (mode A): the Screenshots line "Every picture below
+      is **Simulated**", the `<sub>` under the top picture and the `alt` texts say Recorded, with
+      the tape's date and snapshot; `make launch-video`; `make linkedin-post`; the README Roadmap
+      and Known limits brought up to date.
+- [ ] **The demo links back on the site** (both modes, before the release PR): every link that
+      the `pages-pending` comment in `README.md` and in `docs/DEMO.md` lists points at
+      `https://timkush1.github.io/TrustAgent/` again, and both comments are deleted
+      (`make check-claims-launch` refuses one left, D220).
+- [ ] **The owner has looked**: the session sends the card, the GIF, the video and the post text;
+      the owner opens them and says "looks good" (or names a change).
 - [ ] **C3 records**: the dated SPEC Appendix D rows (PKCE, vendor shapes, prices, licences,
       market signals), Appendix H, the JEV-ACCESS PKCE status, [terms-check.md](terms-check.md),
       the licence name.
@@ -109,7 +121,12 @@ paid runs and the release steps run from a Claude cloud session (D221).
       claim with an open `reverify`, the market lines in
       [interview-talking-points.md](interview-talking-points.md) dated or deleted.
 
-## S3a: settings and the pull request
+## S3a: the results to TypeSafe, settings and the pull request
+
+- [ ] **Mode A: C5a, the results to TypeSafe** once the release branch is pushed (C5): the
+      measured figures with their labels, the link to the published run and the post's final text,
+      emailed by the owner as the courtesy note promised; the date written in
+      [terms-check.md](terms-check.md). The post waits at least 3 days from that date.
 
 - [ ] **G9 settings**: merge commits allowed; Pages source GitHub Actions; the `github-pages`
       environment allows `main` and the tag rule `v*`; the minimal `main` ruleset (no deletion,
@@ -158,9 +175,10 @@ paid runs and the release steps run from a Claude cloud session (D221).
       themes: the banner says Recorded (mode A), the first-visit guide reaches the caught answer,
       and every README badge and link opens (the live check with a key is G11's).
 - [ ] **Post Inspector** shows the card from `og.png` for the site URL.
-- [ ] **Mode A: the results went to TypeSafe** at least 3 days before the post, as the courtesy
-      note said they would (the measured figures, the link to the published run and the post's
-      text); the date is in [terms-check.md](terms-check.md). Tag TypeSafe only if they said yes.
+- [ ] **Mode A: at least 3 days since C5a**: the results went to TypeSafe at least 3 days before
+      the post, as the courtesy note said they would (the measured figures, the link to the
+      published run and the post's text); the date is in [terms-check.md](terms-check.md). Tag
+      TypeSafe only if they said yes.
 - [ ] **The post**: `make linkedin-post` (with `ROLES=1` if the owner chose the roles line,
       `RESTRICTED=1` in mode R; `CLIP=1` on the laptop). It exits 1 on any missing value and
       refuses a post over 2,800 characters or a first line that would hide behind "…see more";
@@ -169,6 +187,8 @@ paid runs and the release steps run from a Claude cloud session (D221).
       on, the example says where its answer came from, Jev is credited to TypeSafe AI, the ratio
       names the judge, the agreement names the thresholds the bench flags at and stands beside
       Arize's two figures, said not to be like for like (D233), or is left out, and the "built with AI coding agents" line is the owner's. Posted with the 4:5
-      video as its media, the Haqq link as the first comment ([linkedin-post.md](linkedin-post.md)).
+      video as its media.
+- [ ] **Mode A: the first comment**, right after posting: the Haqq link the post promises,
+      https://www.haqq.ai/blog/jev-legal-ai-hallucination-detection ([linkedin-post.md](linkedin-post.md)).
 - [ ] **Afterwards**: every measurement key deleted or limited to its usage plus a little, and gone
       from the cloud environment; the laptop's push token kept or deleted, as the owner chooses.

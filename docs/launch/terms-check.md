@@ -44,8 +44,9 @@ prompts and says nothing about benchmarks.
 - **Mode A** (no clause found in any document, the Master Customer Agreement included, or written
   permission): the full plan runs. The owner sends the courtesy note (an FYI, whether TypeSafe may
   be tagged in the post, and the promise to send the results at least 3 days before posting).
-  Note the date it was sent, the date the results went (S3c of the launch checklist) and any reply
-  here.
+  Note the date it was sent, the date the results went (step C5a of the plan, once the release
+  branch is pushed: the measured figures, the link to the published run and the post's final
+  text; the post waits at least 3 days from it) and any reply here.
 - **Unread counts as unsure** (D231): if the Master Customer Agreement could not be found or
   opened, or it is unclear which terms OpenRouter's Jev page binds its users to, the mode is W,
   however little the other pages say. A search that found nothing is not a reading of the
@@ -67,7 +68,7 @@ Correspondence (dates only; the messages themselves stay out of the repository):
 |---|---|---|
 | TO FILL | sent | courtesy note or permission request |
 | TO FILL | received | reply, or "no reply after seven days" |
-| TO FILL | sent | mode A: the results, at least 3 days before the post |
+| TO FILL | sent | mode A: the results (C5a: figures, run link, post text), at least 3 days before the post |
 
 ## Dataset licences
 
