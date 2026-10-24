@@ -148,7 +148,7 @@ line ok/…"**.
 - **CI status and logs:** the public GitHub API or `gh`; there is no `$ORCH/ci_logs.py` (D220).
 - **Long commands** (bench, record, CI waits) run in the background; a foreground command stops
   after 10 minutes.
-- **Two Dependabot updaters fail; nothing else does** (checks on `main` after #46: 28 passed).
+- **Two Dependabot updaters fail; nothing else does** (checks on `main` after #46: 25 passed, 3 release-only jobs skipped).
   The Go one (`git_dependencies_not_reachable` for `github.com/truthtable/backend-go`) cannot
   follow the local `replace` of the `contracts` module. The Python one stops at its own resolver:
   it keeps every other locked version fixed and then finds `qdrant-client` 1.16.2 asking for

@@ -710,10 +710,10 @@ Following CLAUDE.md: add this as Phase 8 in `docs/PLAN.md`, change the proto via
 
 ## 12. Access and credentials
 
-- **Git:** no token was needed. This was read-only work with no push or pull. The remote is `https://github.com/timkush1/TrustAgent.git`, the credential helper is `store` (the token is kept in plain text in `~/.git-credentials`), and `gh` is not installed.
+- **Git:** no token was needed. This was read-only work with no push or pull. The remote is `https://github.com/timkush1/TrustAgent.git`, and `gh` is not installed.
   - If a later push fails with 401/403, create a fine-grained token at https://github.com/settings/personal-access-tokens/new.
   - Give it access to `timkush1/TrustAgent` only, with Contents: Read and write (add Pull requests: Read and write if you want PRs opened).
-  - Then replace the old token in the `https://timkush1:<TOKEN>@github.com` line of `~/.git-credentials`, or delete that line and paste the new token as the password on the next `git push`.
+  - Then replace the stored credential in your git credential helper (a credential manager, not plain-text storage), or paste the new token as the password on the next `git push`.
 - **Jev through OpenRouter:** create a key at https://openrouter.ai/settings/keys and add prepaid credits (otherwise requests get 402).
   - Put `OPENROUTER_API_KEY=...` in the repo-root `.env`, which is gitignored at `.gitignore:15`.
   - Pass it into both services in `docker-compose.yml`.
