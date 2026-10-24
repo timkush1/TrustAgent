@@ -273,7 +273,7 @@ describe('validate.mjs', () => {
       c.claims.find((x) => x.id === 'studio_draft_cost_estimate').per_unit_of = 'no_such_figure';
       // D168: the cost of one call is its tokens at the price claim, to two significant digits.
       c.claims.find((x) => x.id === 'hero_card_cost_usd').value = 0.0002;
-      c.claims.find((x) => x.id === 'llm_full_audit_cost_per_1k').tokens_x_price = { input_tokens: 10, price_claim: 'hero_card_latency_ms' };
+      c.claims.find((x) => x.id === 'llm_full_audit_cost_per_1k').tokens_x_price = { input_tokens: 10, price_claim: 'jev_p50_latency_openrouter' };
     });
     sb.edit('claims/compare.v1.json', (c) => {
       c.rows[0].cells.inline = { value: 'yes', vendor: 'Langfuse', text: 'Runs as a hosted service.', source_url: null, as_of: null, reviewed: false };
@@ -287,7 +287,7 @@ describe('validate.mjs', () => {
     assert.match(r.out, /studio_draft_cost_estimate: per_unit_of no_such_figure is neither a usd_per_1k claim nor a figure/);
     assert.match(r.out, /hero_card_cost_usd: value 0\.0002 must be 565 tokens × jev_input_price_per_mtok \(0\.042 per million\) = 0\.000024/);
     assert.match(r.out, /llm_full_audit_cost_per_1k: tokens_x_price needs unit usd/);
-    assert.match(r.out, /llm_full_audit_cost_per_1k: tokens_x_price\.price_claim hero_card_latency_ms is not a usd_per_mtok claim with a value/);
+    assert.match(r.out, /llm_full_audit_cost_per_1k: tokens_x_price\.price_claim jev_p50_latency_openrouter is not a usd_per_mtok claim with a value/);
     assert.match(r.out, /observability_judge\.inline: a yes cell needs the source_url it was read from and as_of/);
     assert.match(r.out, /guardrails\.self_hosted: a partial cell says what the vendor documents \(text\)/);
     assert.match(r.out, /cloud_groundedness: no cell for column explanations/);
@@ -299,6 +299,8 @@ describe('validate.mjs', () => {
       c.rows[1].cells.inline.vendor = 'Someone Else';
       c.rows[2].cells.cost_class.vendor = null;
       c.rows[3].cells.explanations.text = 'Not documented (as of 2026-10-10): scores only.';
+      // The vendor is shown beside the text, so the text never names it (D169).
+      c.rows[3].cells.cost_class.text = `${c.rows[3].cells.cost_class.vendor} says it is cheap.`;
     });
     const v = run(vend.root);
     assert.equal(v.code, 1, v.out);
@@ -306,6 +308,7 @@ describe('validate.mjs', () => {
     assert.match(v.out, /guardrails\.inline: vendor Someone Else is not in the row's examples/);
     assert.match(v.out, /cloud_groundedness\.cost_class: a varies cell names the vendor whose docs it cites \(vendor\)/);
     assert.match(v.out, /small_model_evaluators\.explanations: the text says what the docs say; "Not documented" is the value not_documented/);
+    assert.match(v.out, /small_model_evaluators\.cost_class: the text names the vendor Galileo, which is shown beside it/);
     // reviewed is a boolean (schema).
     const other = sandbox();
     other.edit('claims/compare.v1.json', (c) => {
@@ -750,6 +753,85 @@ describe('validate.mjs', () => {
     assert.match(r.out, /\{claim:nope\} is not in claims\/value-claims\.v1\.json/);
   });
 
+  test('bench publish rules hold for published runs, measured.json and the fixtures (D203, D204, D212)', () => {
+    const sb = sandbox();
+    // A schema-valid published run on two snapshots is refused by the publish rules.
+    sb.write('docs/benchmarks/results/refused-snapshots.json', sb.read('fixtures/bench/run.refused.mixed_snapshot.json'), sb.repo);
+    // A refusal fixture that breaks nothing, and a publishable one that breaks a rule.
+    sb.write('fixtures/bench/run.refused.dirty.json', sb.read('fixtures/bench/run.publishable.json'));
+    sb.edit('fixtures/bench/measured.publishable.json', (m) => { delete m.sources.attempts; });
+    // A measured_pair that is not a measured claim, and one placed on a measured claim.
+    sb.edit('claims/value-claims.v1.json', (c) => {
+      c.claims.find((x) => x.id === 'same_checks_cost_multiple').measured_pair = 'fast_check_cost_per_1k';
+      c.claims.find((x) => x.id === 'gate_latency_p50_measured').measured_pair = 'gate_latency_p95_measured';
+      // D233: an agreement caveat that names another cutoff than the bench's.
+      const accuracy = c.claims.find((x) => x.id === 'ragtruth_qa_accuracy_measured');
+      accuracy.caveat = accuracy.caveat.replace('groundedness 0.8', 'groundedness 0.5');
+    });
+    // A measured.json that says measured without its snapshot, attempts or cost sources.
+    sb.edit('claims/measured.json', (m) => {
+      m.status = 'measured'; m.tier = 'lite'; m.generated_by = 'evals.bench publish'; m.generated_at = '2026-10-12T10:00:00Z';
+      m.runs = ['r1'];
+      m.values.fast_check_usd_per_1k.value = 0.02;
+      m.values.fast_check_usd_per_1k.run_id = 'r1';
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /refused-snapshots\.json: bench publish refuses this run: mixed_snapshot/);
+    assert.match(r.out, /run\.refused\.dirty\.json: the fixture must break rule dirty, but breaks none/);
+    assert.match(r.out, /measured\.publishable\.json: a publishable fixture breaks a rule: attempts/);
+    assert.match(r.out, /same_checks_cost_multiple: measured_pair fast_check_cost_per_1k is a estimate claim, not measured/);
+    assert.match(r.out, /ragtruth_qa_accuracy_measured: its caveat must name the threshold the bench flags at, "groundedness 0\.8"/);
+    assert.doesNotMatch(r.out, /ragtruth_qa_agreement_measured: its caveat/);
+    assert.match(r.out, /gate_latency_p50_measured: a measured claim is the target of measured_pair, never its source/);
+    assert.match(r.out, /claims\/measured\.json: a measured file names the decision-model snapshot/);
+    assert.match(r.out, /claims\/measured\.json: sources\.attempts discloses every bench run/);
+    assert.match(r.out, /claims\/measured\.json: values\.fast_check_usd_per_1k needs sources\.fast_check_usd_per_1k\.cost_source/);
+  });
+
+  test('a gate latency needs its conditions, and a caveat placeholder must be one that is filled (D205)', () => {
+    const sb = sandbox();
+    sb.edit('claims/measured.json', (m) => {
+      m.status = 'measured'; m.tier = 'lite'; m.generated_by = 'evals.bench publish'; m.generated_at = '2026-10-12T10:00:00Z';
+      m.runs = ['r1']; m.snapshot = 'typesafe/jev-1.13-20260917';
+      m.sources = { attempts: { bench_runs: 1, refused_run_ids: [] } };
+      m.values.gate_latency_ms_p50.value = 231;
+      m.values.gate_latency_ms_p50.run_id = 'r1';
+    });
+    sb.edit('claims/value-claims.v1.json', (c) => {
+      c.claims.find((x) => x.id === 'fast_check_cost_per_1k_measured').caveat = 'Measured on {machine}.';
+      c.claims.find((x) => x.id === 'proxy_overhead_p50_measured').caveat = 'Taken with {gate_conditions}.';
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /claims\/measured\.json: gate_latency_ms_p50 needs sources\.gate_latency/);
+    assert.match(r.out, /fast_check_cost_per_1k_measured: caveat placeholder \{machine\} is not filled/);
+    assert.match(r.out, /proxy_overhead_p50_measured: caveat placeholder \{gate_conditions\} is not filled/);
+    assert.doesNotMatch(r.out, /gate_latency_p50_measured: caveat placeholder/);
+  });
+
+  test('a measured cost needs its conditions, and {cost_conditions} fills only a cost or the ratio (D229)', () => {
+    const sb = sandbox();
+    sb.edit('claims/measured.json', (m) => {
+      m.status = 'measured'; m.tier = 'lite'; m.generated_by = 'evals.bench publish'; m.generated_at = '2026-10-12T10:00:00Z';
+      m.runs = ['r1']; m.snapshot = 'typesafe/jev-1.13-20260917';
+      m.sources = { attempts: { bench_runs: 1, refused_run_ids: [] }, fast_check_usd_per_1k: { cost_source: 'reported' } };
+      m.values.fast_check_usd_per_1k.value = 0.05;
+      m.values.fast_check_usd_per_1k.run_id = 'r1';
+    });
+    sb.edit('claims/value-claims.v1.json', (c) => {
+      c.claims.find((x) => x.id === 'fast_check_cost_per_1k_measured').caveat = 'On {cost_conditions}.';
+      c.claims.find((x) => x.id === 'same_checks_ratio_measured').caveat = 'Against {cost_conditions}.';
+      c.claims.find((x) => x.id === 'gate_latency_p50_measured').caveat = 'Taken on {cost_conditions}.';
+    });
+    const r = run(sb.root);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /claims\/measured\.json: values\.fast_check_usd_per_1k needs sources\.fast_check_usd_per_1k\.conditions/);
+    assert.match(r.out, /gate_latency_p50_measured: caveat placeholder \{cost_conditions\} is not filled/);
+    assert.doesNotMatch(r.out, /fast_check_cost_per_1k_measured: caveat placeholder/);
+    assert.doesNotMatch(r.out, /same_checks_ratio_measured: caveat placeholder/);
+  });
+
   test('repo calibration files are validated when present', () => {
     const sb = sandbox();
     const table = Array.from({ length: 101 }, (_, i) => i / 100);
@@ -887,8 +969,8 @@ describe('schemas accept realistic documents', { skip: !existsSync(SPEC) }, () =
       schema: 'trustagent.recording/v1', kind: 'recorded',
       label: 'Recorded 2026-10-12 · typesafe/jev-1.13-20260917 + claude-haiku-4-5 · scripted answers · replayed, not live',
       recorded_at: '2026-10-12T09:00:00Z', git_sha: 'abc1234', trustagent_version: '2.0.0',
-      decision_model: { backend: 'openrouter-decisions', snapshot: 'typesafe/jev-1.13-20260917' },
-      judge: { provider: 'anthropic', model: 'claude-haiku-4-5', fallback_active: false }, calibration_state: 'measured',
+      decision_model: { backend: 'openrouter-decisions', snapshot: 'typesafe/jev-1.13-20260917', host: 'openrouter.ai' },
+      judge: { provider: 'anthropic', model: 'claude-haiku-4-5', fallback_active: false, host: 'openrouter.ai' }, calibration_state: 'measured',
       answer_sources: { scripted: 1, generated: 0 }, totals: { traces: 1, decision_usd: 0.0002, llm_usd: 0.03 },
       roi: { window: '24h', gated_responses: 1, simulated: false },
       traces: [{ trace_id: TRACE, created_at: '2026-10-12T09:00:00Z', answer_source: 'scripted' }],
@@ -901,6 +983,34 @@ describe('schemas accept realistic documents', { skip: !existsSync(SPEC) }, () =
     const mock = { ...base, kind: 'mock', label: 'Simulated (mock checks + mock judge): not model output', decision_model: { backend: 'mock', snapshot: 'mock/jev-heuristic-v1' } };
     assert.equal(check('recording.v1', mock), null);
     assert.notEqual(check('recording.v1', { ...mock, label: 'Recorded live' }), null);
+    // D203: bare hosts; a recorded tape names vendor hosts only. D207-D209: featured and calibration.
+    const hosts = {
+      ...base,
+      decision_model: { ...base.decision_model, host: 'openrouter.ai' },
+      judge: { ...base.judge, host: 'openrouter.ai' },
+      answer_sources: { scripted: 1, generated: 0, generated_host: null },
+      featured: { trace_id: TRACE, rule: 'contradicted_with_span' },
+      calibration: { snapshot: 'typesafe/jev-1.13-20260917', quality: 'measured' },
+    };
+    assert.equal(check('recording.v1', hosts), null);
+    // A recorded tape names its hosts: without them nothing shows a vendor answered (D203).
+    const { host: _dmHost, ...dmNoHost } = hosts.decision_model;
+    const { host: _judgeHost, ...judgeNoHost } = hosts.judge;
+    assert.notEqual(check('recording.v1', { ...hosts, decision_model: dmNoHost }), null, 'recorded needs the fast-check host');
+    assert.notEqual(check('recording.v1', { ...hosts, judge: judgeNoHost }), null, 'recorded needs the judge host');
+    const generated = { ...hosts, answer_sources: { scripted: 0, generated: 1, generated_host: 'openrouter.ai' }, traces: [{ ...hosts.traces[0], answer_source: 'generated' }] };
+    assert.equal(check('recording.v1', generated), null);
+    assert.notEqual(check('recording.v1', { ...generated, answer_sources: { scripted: 0, generated: 1, generated_host: null } }), null, 'generated answers name their host');
+    assert.notEqual(check('recording.v1', { ...generated, answer_sources: { scripted: 0, generated: 1 } }), null, 'generated answers name their host');
+    // A simulated tape needs none of them.
+    assert.equal(check('recording.v1', { ...mock, decision_model: { backend: 'mock', snapshot: 'mock/jev-heuristic-v1' }, judge: judgeNoHost }), null);
+    assert.notEqual(check('recording.v1', { ...hosts, decision_model: { ...hosts.decision_model, host: 'mock-upstream' } }), null, 'recorded needs a vendor host');
+    assert.notEqual(check('recording.v1', { ...hosts, judge: { ...hosts.judge, host: 'https://openrouter.ai/api' } }), null, 'bare hosts only');
+    assert.notEqual(check('recording.v1', { ...hosts, answer_sources: { ...hosts.answer_sources, generated_host: 'mock-upstream' } }), null);
+    assert.notEqual(check('recording.v1', { ...hosts, featured: { ...hosts.featured, rule: 'scripted' } }), null, 'scripted is the simulated tape only');
+    assert.equal(check('recording.v1', { ...mock, decision_model: { ...mock.decision_model, host: 'mock-upstream' }, featured: { trace_id: TRACE, rule: 'scripted' } }), null);
+    assert.equal(check('recording.v1', { ...hosts, calibration: { snapshot: null, quality: 'none' } }), null);
+    assert.notEqual(check('recording.v1', { ...hosts, calibration: { snapshot: null, quality: 'proxy' } }), null);
   });
 
   test('benchmark-run.v1', () => {
@@ -917,6 +1027,24 @@ describe('schemas accept realistic documents', { skip: !existsSync(SPEC) }, () =
     assert.equal(check('benchmark-run.v1', run), null);
     assert.notEqual(check('benchmark-run.v1', { ...run, mock: true }), null);
     assert.notEqual(check('benchmark-run.v1', { ...run, systems: [{ ...run.systems[0], cost: { ...run.systems[0].cost, cost_source: 'simulated' } }] }), null);
+    // D203-D205: hosts, inputs, quality, dirty and latency conditions.
+    const p6 = JSON.parse(readFileSync(join(HERE, 'fixtures', 'bench', 'run.publishable.json'), 'utf8'));
+    assert.equal(check('benchmark-run.v1', p6), null);
+    assert.notEqual(check('benchmark-run.v1', { ...p6, vendor: { ...p6.vendor, decision_host: 'mock-upstream' } }), null);
+    assert.notEqual(check('benchmark-run.v1', { ...p6, dirty: true }), null);
+    assert.notEqual(check('benchmark-run.v1', { ...p6, quality: { ...p6.quality, failure_rate: 0.06 } }), null);
+    assert.notEqual(check('benchmark-run.v1', { ...p6, latency: { connection: 'hot', gate_concurrency: 1 } }), null);
+    assert.notEqual(check('benchmark-run.v1', { ...p6, inputs: { ...p6.inputs, host_env: { ...p6.inputs.host_env, loadavg: [1] } } }), null);
+  });
+
+  test('measured.v1', () => {
+    const m = JSON.parse(readFileSync(join(HERE, 'fixtures', 'bench', 'measured.publishable.json'), 'utf8'));
+    assert.equal(check('measured.v1', m), null);
+    assert.equal(check('measured.v1', { ...m, snapshot: ['typesafe/jev-1.13-20260917', 'typesafe/jev-1.14-20261101'] }), null);
+    assert.notEqual(check('measured.v1', { ...m, sources: { ...m.sources, fast_check_usd_per_1k: { cost_source: 'unknown' } } }), null);
+    assert.notEqual(check('measured.v1', { ...m, sources: { ...m.sources, groundedness_ece: { ...m.sources.groundedness_ece, method: 'in_sample' } } }), null);
+    assert.notEqual(check('measured.v1', { ...m, intervals: { ragtruth_qa_accuracy: { lo: 0.7, hi: 0.9, method: 'normal' } } }), null);
+    assert.notEqual(check('measured.v1', { ...m, mock: true }), null);
   });
 
   test('scenarios.v1', () => {

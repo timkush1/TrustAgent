@@ -132,6 +132,62 @@ demo-clean: ## Stop the demo stack and delete its volumes (demo database and sec
 demo-scenarios: ## Check the demo scenarios against the running demo stack (trafficgen --expect; DEMO_SCENARIOS=s0, DEMO_PHASE=p3)
 	$(DEMO_COMPOSE) exec -T proxy $(TRAFFICGEN_CHECK) --scenarios $(DEMO_SCENARIOS) $(if $(DEMO_PHASE),--phase $(DEMO_PHASE))
 
+##@ Public demo (an always-on VM; docs/DEPLOY-DEMO.md)
+
+# D218: the zero-key demo on a small VM for anyone to open. The demo stack plus
+# docker-compose.public.yml: Caddy is the only service with host ports (80 and 443, HTTPS for
+# TRUTHTABLE_PUBLIC_URL with a Let's Encrypt certificate) and sends /api, /ws and /health straight
+# to the proxy; the dashboard is read-only, traces are kept 7 days, /v1 answers 404, and the images
+# are pulled (TRUSTAGENT_VERSION), never built. It runs as the demo's project, so on the VM use only
+# these targets (make demo would publish 3000 and 8080 again).
+# TRUTHTABLE_PUBLIC_URL=http://localhost:28443 is the local rehearsal: deploy/public-demo/local.yml
+# moves Caddy to 127.0.0.1:28443 (plain HTTP), and images that exist locally are not pulled again.
+# A rehearsal refuses the demo's own project: on a laptop that is the make demo stack, which
+# public-demo-clean would delete.
+PUBLIC_DEMO_PROJECT ?= $(DEMO_PROJECT)
+PUBLIC_DEMO_COMPOSE  = $(COMPOSE) -p $(PUBLIC_DEMO_PROJECT) -f docker-compose.yml -f docker-compose.demo.yml \
+	-f docker-compose.public.yml --profile demo
+PUBLIC_DEMO_LOCAL_COMPOSE = $(COMPOSE) -p $(PUBLIC_DEMO_PROJECT) -f docker-compose.yml -f docker-compose.demo.yml \
+	-f docker-compose.public.yml -f deploy/public-demo/local.yml --profile demo
+# Seconds public-demo-up's checks retry the edge (Caddy may still be getting its certificate).
+PUBLIC_DEMO_VERIFY_TIMEOUT ?= 180
+
+public-demo-up: ## Start the public demo (VM): check TRUTHTABLE_PUBLIC_URL, pull the release images, up --no-build behind Caddy, then check the edge
+	$(PYTHON) scripts/configure.py --ensure
+	@mode="$$($(PYTHON) scripts/public_demo.py url)" || exit $$?; \
+	if [ "$$mode" = local ] && [ "$(PUBLIC_DEMO_PROJECT)" = "$(DEMO_PROJECT)" ]; then \
+		echo "public-demo-up: a local rehearsal needs a project of its own, not $(DEMO_PROJECT) (this machine's make demo stack): add PUBLIC_DEMO_PROJECT=truthtable-pubtest" >&2; \
+		exit 2; \
+	fi; \
+	if [ "$$mode" = local ]; then \
+		compose="$(PUBLIC_DEMO_LOCAL_COMPOSE)"; pull="--policy missing"; \
+	else \
+		compose="$(PUBLIC_DEMO_COMPOSE)"; pull=""; \
+	fi; \
+	set -ex; \
+	$$compose pull $$pull; \
+	$$compose up -d --no-build --wait --wait-timeout $(WAIT_TIMEOUT); \
+	{ set +x; } 2>/dev/null; \
+	$(PYTHON) scripts/public_demo.py verify --project $(PUBLIC_DEMO_PROJECT) --timeout $(PUBLIC_DEMO_VERIFY_TIMEOUT)
+	@echo "   Admin: make public-demo-setup-url   Logs: make public-demo-logs SERVICE=caddy   Stop: make public-demo-down"
+
+public-demo-check: ## Re-run the public demo's checks through its edge (scripts/public_demo.py verify)
+	$(PYTHON) scripts/public_demo.py verify --project $(PUBLIC_DEMO_PROJECT) --timeout $(PUBLIC_DEMO_VERIFY_TIMEOUT)
+
+public-demo-down: ## Stop the public demo (keeps its volumes: the database and Caddy's certificates)
+	$(PUBLIC_DEMO_COMPOSE) down
+	@echo "✅ Public demo stopped"
+
+public-demo-clean: ## Stop the public demo and delete its volumes (also Caddy's certificates: Let's Encrypt limits new ones)
+	$(PUBLIC_DEMO_COMPOSE) down --volumes --remove-orphans
+	@echo "✅ Public demo and its volumes removed"
+
+public-demo-logs: ## Follow the public demo's logs (SERVICE=caddy for one service)
+	$(PUBLIC_DEMO_COMPOSE) logs -f $(SERVICE)
+
+public-demo-setup-url: ## Print a one-time setup link for the public demo's admin (SETUP_FORCE=1 for a recovery link)
+	@$(PYTHON) scripts/setup_url.py --project $(PUBLIC_DEMO_PROJECT) $(SETUP_URL_ARGS)
+
 ##@ End-to-end stack (real HTTP paths against mock-upstream)
 
 e2e-up: ## Start the e2e stack (compatible fast check and LLM upstreams on mock-upstream, mock judge, sync traces), wait until healthy
@@ -268,7 +324,7 @@ COMPOSE_CHECK_PROFILES = "" knowledge local-llm observability redis demo load "*
 # The record overlay's stack (RECORD_COMPOSE) is defined in mk/release.mk with make record-demo;
 # the knowledge stack (KNOWLEDGE_COMPOSE) with make knowledge-up above.
 
-compose-check: ## Validate the compose files: every profile and the demo, e2e, onboarding, load, record and knowledge overrides (docker compose config -q)
+compose-check: ## Validate the compose files: every profile and the demo, e2e, onboarding, load, record, knowledge and public demo overrides (docker compose config -q)
 	@if ! docker compose version >/dev/null 2>&1; then echo "compose-check: skipped (docker compose not found)"; exit 0; fi; \
 	set -e; for p in $(COMPOSE_CHECK_PROFILES); do \
 		$(COMPOSE) $${p:+--profile "$$p"} config -q; echo "compose config ok: profile $${p:-default}"; \
@@ -279,7 +335,9 @@ compose-check: ## Validate the compose files: every profile and the demo, e2e, o
 	$(LOAD_COMPOSE) config -q; echo "compose config ok: load override"; \
 	$(LOAD_COMPOSE) $(LOAD_SLOW_JEV) config -q; echo "compose config ok: load override, slow fast check"; \
 	$(RECORD_COMPOSE) config -q; echo "compose config ok: record override"; \
-	$(KNOWLEDGE_COMPOSE) config -q; echo "compose config ok: knowledge override"
+	$(KNOWLEDGE_COMPOSE) config -q; echo "compose config ok: knowledge override"; \
+	$(PUBLIC_DEMO_COMPOSE) config -q; echo "compose config ok: public demo override"; \
+	$(PUBLIC_DEMO_LOCAL_COMPOSE) config -q; echo "compose config ok: public demo override, local rehearsal"
 
 docs-links: ## Check the relative links and heading anchors of README.md, docs/*.md and docs/launch/*.md (scripts/check_links.py)
 	$(PYTHON) scripts/check_links.py

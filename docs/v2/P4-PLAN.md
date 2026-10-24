@@ -30,7 +30,7 @@ The Go and Python streams start when 0a is done.
 
 **Twelve streams.**
 - Each works on branch `feat/v2-w5-<id>`, cut from `feat/v2-int5` after Step 0a (Go and PY) or 0b (web and DX).
-- Each has its own worktree at `/home/timkushmar/projects/TrustAgent-w5-<id>`.
+- Each has its own worktree at `~/projects/TrustAgent-w5-<id>`.
 
 | id | Stream | Size | Starts |
 |---|---|---|---|
@@ -250,7 +250,7 @@ Ask the owner for the 5-minute localhost PKCE check in §21 #1. Use the answer a
 
 1. Create the integration branch and its worktree:
    ```bash
-   git worktree add /home/timkushmar/projects/TrustAgent-int5 -b feat/v2-int5 feat/v2-jev-gateway   # e07c455
+   git worktree add ~/projects/TrustAgent-int5 -b feat/v2-int5 feat/v2-jev-gateway   # e07c455
    ```
 2. In the int5 worktree, run `python3 scripts/configure.py --ensure`.
    - This creates a fresh `.env` with a random `POSTGRES_PASSWORD`.

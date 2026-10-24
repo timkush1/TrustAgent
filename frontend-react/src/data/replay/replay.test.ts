@@ -137,6 +137,20 @@ describe('ReplayTape', () => {
   it('features the flagged refund answer', () => {
     expect(featuredTrace(tape)).toBe(refundId);
   });
+
+  it("features the manifest's pick (D209), and the scripted choice only on the simulated tape", () => {
+    const other = manifest.traces.find((t) => t.trace_id !== refundId && t.action === 'flag');
+    if (!other) throw new Error('the simulated tape has a second flagged trace');
+    const named = (kind: 'mock' | 'recorded', id: string | undefined) =>
+      new ReplayTape({ ...manifest, kind, featured: id === undefined ? undefined : { trace_id: id, rule: kind === 'mock' ? 'scripted' : 'contradicted_with_span' } });
+    expect(featuredTrace(named('recorded', other.trace_id))).toBe(other.trace_id);
+    expect(featuredTrace(named('mock', other.trace_id))).toBe(other.trace_id);
+    // A recorded tape never falls back to the scripted choice.
+    expect(featuredTrace(named('recorded', undefined))).toBeNull();
+    // A pick that is not in the tape is no pick.
+    expect(featuredTrace(named('recorded', '01a0e700-0000-7000-8000-00000000ffff'))).toBeNull();
+    expect(featuredTrace(named('mock', '01a0e700-0000-7000-8000-00000000ffff'))).toBe(refundId);
+  });
 });
 
 describe('ReplayPlayer', () => {
@@ -440,7 +454,17 @@ describe('ReplayDataSource', () => {
 
     // The bucket comes from the whole recording, so a chart keeps it while the tape plays: a tape
     // that opens empty draws per hour (spend) and per 15 minutes (outcomes) from its first moment.
-    expect((await ds.getOverview({ window: '24h' })).bucket).toBe('15m');
+    const overview = await ds.getOverview({ window: '24h' });
+    expect(overview.bucket).toBe('15m');
+    // P5C-14: the series spans the tape plus one empty bucket of padding, so the last pass's
+    // column is not at the cut-off edge and its time is labelled.
+    const points = overview.outcomes_series;
+    const lastTrace = Math.max(...manifest.traces.map((t) => Date.parse(t.created_at)));
+    expect(Date.parse(points[points.length - 1].t)).toBe(Math.floor(lastTrace / 900_000) * 900_000 + 900_000);
+    const busy = (p: (typeof points)[number]) => p.passed + p.flagged + p.blocked + p.replaced + p.would_flag + p.would_block + p.not_checked + p.error;
+    expect(busy(points[points.length - 1])).toBe(0);
+    expect(busy(points[points.length - 2])).toBeGreaterThan(0);
+    expect(points.reduce((s, p) => s + busy(p), 0)).toBe(total);
     const f = recordingFetch('/TrustAgent/');
     const fromStart = createReplayDataSource({ basePath: '/TrustAgent/', fetchImpl: f.fetch, clock: new ManualClock(), preroll: 0 });
     await fromStart.ready;

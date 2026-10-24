@@ -69,6 +69,17 @@ async function draftWithAi(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('Studio', { timeout: 30_000 }, () => {
+  it('gives each yes/no meaning a text area that grows, so a long meaning is never cut off', async () => {
+    const user = userEvent.setup();
+    renderPage('/app/evaluators/studio');
+    await draftWithAi(user);
+    const review = step(/Step 2: Review the check/);
+    await user.click(within(review).getByRole('radio', { name: 'Yes/No' }));
+    for (const name of ['“Yes” means', '“No” means']) {
+      expect(within(review).getByRole('textbox', { name }).tagName).toBe('TEXTAREA');
+    }
+  });
+
   it('drafts with AI, shows the estimate and the model first, and fills the review and the samples', async () => {
     const user = userEvent.setup();
     const { control, container } = renderPage('/app/evaluators/studio');

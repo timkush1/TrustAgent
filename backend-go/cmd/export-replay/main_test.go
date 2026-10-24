@@ -17,9 +17,15 @@ import (
 	"github.com/truthtable/backend-go/internal/store"
 )
 
+// vendorHosts are a real recording's hosts (the fixtures' judge is anthropic).
+var vendorHosts = recording.Hosts{Decision: "openrouter.ai", Judge: "api.anthropic.com", Generated: "openrouter.ai"}
+
+// hostArgs are the flags that name them.
+var hostArgs = []string{"--decision-host", "openrouter.ai", "--judge-host", "api.anthropic.com", "--generated-host", "openrouter.ai"}
+
 func TestWriteRecording(t *testing.T) {
 	traces := recordingtest.Set(t)
-	rec, err := recording.Build(traces, recording.Options{GitSHA: "abc1234", Version: "1.0.0"})
+	rec, err := recording.Build(traces, recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: vendorHosts})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +44,7 @@ func TestWriteRecording(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "traces", "stale.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	one, err := recording.Build(traces[:1], recording.Options{GitSHA: "abc1234", Version: "1.0.0"})
+	one, err := recording.Build(traces[:1], recording.Options{GitSHA: "abc1234", Version: "1.0.0", Hosts: vendorHosts})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,8 +123,9 @@ func TestRunAgainstTheAPI(t *testing.T) {
 
 	dir := t.TempDir()
 	var out, errb bytes.Buffer
-	code := run(context.Background(), []string{"--api", srv.URL, "--api-key-file", keyFile, "--out", dir,
-		"--since", "2026-10-05T00:00:00Z", "--source", "proxy", "--route", "support-bot"}, &out, &errb, d)
+	code := run(context.Background(), append([]string{"--api", srv.URL, "--api-key-file", keyFile, "--out", dir,
+		"--since", "2026-10-05T00:00:00Z", "--source", "proxy", "--route", "support-bot",
+		"--calibration-quality", "measured", "--calibration-snapshot", "typesafe/jev-1.13-20260917"}, hostArgs...), &out, &errb, d)
 	if code != exitOK {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
@@ -134,6 +141,38 @@ func TestRunAgainstTheAPI(t *testing.T) {
 	}
 	if m["kind"] != "recorded" || m["git_sha"] != "0123abcd" || !strings.Contains(out.String(), "Wrote a recorded recording of 3 traces") {
 		t.Errorf("manifest kind %v sha %v; %s", m["kind"], m["git_sha"], out.String())
+	}
+	dm, _ := m["decision_model"].(map[string]any)
+	judge, _ := m["judge"].(map[string]any)
+	sources, _ := m["answer_sources"].(map[string]any)
+	feat, _ := m["featured"].(map[string]any)
+	calib, _ := m["calibration"].(map[string]any)
+	if dm["host"] != "openrouter.ai" || judge["host"] != "api.anthropic.com" || sources["generated_host"] != "openrouter.ai" ||
+		feat["rule"] != "contradicted_with_span" || calib["quality"] != "measured" || calib["snapshot"] != "typesafe/jev-1.13-20260917" ||
+		!strings.Contains(out.String(), "Featured: "+feat["trace_id"].(string)) {
+		t.Errorf("hosts, featured or calibration missing: %v %v %v %v %v\n%s", dm, judge, sources, feat, calib, out.String())
+	}
+
+	// D203: without the hosts, or with mock-upstream's, the traces are not labelled recorded.
+	for name, hosts := range map[string][]string{
+		"no hosts":      nil,
+		"mock-upstream": {"--decision-host", "mock-upstream", "--judge-host", "api.anthropic.com", "--generated-host", "openrouter.ai"},
+	} {
+		errb.Reset()
+		args := append([]string{"--api", srv.URL, "--api-key-file", keyFile, "--out", t.TempDir()}, hosts...)
+		if code := run(context.Background(), args, &out, &errb, d); code != exitFailed || !strings.Contains(errb.String(), "non_vendor_host") {
+			t.Errorf("%s: exit %d %s", name, code, errb.String())
+		}
+	}
+	// The owner's featured pick (no trace meets the rule is simulated by naming one).
+	errb.Reset()
+	picked := t.TempDir()
+	if code := run(context.Background(), append([]string{"--api", srv.URL, "--api-key-file", keyFile, "--out", picked,
+		"--featured", traces[2].Detail.TraceID}, hostArgs...), &out, &errb, d); code != exitOK {
+		t.Fatalf("--featured: exit %d %s", code, errb.String())
+	}
+	if f, _ := recordingtest.ValidateDir(t, picked)["featured"].(map[string]any); f["rule"] != "best_flagged" || f["trace_id"] != traces[2].Detail.TraceID {
+		t.Errorf("--featured: %v", f)
 	}
 
 	scopeless = true
@@ -160,6 +199,12 @@ func TestUsage(t *testing.T) {
 		{"--out", "x", "--git-sha", "abc1234", "--since", "yesterday", "--database-url", "postgres://x"},
 		{"--out", "x", "--git-sha", "abc1234", "--judge-provider", "anthropic", "--database-url", "postgres://x"},
 		{"--out", "x", "--git-sha", "abc1234", "--api", "ftp://host"},
+		{"--out", "x", "--git-sha", "abc1234", "--decision-host", "https://openrouter.ai", "--database-url", "postgres://x"},
+		{"--out", "x", "--git-sha", "abc1234", "--judge-host", "api.anthropic.com:443", "--database-url", "postgres://x"},
+		{"--out", "x", "--git-sha", "abc1234", "--generated-host", "OpenRouter.ai", "--database-url", "postgres://x"},
+		{"--out", "x", "--git-sha", "abc1234", "--calibration-quality", "mock", "--database-url", "postgres://x"},
+		{"--out", "x", "--git-sha", "abc1234", "--calibration-quality", "measured", "--database-url", "postgres://x"},
+		{"--out", "x", "--git-sha", "abc1234", "--calibration-snapshot", "s", "--database-url", "postgres://x"},
 	} {
 		var out, errb bytes.Buffer
 		if code := run(context.Background(), args, &out, &errb, d); code != exitUsage {

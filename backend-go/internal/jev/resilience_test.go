@@ -330,17 +330,22 @@ func TestCPTTracker(t *testing.T) {
 // Decision calls are priced by the shared calculator: the env override, else the price table
 // (provider first, a leading "~" ignored), else the list price.
 func TestLookupPrice(t *testing.T) {
+	table, err := decision.ContractsPrices()
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractsVersion := table.Version // the dated contracts table (prices.v1.json)
 	cases := []struct {
 		override       float64
 		backend, model string
 		perMTok        float64
 		version        string
 	}{
-		{0, BackendOpenRouterDecisions, "typesafe/jev-1.13", 0.042, "2026-09-27"},
-		{0, BackendOpenRouterDecisions, "typesafe/jev-1.13-20260917", 0.042, "2026-09-27"},
-		{0, BackendOpenRouterSystemOne, "~typesafe/jev-1.13", 0.042, "2026-09-27"},
-		{0, BackendTypeSafe, "jev-1.13.0", 0.042, "2026-09-27"},
-		{0, BackendCompatible, "jev-latest", 0.042, "2026-09-27"},
+		{0, BackendOpenRouterDecisions, "typesafe/jev-1.13", 0.042, contractsVersion},
+		{0, BackendOpenRouterDecisions, "typesafe/jev-1.13-20260917", 0.042, contractsVersion},
+		{0, BackendOpenRouterSystemOne, "~typesafe/jev-1.13", 0.042, contractsVersion},
+		{0, BackendTypeSafe, "jev-1.13.0", 0.042, contractsVersion},
+		{0, BackendCompatible, "jev-latest", 0.042, contractsVersion},
 		{0, BackendOpenRouterDecisions, "~typesafe/jev-latest", 0.042, "default"},
 		{0, BackendCompatible, "typesafe-ai/jev", 0.042, "default"},
 		{0.1, BackendOpenRouterDecisions, "typesafe/jev-1.13", 0.1, "override"},

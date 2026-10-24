@@ -1,0 +1,58 @@
+# TrustAgent - the public demo's edge (D218; docs/DEPLOY-DEMO.md)
+#
+# Mounted read-only by docker-compose.public.yml. One site: TRUTHTABLE_PUBLIC_URL, from .env
+# (`python3 scripts/public_demo.py url` checks it before the stack starts).
+#   https://<host>           Caddy gets and renews a Let's Encrypt certificate for <host> and
+#                            redirects http:// to https://.
+#   http://localhost:28443   the local rehearsal (deploy/public-demo/local.yml): plain HTTP, no
+#                            certificate.
+#
+# Routes, first match wins:
+#   /v1*                     404: the gateway API is not served here. The demo runs in test mode,
+#                            so /v1 would let anyone script answers into the shared dashboard;
+#                            trafficgen reaches the proxy on the compose network.
+#   /api/*, /ws, /health,    the proxy itself, not through the dashboard's nginx, which replaces
+#   /health/*                X-Forwarded-For: the proxy's per-IP caps then count each visitor on
+#                            their own. Server-sent events (Playground, Studio dry-run) are flushed
+#                            as they arrive, and the WebSocket upgrade passes through.
+#   everything else          the dashboard: the app, /config.json and its assets.
+#
+# Caddy trusts no X-Forwarded-For from a client (there is no trusted_proxies option), so it sends
+# the address the connection came from, drops a client's X-Real-IP, and a visitor cannot choose
+# the address the caps count.
+# There is no access log: visitors' addresses are not written to disk here.
+{
+	servers {
+		timeouts {
+			# A client gets 10 s to send its request headers (slow-header clients do not hold
+			# connections); bodies, answers and WebSockets are not limited here.
+			read_header 10s
+		}
+	}
+}
+
+{$TRUTHTABLE_PUBLIC_URL} {
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		defer
+	}
+
+	# The proxy takes the client address from X-Forwarded-For, which Caddy writes, and from
+	# X-Real-IP when that is missing: a visitor's own X-Real-IP never reaches it.
+	request_header -X-Real-IP
+
+	@gateway path /v1 /v1/*
+	handle @gateway {
+		respond "Not found: the public demo does not serve the gateway API (/v1)." 404
+	}
+
+	@trustagent path /api/* /ws /health /health/*
+	handle @trustagent {
+		reverse_proxy proxy:8080
+	}
+
+	handle {
+		reverse_proxy dashboard:3000
+	}
+}

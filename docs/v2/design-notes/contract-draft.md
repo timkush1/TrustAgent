@@ -2384,9 +2384,9 @@ Contracts land before parallel work. Service worktrees never edit `proto/`, `con
 ### I.2 P0: baseline commit and branch
 
 ```bash
-cd /home/timkushmar/projects/TrustAgent
+cd ~/projects/TrustAgent
 git config --local user.name  "timkush1"
-git config --local user.email "timk@mail.tau.ac.il"
+git config --local user.email "<the owner's commit email>"
 printf 'ts_sdk_python.md\nts_sdk_python_usage.md\n.trustagent/\n' >> .git/info/exclude   # R45 (vendor doc copies; local data dir)
 git add -A
 git diff --cached --name-only | grep -E '(^|/)\.env$' && { echo "STOP: .env staged"; exit 1; }
@@ -2406,7 +2406,7 @@ for s in go py web dx; do git worktree add ../TrustAgent-$s -b feat/v2-$s feat/v
 ```
 
 **Gate:**
-- `git log -1 --format='%an <%ae>'` prints `timkush1 <timk@mail.tau.ac.il>`.
+- `git log -1 --format='%an <%ae>'` prints `timkush1 <the owner's commit email>`.
 - `git status --porcelain` is empty.
 - `make test` runs and its result is recorded in `docs/PLAN.md` Phase 8 as the baseline. Pre-existing failures are listed, not fixed, in P0.
 - Pushing is a later owner step with a fine-grained PAT (Contents, Pull requests and Workflows read/write), per dx §8. Push the branch, never `main`.
@@ -2725,5 +2725,5 @@ Grafana queries are rewritten with `job=` filters. This is a breaking change and
 | [A] | The default daily caps ($2 decision, $5 LLM) | owner confirms at onboarding |
 
 **Relevant absolute paths:**
-- Spec summary file: `/home/timkushmar/.claude/plans/you-have-a-very-zippy-wreath-agent-a65108b60dd66bff3.md`.
-- Repo (unchanged): `/home/timkushmar/projects/TrustAgent`.
+- Spec summary file: `a plan file outside the repository`.
+- Repo (unchanged): `~/projects/TrustAgent`.

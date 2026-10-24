@@ -153,7 +153,7 @@ func gateEvalLines(n int) string {
 		}
 		fmt.Fprintf(&b, `{"id":"g%d","error":null,"skipped":null,"simulated":false,`+
 			`"decision":{"status":"ok","evaluators":{"groundedness@1":{"status":"assessed","risk_raw":%v},"contradiction@1":{"status":"assessed","risk_raw":0.1}}},`+
-			`"decision_model":{"backend":"openrouter-decisions","snapshot":%q},"compile":{"state_fields":%s,"question_set_sha256":%q},`+
+			`"decision_model":{"backend":"openrouter-decisions","snapshot":%q},"endpoint_host":"openrouter.ai","compile":{"state_fields":%s,"question_set_sha256":%q},`+
 			`"labels":{"groundedness@1":%v},"label_hallucinated":%v,"label_source":"public_dataset"}`+"\n",
 			i, x, snapshot, fields, qs, hallucinated, hallucinated)
 	}

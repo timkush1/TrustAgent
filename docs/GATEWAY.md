@@ -391,7 +391,7 @@ Each upstream decides on its own:
   ([SECURITY.md](SECURITY.md#encryption-and-origin-binding)).
   `TRUTHTABLE_UPSTREAM_URL` in `.env` pins the upstream for good: the
   dashboard cannot move it.
-- **Rules the dashboard enforces.** Turning inject mode on needs an ingest key
+- **Rules the dashboard enforces.** Turning inject mode on needs an app key
   first (409 `ingest_key_required`): a key with the `ingest` scope itself, from
   the dashboard (the setup wizard mints one) or the environment
   (`TRUTHTABLE_API_KEYS`). An admin key does not count, wherever it comes from:

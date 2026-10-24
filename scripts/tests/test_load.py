@@ -611,6 +611,7 @@ def k6_log(*lines: str) -> str:
 COMPOSE_CONFIG = {
     "services": {
         "proxy": {
+            "image": "ghcr.io/timkush1/truthtable-proxy:p6local",
             "deploy": {"resources": {"limits": {"cpus": 1, "memory": "536870912"}}},
             "environment": {"TRUTHTABLE_TEST_MODE": "true"},
         }
@@ -622,9 +623,14 @@ class FakeRunner:
     """git, docker and compose answers for report.py, without running them."""
 
     def __init__(
-        self, dirty: str = "", docker: str = "28.0.1\n", config: Optional[Dict[str, Any]] = None
+        self,
+        dirty: str = "",
+        docker: str = "28.0.1\n",
+        config: Optional[Dict[str, Any]] = None,
+        revision: str = "abc1234\n",
+        projects: str = "truthtable-load\ntruthtable-load\n",
     ) -> None:
-        self.dirty, self.docker = dirty, docker
+        self.dirty, self.docker, self.revision, self.projects = dirty, docker, revision, projects
         self.config = COMPOSE_CONFIG if config is None else config
         self.calls: List[List[str]] = []
 
@@ -636,6 +642,10 @@ class FakeRunner:
             return self.dirty
         if argv[:2] == ["docker", "version"]:
             return self.docker
+        if argv[:3] == ["docker", "image", "inspect"]:
+            return self.revision
+        if argv[:2] == ["docker", "ps"]:
+            return self.projects
         if list(argv[-3:]) == ["config", "--format", "json"]:
             return json.dumps(self.config)
         raise AssertionError(f"unexpected command {argv}")
@@ -643,7 +653,8 @@ class FakeRunner:
 
 HOST_FILES = {
     "/proc/cpuinfo": "processor\t: 0\nmodel name\t: Example CPU @ 3.00GHz\n",
-    "/proc/meminfo": "MemTotal:        8048376 kB\n",
+    "/proc/meminfo": "MemTotal:        8048376 kB\nMemAvailable:    3497984 kB\n",
+    "/proc/loadavg": "0.52 0.61 0.70 1/812 4242\n",
     "/etc/os-release": 'NAME="Ubuntu"\nPRETTY_NAME="Ubuntu 24.04.1 LTS"\n',
 }
 
@@ -700,6 +711,12 @@ class ReportPublishTest(unittest.TestCase):
             (env["trace_flush"], env["k6_image"], env["rate"], env["duration"]),
             ("async", K6_IMAGE, 20, "30s"),
         )
+        # What the gateway was built from and what else ran (P5C-21): a quiet run has nothing else.
+        self.assertEqual(env["image_revision"], "abc1234")
+        self.assertEqual(
+            env["concurrent_load"],
+            {"other_projects": [], "loadavg": [0.52, 0.61, 0.7], "mem_available_mb": 3416},
+        )
         self.assertEqual(doc["errors"], {"rate_5xx": 0.0, "non_200": 0})
         b = next(s for s in doc["scenarios"] if s["id"] == "b")
         self.assertEqual((b["source"], b["mode"]), ("metrics", "observe"))
@@ -723,6 +740,7 @@ class ReportPublishTest(unittest.TestCase):
             ("fewer than 500", lambda: build(pass1(scenario_result("c", n=499)))),
             ("environment is incomplete: docker", lambda: build(logs, FakeRunner(docker=""))),
             ("environment is incomplete: k6_image", lambda: build(logs, k6_image=None)),
+            ("concurrent_load.loadavg", lambda: report.build_run(logs, run=FakeRunner(), compose=COMPOSE, k6_image=K6_IMAGE, now=FIXED_NOW, files={k: v for k, v in HOST_FILES.items() if k != "/proc/loadavg"}.get)),
             ("compose command", lambda: build(logs, compose=None)),
             ("no proxy service", lambda: build(logs, FakeRunner(config={"services": {}}))),
             ("missed its target", lambda: build(pass1(scenario_result("c", ok=False, p95_ms=12.0)))),
@@ -826,6 +844,25 @@ class ReportGatewayMdTest(unittest.TestCase):
                 "| (e) block, buffered streams (report only) | overhead header | 600 |", block
             )
             self.assertIn("reported only |", block)
+            # The run says what it was built from and that nothing else ran; an older run without
+            # those fields keeps its words, and a run beside another stack names it.
+            self.assertIn("(image built from `abc1234`; nothing else running)", block)
+            older_env = dict(run["environment"])
+            del older_env["image_revision"], older_env["concurrent_load"]
+            self.assertNotIn(
+                "nothing else running", report.gateway_block({**run, "environment": older_env})
+            )
+            busy = {
+                **run["environment"],
+                "concurrent_load": {
+                    **run["environment"]["concurrent_load"],
+                    "other_projects": ["truthtable-demo"],
+                },
+            }
+            self.assertIn(
+                "beside the compose project(s) `truthtable-demo`",
+                report.gateway_block({**run, "environment": busy}),
+            )
 
             doc = d / "GATEWAY.md"
             doc.write_text(self.DOC, encoding="utf-8")

@@ -9,6 +9,14 @@ import { oneLineSnippet } from './snippetLine';
 import { buttonClass } from './styles';
 import { CodeScroll, Command, GitHubMark, Section } from './ui';
 
+/** The no-make start, one command per row: the contract's `a && b` line, split at its "&&". */
+function composeSteps(): string[] {
+  return command('compose_up')
+    .split('&&')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export function SelfHost() {
   return (
     <Section
@@ -37,9 +45,12 @@ export function SelfHost() {
           <div className="mt-4">
             <Command command={command('up')} />
           </div>
-          <p className="mt-3 text-sm text-fg-muted">Without make:</p>
-          <div className="mt-1.5">
-            <Command command={command('compose_up')} scroll />
+          <p className="mt-3 text-sm text-fg-muted">Without make, two commands:</p>
+          {/* One row per command, so neither is cut off or has to scroll at any width. */}
+          <div className="mt-1.5 flex flex-col items-start gap-2" data-compose-steps>
+            {composeSteps().map((step) => (
+              <Command key={step} command={step} />
+            ))}
           </div>
           <ul className="mt-5 space-y-2 text-fg-muted">
             <li>Four services: proxy, engine, Postgres and the dashboard. Add-ons: knowledge base, local LLM, observability.</li>

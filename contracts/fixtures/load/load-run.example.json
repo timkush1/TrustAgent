@@ -19,7 +19,9 @@
     "trace_flush": "async",
     "k6_image": "grafana/k6:2.3.0",
     "rate": 20,
-    "duration": "30s"
+    "duration": "30s",
+    "image_revision": "abc1234",
+    "concurrent_load": {"other_projects": [], "loadavg": [0.52, 0.61, 0.7], "mem_available_mb": 3416}
   },
   "scenarios": [
     {

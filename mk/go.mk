@@ -64,9 +64,10 @@ REPLAY_SINCE  ?=
 REPLAY_SOURCE ?= trafficgen
 REPLAY_ARGS   ?=
 
-gate-eval: ## Build backend-go/bin/gate-eval: the fast check over a JSONL file (bench-lite and eval-live run it)
+gate-eval: ## Build backend-go/bin/gate-eval: the fast check over a JSONL file (bench-lite and eval-live run it); prints its sha256
 	cd backend-go && go build -o bin/gate-eval ./cmd/gate-eval
 	@echo "✅ Built backend-go/bin/gate-eval"
+	@$(PYTHON) -c "import hashlib, sys; print('   sha256 ' + hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest() + ' (a bench run records it; a resume with another build is refused)')" backend-go/bin/gate-eval
 
 calibrate: ## Fit a calibration: EVALUATOR=groundedness@1 IN=labels.jsonl [LABEL_SOURCE=human] [DATASET=..] [WRITE=1 writes config/calibration]
 	@test -n "$(EVALUATOR)" || { \
@@ -75,7 +76,7 @@ calibrate: ## Fit a calibration: EVALUATOR=groundedness@1 IN=labels.jsonl [LABEL
 		exit 2; }
 	cd backend-go && go run ./cmd/calibrate --evaluator "$(EVALUATOR)" \
 		$(if $(IN),--in "$(if $(filter -,$(IN)),-,$(abspath $(IN)))") $(if $(LABEL_SOURCE),--label-source "$(LABEL_SOURCE)") \
-		$(foreach d,$(DATASET),--dataset "$(d)") $(if $(WRITE),--write) $(CALIBRATE_ARGS)
+		$(foreach d,$(DATASET),--dataset "$(d)") $(if $(filter 1,$(WRITE)),--write) $(CALIBRATE_ARGS)
 
 export-replay: ## Export a sanitized replay recording: REPLAY_OUT=<dir> [REPLAY_SINCE=<RFC 3339>] [REPLAY_SOURCE=trafficgen] (reads TRUTHTABLE_DATABASE_URL)
 	@test -n "$(REPLAY_OUT)" || { \
@@ -87,17 +88,50 @@ export-replay: ## Export a sanitized replay recording: REPLAY_OUT=<dir> [REPLAY_
 
 ##@ Decision model check and Go benchmarks
 
-# make jev-check: one paid-free check of the decision model's connection (cmd/jevcheck). Inside a
-# running stack it runs in the proxy container, where the gateway's own configuration is; without
-# one it runs from this checkout with the shell's environment.
+# make jev-check: one check of the decision model's connection (cmd/jevcheck). It sends the
+# one-question probe (contracts/cascade/probe.v1.json), which the vendor bills at about USD 0.00001,
+# so it needs no CONFIRM=1. Inside a running stack it runs in the proxy container, where the
+# gateway's own configuration is; without one it runs from this checkout with the shell's environment.
 JEV_CHECK_ARGS ?=
 
-jev-check: ## Check the decision model connection (cmd/jevcheck; in the running stack's proxy container when there is one)
+jev-check: ## Check the decision model connection: one probe call, billed about USD 0.00001 (cmd/jevcheck; in the running stack's proxy container when there is one)
 	@if $(COMPOSE) ps --status running --services 2>/dev/null | grep -qx proxy; then \
 		$(COMPOSE) exec -T proxy /jevcheck $(JEV_CHECK_ARGS); \
 	else \
 		go -C backend-go run ./cmd/jevcheck $(JEV_CHECK_ARGS); \
 	fi
+
+# D211: jevcheck --capture records one sanitized fixture per vendor response the gateway decodes
+# (the key check, a bogus key's 401, both decision paths, ZDR, a Haiku chat with usage.cost, a
+# 30k-token probe) into CAPTURE_DIR with OPENROUTER_API_KEY. A dry run (the plan and its estimate,
+# nothing sent) unless CONFIRM=1; hard cap USD 0.01, expected under USD 0.005. A real capture runs
+# the pinned gitleaks over CAPTURE_DIR afterwards, whatever the capture's exit (a capture that
+# stopped half way has written fixtures too). Fixtures from a host that is not a vendor
+# (mock-upstream) say "simulated", never "captured". A real capture's result line is appended to
+# P6_JOURNAL (tmp/p6/results.log), where make p6-ledger counts it.
+CAPTURE_DIR ?= contracts/fixtures/vendor/captured
+CAPTURE_MAX_COST_USD ?= 0.01
+# The key, the OpenRouter base URL and the model come from the shell or, as the services read
+# them, from .env (scripts/envfile.py; the values are expanded by the shell, never echoed).
+JEV_CAPTURE_ENV = $(foreach k,OPENROUTER_API_KEY TRUTHTABLE_OPENROUTER_BASE_URL TRUTHTABLE_JEV_MODEL,$(k)="$$($(PYTHON) scripts/envfile.py get $(k))")
+JEV_CAPTURE = $(JEV_CAPTURE_ENV) go -C backend-go run ./cmd/jevcheck --capture "$(abspath $(CAPTURE_DIR))" --max-cost-usd $(CAPTURE_MAX_COST_USD)
+
+jev-capture: ## Capture sanitized vendor fixtures with jevcheck --capture into CAPTURE_DIR (a dry run unless CONFIRM=1; cap USD 0.01; then gitleaks over it)
+ifeq ($(CONFIRM),1)
+	@$(MAKE) --no-print-directory gitleaks-install
+	@mkdir -p "$(dir $(P6_JOURNAL))"; out="$(dir $(P6_JOURNAL))jev-capture.out"; rm -f "$$out.rc"; \
+	{ $(JEV_CAPTURE) || echo $$? > "$$out.rc"; } | tee "$$out"; \
+	code=$$(cat "$$out.rc" 2>/dev/null || echo 0); rm -f "$$out.rc"; \
+	grep '^TRUSTAGENT_P6_RESULT ' "$$out" >> "$(P6_JOURNAL)" \
+		|| echo "jev-capture: no result line, so make p6-ledger cannot count this capture" >&2; \
+	if [ -d "$(CAPTURE_DIR)" ]; then \
+		$(GITLEAKS) dir --config .gitleaks.toml --redact --no-banner --exit-code 1 "$(CAPTURE_DIR)" || exit 1; \
+		echo "✅ gitleaks: nothing found in $(CAPTURE_DIR)"; \
+	fi; \
+	exit $$code
+else
+	@$(JEV_CAPTURE) --dry-run
+endif
 
 # Go benchmarks (D120): five counts of every benchmark, written to backend-go/bench/<sha>.txt
 # (ignored), so two revisions compare with benchstat. bench-go-smoke runs each benchmark once.

@@ -124,8 +124,15 @@ func TestFittedFromAuditsIsDeterministic(t *testing.T) {
 func TestTokenModelValidationBasis(t *testing.T) {
 	validated := parseTokenModelCheck([]byte(`{"status":"measured","tier":"bench-lite","mock":false,
 		"values":{"same_checks_cost_ratio":{"value":31.5,"run_id":"run-2026-10-01"}}}`))
-	if !validated.validated || !strings.Contains(validated.basis(), "validated: a published bench-lite run measured the same checks at 31.5× the fast-check cost (run run-2026-10-01)") {
+	if !validated.validated || !strings.Contains(validated.basis(), "validated: a published bench-lite run measured the same checks at 31.5× the fast-check cost (run run-2026-10-01).") {
 		t.Errorf("validated basis %q", validated.basis())
+	}
+	// D229: what the same checks were measured on follows the ratio.
+	onDataset := parseTokenModelCheck([]byte(`{"status":"measured","tier":"lite","mock":false,
+		"values":{"same_checks_cost_ratio":{"value":31.5,"run_id":"r1"}},
+		"sources":{"llm_same_checks_usd_per_1k":{"cost_source":"reported","conditions":"RAGTruth-QA test split, n=200, judge anthropic/claude-haiku-4.5"}}}`))
+	if want := "(run r1), on RAGTruth-QA test split, n=200, judge anthropic/claude-haiku-4.5."; !strings.HasSuffix(onDataset.basis(), want) {
+		t.Errorf("basis %q does not end with %q", onDataset.basis(), want)
 	}
 	for name, raw := range map[string]string{
 		"not measured": `{"status":"not_measured","mock":false,"values":{"same_checks_cost_ratio":{"value":null}}}`,

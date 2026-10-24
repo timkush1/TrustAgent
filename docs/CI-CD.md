@@ -28,7 +28,7 @@ CI is split into one workflow per area, plus security, the evaluations and the r
 | **Contracts** | `ci-contracts.yml` | every push to `main` + every PR | validate `contracts/` (schemas, vectors, RE2/JS regex portability), the forbidden-identifier scan, every figure in the README and docs against `contracts/claims` (`check-claims.mjs`), and the version mirrors (`check_version.py`) |
 | **E2E** | `ci-e2e.yml` | every push to `main` + every PR + manual button | the DX scripts job, then the demo, e2e and onboarding stacks with trafficgen, doctor and Playwright |
 | **Security** | `security.yml` | every push/PR + weekly Mondays | security scanners (gosec, bandit, gitleaks, npm audit, Trivy) |
-| **Eval** | `eval.yml` | weekly + manual button | benchmark detector quality against HaluEval with a local model (free) |
+| **Eval** | `eval.yml` | manual button only | benchmark detector quality against HaluEval with a local model (free); its summary labels the figures as that run's own |
 | **Eval (live)** | `eval-live.yml` | manual button only, in the protected `eval-live` environment | the paid benchmark (`make gate-eval`, then `make bench-lite`, hard cap $5) with the real fast check and judge; uploads the run, never publishes it |
 | **Knowledge** | `ci-knowledge.yml` | manual, weekly, and changes to the knowledge path | the knowledge add-on end to end in Docker, on mock vendors; not a required check |
 | **Pages** | `pages.yml` | push to `main`, `v*` tags, PRs (build only), manual | build and check the static site; deploy it only when the owner turned Pages on |
@@ -104,7 +104,8 @@ Five jobs; the first four are **blocking**, Trivy is informational:
 - **Pages** (`pages.yml`): the **build** job runs on every trigger and never deploys. It runs the
   same make targets as `make pages-build`, in order: `check_recording.py` on the tape the site will
   ship (`--require-recorded` on a tag), the static build under `/TrustAgent/` (the tape is `auto` on
-  `main` and pull requests, `recorded` on a tag), the landing page's size budget, file checks (every
+  `main` and pull requests, `recorded` on a tag, or the simulated one on a tag when the
+  repository variable `PAGES_TAG_DATASET` is `simulated`), the landing page's size budget, file checks (every
   page, the 404 fallback, the base path, the shipped tape, no source maps), **gitleaks over the
   built site**, then the Pages artifact. The **deploy** job runs only when the repository variable
   `PAGES_ENABLED` is `true`, never for a pull request, only from `main` or a `v*` tag (and, on a
@@ -129,9 +130,11 @@ git credentials, no permissions at the top level and only what each job needs, n
 
 ### Eval (`.github/workflows/eval.yml`): "is the detector actually good?"
 
-Weekly (and on demand via the *Run workflow* button): starts an Ollama service container, pulls a
-small model, runs the HaluEval-QA benchmark through the real pipeline, and uploads the metrics as
-an artifact. It never blocks PRs — it's a quality trendline, not a gate.
+On demand only, via the *Run workflow* button (it no longer runs weekly): starts an Ollama service
+container, pulls a small model, runs the HaluEval-QA benchmark through the real pipeline, and
+uploads the metrics as an artifact. Its job summary labels the figures as measured in that run
+with that local judge, not as published TrustAgent figures. It never blocks PRs; it is a quality
+check you start by hand, not a gate.
 
 ### Dependabot (`.github/dependabot.yml`)
 
@@ -218,18 +221,23 @@ A release is a version bump, a tag and two workflows. Nothing is published from 
    `v*` next to `main`. Without it, the deploy job of a `v2.0.0` tag is rejected by the
    environment, even though the build passed.
 3. **Settings → Secrets and variables → Actions → Variables:** set `PAGES_ENABLED` to `true`.
+   Only if the project may not publish a recorded tape (mode R of
+   [docs/launch/terms-check.md](launch/terms-check.md)), also set `PAGES_TAG_DATASET` to
+   `simulated`: a tag then ships the simulated tape. Unset, a tag ships the recorded one.
 4. After the first `release-images` run, open each package (`truthtable-proxy`, `-engine`,
    `-dashboard`) → **Package settings** → visibility **Public**, then set the variable
    `GHCR_PUBLIC` to `true` so the `anonymous-pull` job checks it.
 
 **Each release:**
 
-1. On a clean `main`, set the version everywhere and rename the CHANGELOG heading
-   (`## Unreleased — X.Y.Z ...` becomes `## vX.Y.Z — <date> ...`):
+1. On a clean release branch, set the version everywhere and rename the CHANGELOG heading
+   (`## Unreleased — X.Y.Z ...` becomes `## vX.Y.Z — <date> ...`; the date is today unless
+   `RELEASE_DATE=YYYY-MM-DD` names the planned tag day). The bump goes into the release pull
+   request, never earlier, so `main` does not show a release before its tag:
 
    ```bash
    make version-bump V=2.0.0 DRY_RUN=1    # print the plan
-   make version-bump V=2.0.0              # VERSION, pyproject.toml, package.json + lock, version.go, __init__.py, compose default
+   make version-bump V=2.0.0 RELEASE_DATE=YYYY-MM-DD   # VERSION, pyproject.toml, package.json + lock, version.go, __init__.py, compose default
    make check-version RELEASE_TAG=v2.0.0  # every mirror agrees, and the CHANGELOG has the heading
    make check && make check-claims-launch # the local gate, and the launch gate for public figures
    ```
@@ -280,3 +288,7 @@ make lint-workflows # actionlint and zizmor over .github/workflows
 cd frontend-react && npm audit --omit=dev --audit-level=high
 gitleaks git --config .gitleaks.toml --redact .            # if gitleaks is installed
 ```
+
+Scan git, as CI does, not the directory: `gitleaks dir .` also reads the gitignored `.env`, whose
+generated `POSTGRES_PASSWORD` and `TRAFFICGEN_API_KEY` match the generic-api-key rule. Those are
+local, never committed, and not a leak.

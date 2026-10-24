@@ -360,3 +360,35 @@ def bootstrap_ci(
         if lo is not None and hi is not None:
             intervals[name] = (lo, hi)
     return intervals
+
+
+# Two-sided 95% normal quantile.
+Z95 = 1.959963984540054
+
+
+def wilson_interval(successes: int, n: int, z: float = Z95) -> Optional[Tuple[float, float]]:
+    """
+    The Wilson score interval of a proportion (D212: published accuracy), None
+    without trials. Unlike the normal approximation it stays inside [0, 1] and
+    always contains the observed proportion.
+    """
+    if n <= 0 or successes < 0 or successes > n:
+        return None
+    p = successes / n
+    denominator = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / denominator
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denominator
+    return max(0.0, center - half), min(1.0, center + half)
+
+
+def balanced_accuracy_only(
+    labels: Sequence[bool], predictions: Sequence[bool], scores: Sequence[float]
+) -> Dict[str, Optional[float]]:
+    """binary_metrics' balanced accuracy alone (a fast bootstrap statistic)."""
+    tp = sum(1 for label, pred in zip(labels, predictions) if label and pred)
+    fn = sum(1 for label, pred in zip(labels, predictions) if label and not pred)
+    tn = sum(1 for label, pred in zip(labels, predictions) if not label and not pred)
+    fp = sum(1 for label, pred in zip(labels, predictions) if not label and pred)
+    if tp + fn == 0 or tn + fp == 0:
+        return {"balanced_accuracy": None}
+    return {"balanced_accuracy": (tp / (tp + fn) + tn / (tn + fp)) / 2}

@@ -21,11 +21,13 @@ import { committedManifest, scenarioTrace } from '@/test/recording';
 import { digest } from 'virtual:trustagent/tape-digest';
 import claimsDoc from '@contracts/claims/value-claims.v1.json';
 import { priceCall } from '@/lib/decision/cost';
-import { claim, LABEL_TEXT, landingClaims, splitClaims } from './claims';
+import { OurMeasurements } from './Affordable';
+import { claim, costConditionsKey, fillCaveat, formatValue, intervalText, LABEL_TEXT, landingClaims, optionalClaim, splitClaims, type ClaimView } from './claims';
 import { commonReadDate, compareRows } from './compareData';
-import { copy as landingCopy, DEMO_HREF, REFUND } from './content';
+import { command as landingCommand, copy as landingCopy, DEMO_HREF, REFUND } from './content';
 import { auditShareWords, defaultCalculatorInputs, formatMultiple, judgeOptions, modelName, monthlyCost, PRICE_TABLE, referenceJudge, type CalculatorInputs } from './costModel';
 import glassbox from './glassbox.gen.json';
+import { Hero } from './Hero';
 import { HeroCard } from './HeroCard';
 import { Landing } from './Landing';
 import { lazyPartsLoaded, loaders } from './lazyLoaders';
@@ -34,6 +36,8 @@ import { sectionCopy } from './sectionCopy';
 import { refundTraceHref } from './refundTrace';
 import { oneLineSnippet } from './snippetLine';
 import { TryIt } from './TryIt';
+import { LABEL_ICONS, LabelChip } from './ui';
+import { valueLabelView } from '@/domain/controlPresentation';
 import { COMMITMENTS } from './commitments';
 import { demoLinkText, LIVE_TITLES, STUDIO_HREF } from './links';
 
@@ -87,7 +91,9 @@ describe('landing page', () => {
       const target = chip.getAttribute('href')?.slice(1) ?? '';
       expect(document.getElementById(target), `chip ${target} points at a source entry`).not.toBeNull();
     }
-    expect([...kinds].sort()).toEqual(['estimate', 'simulated', 'third_party', 'vendor']);
+    // No Simulated chip: the hero card shows no illustrative time; the card itself says
+    // "Example · Simulated". Measured joins once a benchmark run is published.
+    expect([...kinds].sort()).toEqual(['estimate', 'third_party', 'vendor']);
   });
 
   it('gives every number a chip', async () => {
@@ -113,13 +119,13 @@ describe('landing page', () => {
   it('shows each claim’s caveat next to its chip', async () => {
     await renderLanding();
     const ids = new Set(landingClaims().map((c) => c.id));
-    let caveats = 0;
+    const caveats = new Set<string>();
     for (const chip of document.querySelectorAll<HTMLAnchorElement>('[data-value-label]')) {
       const id = chip.getAttribute('href')?.replace('#source-', '') ?? '';
       if (!ids.has(id)) continue; // a judge price in the calculator, not a claim
       const c = claim(id);
       if (!c.caveat) continue;
-      caveats += 1;
+      caveats.add(id);
       // The caveat sits in the chip's own scope, or in the small block that holds the claim.
       const scope = chip.closest('[data-caveat-scope]') ?? chip.closest('[data-chip-scope]');
       const note = scope?.querySelector(`[data-caveat-for="${id}"]`);
@@ -127,8 +133,8 @@ describe('landing page', () => {
       expect(note).toHaveTextContent(c.caveat);
       expect(scope?.querySelectorAll('[data-value-label]').length, `${id}: the block holding its caveat is small`).toBeLessThanOrEqual(2);
     }
-    // The hero's third-party latency, the Arize test and OpenRouter's own test.
-    expect(caveats).toBeGreaterThanOrEqual(3);
+    // The hero's third-party latency and the Arize test.
+    expect([...caveats]).toEqual(expect.arrayContaining(['jev_p50_latency_openrouter', 'arize_ragtruth_jev_accuracy']));
     const latency = document.querySelector('[data-caveat-for="jev_p50_latency_openrouter"]');
     expect(latency?.closest('section')?.getAttribute('aria-labelledby')).toBe('hero-title');
   });
@@ -141,15 +147,26 @@ describe('landing page', () => {
     expect(note).toHaveTextContent(claim('fast_check_cost_per_1k').display);
   });
 
-  it('says "not yet measured" once instead of borrowing an estimate', async () => {
+  it('says what is not measured yet in the Cost section only, never in the first screen', async () => {
     await renderLanding();
     for (const id of ['gate_latency_p50_measured', 'fast_check_cost_per_1k_measured', 'ragtruth_qa_agreement_measured']) {
       expect(claim(id).hasValue).toBe(false);
     }
-    expect(within(screen.getByRole('main')).getAllByText(/not yet measured/i)).toHaveLength(1);
+    // The hero leads with the third-party latency alone until a run publishes ours.
+    const hero = screen.getByRole('heading', { level: 1 }).closest('section') as HTMLElement;
+    expect(within(hero).queryByText(/measured by us/i)).toBeNull();
+    expect(within(hero).queryByText(/not yet measured/i)).toBeNull();
+    expect(within(screen.getByRole('main')).queryAllByText(/not yet measured/i)).toHaveLength(0);
     expect(document.querySelector('[data-value-label="measured"]')).toBeNull();
     const measured = document.querySelector('[data-measured]') as HTMLElement;
-    expect(measured).toHaveTextContent('Not published yet: our measured fast-check cost, our p50 fast-check latency and our RAGTruth-QA agreement.');
+    expect(measured).toHaveTextContent('Not published yet: our measured fast-check cost, our p50 fast-check latency and our RAGTruth-QA balanced accuracy.');
+  });
+
+  it('says in the footer how it was built, as the README does', async () => {
+    await renderLanding();
+    const line = document.querySelector('[data-build-disclosure]') as HTMLElement;
+    expect(line).toHaveTextContent('Designed and directed by one developer; built with AI coding agents (Claude Code).');
+    expect(within(line).getByRole('link', { name: 'How it was built' })).toHaveAttribute('href', expect.stringMatching(/github\.com\/timkush1\/TrustAgent#how-it-was-built$/));
   });
 
   it('lists the source of every landing claim, judge price and comparison cell in the footer', async () => {
@@ -163,6 +180,16 @@ describe('landing page', () => {
       .getAllByRole('link')
       .map((a) => a.getAttribute('href'));
     expect(new Set(links)).toEqual(cited);
+    // A figure with no outside source says what it is: the demo's illustration, or our arithmetic.
+    for (const c of landingClaims().filter((x) => !x.sourceUrl)) {
+      const entry = document.getElementById(`source-${c.id}`) as HTMLElement;
+      expect(entry, c.id).toHaveTextContent(c.label === 'simulated' ? 'Illustrative, from the demo' : 'Computed in this project');
+    }
+    // The header gives the newest read date in the list, not the claims file's last edit.
+    const dates = [...document.querySelectorAll('#sources li')].flatMap((li) => [...(li.textContent ?? '').matchAll(/\d{4}-\d{2}-\d{2}/g)].map((m) => m[0]));
+    const newest = dates.reduce((a, b) => (b > a ? b : a), '');
+    expect(newest).not.toBe('');
+    expect(document.querySelector('[data-sources-latest]')).toHaveTextContent(newest);
   });
 
   it('sends "Try the demo" to the replay and offers make demo and GitHub', async () => {
@@ -182,6 +209,27 @@ describe('landing page', () => {
     for (const a of links) expect(document.getElementById((a.getAttribute('href') ?? '').slice(1)), a.textContent ?? '').not.toBeNull();
   });
 
+  it('keeps the header’s Tab order where the eye goes, on a phone and on a wide screen', async () => {
+    const order = () => {
+      const header = document.querySelector('header') as HTMLElement;
+      const actions = header.querySelector('[data-header-actions]') as HTMLElement;
+      const nav = within(header).getByRole('navigation', { name: 'Sections' });
+      return actions.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING ? 'actions, links' : 'links, actions';
+    };
+    // Below 1024 px the links are the second row, under the theme, GitHub and Try the demo.
+    const { unmount } = await renderLanding();
+    expect(order()).toBe('actions, links');
+    unmount();
+    const matchMedia = window.matchMedia;
+    window.matchMedia = ((q: string) => ({ ...matchMedia(q), matches: q === '(min-width: 1024px)' })) as typeof window.matchMedia;
+    try {
+      await renderLanding();
+      expect(order()).toBe('links, actions');
+    } finally {
+      window.matchMedia = matchMedia;
+    }
+  });
+
   it('says what Jev is, and why a check is cheap, before the panel that shows what it was asked', async () => {
     await renderLanding();
     const how = document.getElementById('how') as HTMLElement;
@@ -196,7 +244,14 @@ describe('landing page', () => {
     const figure = document.getElementById('how')?.querySelector('figure') as HTMLElement;
     expect(within(figure).getAllByText('request')).toHaveLength(2);
     expect(within(figure).getAllByText('answer')).toHaveLength(2);
-    expect(within(figure).getByText(/· in the background, for flagged and sampled answers/)).toBeInTheDocument();
+    const audit = within(figure).getByText(/· in the background, for flagged and sampled answers/);
+    expect(audit).toBeInTheDocument();
+    // Stacked on a phone, the provider sits between the gateway and the deep audit: a line says
+    // where the deep audit starts, and only below 1024 px.
+    const from = figure.querySelector('[data-deep-audit-from]') as HTMLElement;
+    expect(from).toHaveTextContent('From the gateway, after the reply:');
+    expect(from).toHaveClass('lg:hidden');
+    expect(from.compareDocumentPosition(audit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows the replay’s trace page above the cards, in both themes, captioned Simulated and linking to that request', async () => {
@@ -497,7 +552,11 @@ describe('comparison', () => {
         const cell = tr.querySelectorAll<HTMLElement>('[data-compare-cell]')[compareDoc.columns.findIndex((c) => c.id === col)];
         // "Yes · Langfuse": the answer and whose docs say so, both visible, so one vendor's docs never
         // speak for the others in its row.
-        expect(cell.querySelector('[data-compare-answer]')?.textContent, `${row.id}.${col}`).toBe(`${words[data.value]} · ${data.vendor}`);
+        expect(cell.querySelector('[data-compare-answer]')?.textContent?.replace(/\u00a0/g, ' '), `${row.id}.${col}`).toBe(`${words[data.value]} · ${data.vendor}`);
+        // The separator travels with the product name: no line ends in a dangling "·".
+        const vendor = cell.querySelector('[data-compare-vendor]');
+        expect(vendor).toHaveClass('whitespace-nowrap');
+        expect(vendor?.textContent).toBe(`·\u00a0${data.vendor}`);
         expect(row.examples).toContain(data.vendor);
         // One control per cell: Source opens the docs' words and the link.
         expect(cell.querySelectorAll('summary')).toHaveLength(1);
@@ -510,7 +569,7 @@ describe('comparison', () => {
     expect(silent.length).toBeGreaterThan(0);
     expect(table.querySelectorAll('[data-compare-cell="not_documented"]')).toHaveLength(silent.length);
     for (const cell of table.querySelectorAll<HTMLElement>('[data-compare-cell="not_documented"]')) {
-      expect(cell.querySelector('[data-compare-answer]')?.textContent).toMatch(/^Not documented · /);
+      expect(cell.querySelector('[data-compare-answer]')?.textContent).toMatch(/^Not documented ·\u00a0/);
     }
     // Every product a row names is cited by one of its cells.
     for (const row of compareRows) {
@@ -617,21 +676,28 @@ describe('calculator', () => {
 
   it('offers the judges the price table prices: one per model, no Jev, data-driven', () => {
     const options = judgeOptions();
-    expect(options.map((o) => o.name)).toEqual(['Claude Haiku 4.5', 'Local model (Ollama)']);
+    // The sourced Sonnet 5.5 pair (D149, read 2026-10-23) is one option: same price on both providers.
+    expect(options.map((o) => o.name)).toEqual(['Claude Haiku 4.5', 'Claude Sonnet 5.5', 'Local model (Ollama)']);
     expect(referenceJudge(options).ref).toEqual({ provider: 'anthropic', model: 'claude-haiku-4-5' });
-    // A sourced Sonnet pair would appear with no code change (D149), once per model.
+    // Another priced model appears with no code change, once per model.
     const sonnet = { input_per_mtok: 3, output_per_mtok: 15, label: 'vendor_price' as const, source: 'https://example.com', as_of: '2026-10-10' };
     const table: PricingTable = {
       ...PRICE_TABLE,
       entries: [...PRICE_TABLE.entries, { ...sonnet, match: 'claude-sonnet-4-5*', provider: 'anthropic' }, { ...sonnet, match: 'anthropic/claude-sonnet-4.5', provider: 'openrouter' }],
     };
-    expect(judgeOptions(table).map((o) => o.name)).toEqual(['Claude Haiku 4.5', 'Local model (Ollama)', 'Claude Sonnet 4.5']);
+    expect(judgeOptions(table).map((o) => o.name)).toEqual(['Claude Haiku 4.5', 'Claude Sonnet 5.5', 'Local model (Ollama)', 'Claude Sonnet 4.5']);
     // The same model at two prices is two options, each naming its provider.
     const split: PricingTable = {
       ...table,
       entries: table.entries.map((e) => (e.provider === 'openrouter' && e.match === 'anthropic/claude-sonnet-4.5' ? { ...e, input_per_mtok: 3.3 } : e)),
     };
-    expect(judgeOptions(split).map((o) => o.name)).toEqual(['Claude Haiku 4.5', 'Local model (Ollama)', 'Claude Sonnet 4.5 (Anthropic)', 'Claude Sonnet 4.5 (OpenRouter)']);
+    expect(judgeOptions(split).map((o) => o.name)).toEqual([
+      'Claude Haiku 4.5',
+      'Claude Sonnet 5.5',
+      'Local model (Ollama)',
+      'Claude Sonnet 4.5 (Anthropic)',
+      'Claude Sonnet 4.5 (OpenRouter)',
+    ]);
     expect(modelName({ match: 'anthropic/claude-haiku-4.5', provider: 'openrouter' })).toBe('Claude Haiku 4.5');
   });
 
@@ -649,7 +715,7 @@ describe('calculator', () => {
       'Claude Haiku 4.5 audits 7.9% of answers: every flagged one (5%), 2% of the other 95% (1.9%), and a 1% random sample of all answers, for an unbiased hallucination rate.',
     );
     // Parts that add up to more than every answer: the share is capped, and the sentence says so.
-    expect(auditShareWords('Your judge', 0.995, 1, 1)).toMatch(/^Your judge audits every answer \(the parts below add up to more\): every flagged one \(99\.5%\)/);
+    expect(auditShareWords('Your judge', 0.995, 1, 1)).toMatch(/^Your judge audits every answer \(the parts add up to more\): every flagged one \(99\.5%\)/);
     const select = screen.getByLabelText('Deep-audit judge');
     fireEvent.change(select, { target: { value: judgeOptions().find((o) => o.local)?.id } });
     expect(row('deep_audit')).toBe('$0.00');
@@ -671,14 +737,14 @@ describe('run it yourself', () => {
     await renderLanding();
     const section = document.getElementById('self-host') as HTMLElement;
     expect(within(section).getByText('make up')).toBeInTheDocument();
-    // make up leads; the long no-make command keeps its one line and scrolls sideways in a named,
-    // focusable region instead of breaking mid-flag or being cut off.
-    const long = within(section).getByText('python3 scripts/configure.py --ensure && docker compose up -d --wait');
-    const code = long.closest('code') as HTMLElement;
-    expect(code).toHaveClass('whitespace-pre');
-    expect(code).not.toHaveClass('truncate');
-    expect(code.closest('[role="region"]')).toHaveAccessibleName('Command (scrolls sideways)');
-    expect(code.closest('[role="region"]')).toHaveAttribute('tabindex', '0');
+    // make up leads; without make, the contract's one line is two short commands, one per row, so
+    // neither is cut off mid-word at any width, and each has its own copy button.
+    const steps = [...(section.querySelector('[data-compose-steps]') as HTMLElement).querySelectorAll('code')].map((c) =>
+      (c.textContent ?? '').replace(/^\$/, ''),
+    );
+    expect(steps).toEqual(['python3 scripts/configure.py --ensure', 'docker compose up -d --wait']);
+    expect(steps.join(' && ')).toBe(landingCommand('compose_up'));
+    for (const step of steps) expect(within(section).getByRole('button', { name: `Copy ${step}` })).toBeInTheDocument();
     expect(section).toHaveTextContent('keys are encrypted at rest');
     expect(section).toHaveTextContent('Pulls the prebuilt images of a published release, otherwise builds them locally.');
     expect(oneLineSnippet()).toBe('client = OpenAI(base_url="http://localhost:8080/v1")');
@@ -686,6 +752,128 @@ describe('run it yourself', () => {
     expect(sdk).toHaveTextContent(oneLineSnippet());
     expect(sdk).toHaveClass('whitespace-pre');
     expect(sdk.closest('[role="region"]')).toHaveAccessibleName('The line that changes (scrolls sideways)');
+  });
+
+  it('says a cut-off line continues, until it has been scrolled to its end', async () => {
+    await renderLanding();
+    const section = document.getElementById('self-host') as HTMLElement;
+    const region = (section.querySelector('[data-snippet]') as HTMLElement).closest('[role="region"]') as HTMLElement;
+    const hint = () => region.parentElement?.querySelector('[data-scroll-hint]');
+    expect(hint()).toBeNull();
+    // A phone: the line is wider than its region.
+    let left = 0;
+    Object.defineProperty(region, 'scrollWidth', { configurable: true, get: () => 520 });
+    Object.defineProperty(region, 'clientWidth', { configurable: true, get: () => 300 });
+    Object.defineProperty(region, 'scrollLeft', { configurable: true, get: () => left });
+    act(() => {
+      region.dispatchEvent(new Event('scroll'));
+    });
+    expect(hint()).toHaveTextContent('The line continues: scroll sideways');
+    left = 220;
+    act(() => {
+      region.dispatchEvent(new Event('scroll'));
+    });
+    expect(hint()).toBeNull();
+  });
+});
+
+describe('our measurements', () => {
+  it('shows a published figure with its chip, its interval with n per class and its caveat (D212)', () => {
+    const agreement: ClaimView = {
+      ...claim('ragtruth_qa_agreement_measured'),
+      display: '81.3%',
+      hasValue: true,
+      value: 0.8125,
+      interval: intervalText({ lo: 0.75, hi: 0.86, method: 'bootstrap', resamples: 2000, n_pos: 40, n_neg: 160 }, 'fraction'),
+    };
+    render(
+      <ul>
+        <OurMeasurements measured={[claim('fast_check_cost_per_1k_measured'), agreement]} />
+      </ul>,
+    );
+    const block = document.querySelector('[data-measured]') as HTMLElement;
+    const chip = block.querySelector('[data-value-label="measured"]') as HTMLElement;
+    expect(chip).toHaveAttribute('href', '#source-ragtruth_qa_agreement_measured');
+    const scope = chip.closest('[data-caveat-scope]') as HTMLElement;
+    expect(scope).toHaveTextContent(/Our RAGTruth-QA balanced accuracy:\s*81\.3%/);
+    // D233: the caveat names the thresholds the bench flags at, and says Arize's figures above are
+    // not like for like (never "the same threshold").
+    expect(scope.querySelector('[data-caveat-for="ragtruth_qa_agreement_measured"]')).toHaveTextContent(agreement.caveat ?? '');
+    expect(agreement.caveat).toMatch(/groundedness 0\.8 or contradiction 0\.7/);
+    expect(agreement.caveat).toMatch(/Not like for like with Arize's Jev figures/);
+    expect(agreement.caveat).not.toMatch(/same threshold|0\.5/);
+    const interval = scope.querySelector('[data-interval-for="ragtruth_qa_agreement_measured"]') as HTMLElement;
+    expect(interval).toHaveTextContent('95% interval 75% to 86% (bootstrap, 2000 resamples); 40 answers with a hallucination and 160 without.');
+    // Its figures sit in the chip's scope, as every figure on the page does.
+    expect(interval.closest('[data-chip-scope]')?.querySelector('[data-value-label]')).not.toBeNull();
+    expect(block).toHaveTextContent('Still to publish: our measured fast-check cost.');
+  });
+
+  it('formats a measured multiple as the README, the release notes and the post do (27×, not 26.84×)', () => {
+    expect(formatValue(26.84, 'multiplier')).toBe('27');
+    expect(formatValue(3.14, 'multiplier')).toBe('3.1');
+    expect(formatValue(0.2134, 'usd_per_1k')).toBe('0.213');
+  });
+
+  it('words an interval as the README does, and gives none before a run', () => {
+    expect(intervalText({ lo: 0.7, hi: 0.8, method: 'wilson' }, 'fraction')).toBe('95% interval 70% to 80% (Wilson)');
+    expect(intervalText({ hi: 0.8, method: 'wilson' }, 'fraction')).toBeNull();
+    expect(intervalText(undefined, 'fraction')).toBeNull();
+    expect(claim('ragtruth_qa_agreement_measured').interval).toBeNull();
+  });
+});
+
+describe('hero latency strip', () => {
+  it('adds our measured p50 beside the third-party figure once a run publishes it', () => {
+    const measured: ClaimView = { ...claim('gate_latency_p50_measured'), display: '241 ms p50', hasValue: true, value: 241 };
+    render(<Hero ours={measured} />);
+    const row = document.querySelector('[data-hero-measured]') as HTMLElement;
+    expect(row).toHaveTextContent('Measured by us:');
+    expect(row).toHaveTextContent('241 ms p50');
+    expect(row.querySelector('[data-value-label="measured"]')).not.toBeNull();
+    // The third-party figure keeps its caveat beside it.
+    expect(document.querySelector('[data-caveat-for="jev_p50_latency_openrouter"]')).toHaveTextContent(claim('jev_p50_latency_openrouter').caveat ?? '');
+  });
+
+  it('says how our latency was taken beside it: connection, one at a time, where it ran, snapshot, n (D205)', () => {
+    const conditions = 'warm connection, one request at a time, run on Linux, region cloud us-east, snapshot typesafe/jev-1.13-20260917, n=199';
+    const base = claim('gate_latency_p50_measured');
+    const caveat = fillCaveat(claimsDoc.claims.find((c) => c.id === 'gate_latency_p50_measured')?.caveat ?? null, true, conditions);
+    const measured: ClaimView = { ...base, display: '241 ms p50', hasValue: true, value: 241, caveat };
+    render(<Hero ours={measured} />);
+    const row = document.querySelector('[data-hero-measured]') as HTMLElement;
+    expect(row).toHaveAttribute('data-caveat-scope');
+    const note = row.querySelector('[data-caveat-for="gate_latency_p50_measured"]') as HTMLElement;
+    expect(note).toHaveTextContent(`The fast check’s own time per answer, the vendor call included: ${conditions}.`.replace('’', "'"));
+    expect(note.textContent).not.toMatch(/laptop|\{/);
+  });
+
+  it('never shows a caveat placeholder raw: no conditions before a run, a plain note without them', () => {
+    const raw = 'Time: {gate_conditions}.';
+    expect(fillCaveat(raw, false, 'warm')).toBeNull();
+    expect(fillCaveat(raw, true, undefined)).toBe('Time: conditions not recorded.');
+    expect(fillCaveat('No placeholder.', false)).toBe('No placeholder.');
+    // Before a run publishes, the latency claims carry no caveat at all.
+    expect(claim('gate_latency_p50_measured').caveat).toBeNull();
+    expect(claim('gate_latency_p95_measured').caveat).toBeNull();
+    expect(claim('fast_check_cost_per_1k_measured').caveat).toBeNull();
+    for (const c of landingClaims()) expect(c.caveat ?? '').not.toMatch(/\{[a-z_]+\}/);
+  });
+
+  it('says what our cost was measured on beside it: the dataset, n and the input tokens per answer (D229)', () => {
+    const conditions = 'RAGTruth-QA test split, n=200, about 640 input tokens per answer';
+    const raw = claimsDoc.claims.find((c) => c.id === 'fast_check_cost_per_1k_measured')?.caveat ?? null;
+    expect(raw).toContain('{cost_conditions}');
+    const caveat = fillCaveat(raw, true, undefined, conditions);
+    expect(caveat).toContain(conditions);
+    expect(caveat).toMatch(/length of the documents/);
+    expect(caveat).not.toMatch(/\{/);
+    expect(fillCaveat('On {cost_conditions}.', true, 'warm', undefined)).toBe('On conditions not recorded.');
+    expect(fillCaveat('On {cost_conditions}.', false, 'warm', conditions)).toBeNull();
+    expect(costConditionsKey('fast_check_usd_per_1k')).toBe('fast_check_usd_per_1k');
+    expect(costConditionsKey('same_checks_cost_ratio')).toBe('llm_same_checks_usd_per_1k');
+    expect(costConditionsKey('proxy_overhead_ms_p50')).toBeNull();
+    expect(costConditionsKey('gate_latency_ms_p50')).toBeNull();
   });
 });
 
@@ -705,7 +893,10 @@ describe('hero answer card', () => {
       const { container } = render(<HeroCard />);
       expect(screen.getByText('Example · Simulated')).toBeInTheDocument();
       const chips = [...container.querySelectorAll('[data-value-label]')].map((c) => c.getAttribute('href'));
-      expect(chips).toEqual(['#source-hero_card_latency_ms', '#source-hero_card_cost_usd']);
+      // The cost only: an illustrative time would disagree with the replay's record of the same
+      // request, which the card links to.
+      expect(chips).toEqual(['#source-hero_card_cost_usd']);
+      expect(container.textContent).not.toMatch(/\d\s?ms\b/);
       expect(container.querySelector('[data-checked-against]')).toHaveTextContent('Checked against: refund-policy.md');
     } finally {
       window.matchMedia = matchMedia;
@@ -720,11 +911,11 @@ describe('hero answer card', () => {
       const chipsHidden = () => [...container.querySelectorAll('[data-value-label]')].map((c) => c.closest('[inert]') !== null);
       expect(mark()).toBeNull();
       // A beat not shown yet is hidden from the keyboard too: its chips cannot take focus unseen.
-      expect(chipsHidden()).toEqual([true, true]);
+      expect(chipsHidden()).toEqual([true]);
       await act(async () => {
         vi.advanceTimersByTime(10_000);
       });
-      expect(chipsHidden()).toEqual([false, false]);
+      expect(chipsHidden()).toEqual([false]);
       expect(mark()).toHaveTextContent('60 days');
       expect(mark()).toHaveAttribute('data-on');
       expect(screen.getByRole('button', { name: /play again/i })).toBeEnabled();
@@ -746,6 +937,20 @@ describe('hero answer card', () => {
   });
 });
 
+describe('label chips', () => {
+  it('carry the dashboard’s icon for each label: one label system on the site and in the app', () => {
+    for (const label of ['measured', 'estimate', 'third_party', 'vendor', 'simulated'] as const) {
+      expect(LABEL_ICONS[label], label).toBe(valueLabelView(label).icon);
+      expect(LABEL_TEXT[label], label).toBe(valueLabelView(label).label);
+    }
+    const { container } = render(<LabelChip claim={{ id: 'x', label: 'estimate', labelText: LABEL_TEXT.estimate }} />);
+    const chip = container.querySelector('[data-value-label="estimate"]') as HTMLElement;
+    expect(chip.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(chip).toHaveTextContent('Estimate');
+    expect(chip).toHaveAccessibleName('Estimate: where this number comes from');
+  });
+});
+
 describe('claims', () => {
   it('drops a literal [estimate] tag after a claim: the chip says it', () => {
     const parts = splitClaims('for {claim:fast_check_cost_per_1k} [estimate] — and more');
@@ -756,6 +961,9 @@ describe('claims', () => {
 
   it('throws on an unknown claim rather than print a number without a source', () => {
     expect(() => claim('nope')).toThrow(/no claim nope/);
+    // A figure that may be withdrawn is looked up as optional: gone means not shown.
+    expect(optionalClaim('nope')).toBeNull();
+    expect(optionalClaim('jev_input_price_per_mtok')?.display).toBe(claim('jev_input_price_per_mtok').display);
   });
 });
 

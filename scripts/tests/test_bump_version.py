@@ -9,9 +9,12 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import json
 import os
+import re
 import shutil
 import stat
+import subprocess  # nosec B404 - runs make -n with fixed arguments
 import sys
 import unittest
 from pathlib import Path
@@ -229,7 +232,130 @@ class RunRecordingTest(unittest.TestCase):
         self.assertEqual(bv.run_recording(["trustagent-no-such-program-x9"], ROOT), 127)
 
 
+RECORDED = "frontend-react/demo-data/recorded"
+
+
+class RecordedTapeTest(unittest.TestCase):
+    """The bump stamps the simulated tape only: a recorded tape keeps the version it was recorded
+    with (it is evidence of that run), so no step of the bump may write under demo-data/recorded."""
+
+    def setUp(self) -> None:
+        self.root = make_root("1.9.0")
+        self.addCleanup(shutil.rmtree, self.root, True)
+        tape = self.root / RECORDED
+        (tape / "traces").mkdir(parents=True)
+        # Every string a bump rewrites elsewhere: the bare version, a compose default and a
+        # CHANGELOG-style heading.
+        (tape / "manifest.json").write_text(
+            '{"kind": "recorded", "trustagent_version": "1.9.0",\n'
+            ' "note": "${TRUSTAGENT_VERSION:-1.9.0}"}\n',
+            encoding="utf-8",
+        )
+        (tape / "traces" / "t1.json").write_text(
+            '{"version": "1.9.0", "text": "## Unreleased — 2.0.0"}\n', encoding="utf-8"
+        )
+        # A compose overlay inside the tape directory is not an overlay of the project.
+        (tape / "docker-compose.tape.yml").write_text(
+            "image: x:${TRUSTAGENT_VERSION:-1.9.0}\n", encoding="utf-8"
+        )
+
+    def tape(self) -> Dict[str, str]:
+        return digest(self.root / RECORDED)
+
+    def test_a_bump_leaves_the_recorded_tape_alone(self) -> None:
+        before = self.tape()
+        rec = Recorder()
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = bv.main(["2.0.0"], root=self.root, runner=rec, today=TODAY)
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertEqual((self.root / "VERSION").read_text(encoding="utf-8"), "2.0.0\n")
+        self.assertEqual(self.tape(), before)
+        self.assertNotIn("recorded", out.getvalue())
+        # The one command it runs regenerates the simulated tape, in frontend-react.
+        self.assertEqual(rec.calls, [(bv.RECORDING_CMD, self.root / bv.RECORDING_DIR)])
+
+    def test_the_plan_names_no_recorded_path(self) -> None:
+        _, changes, notes = bv.plan_bump(self.root, "2.0.0", TODAY)
+        self.assertTrue(changes)
+        for path in changes:
+            self.assertFalse(path.replace("\\", "/").startswith(RECORDED), path)
+            self.assertNotIn("demo-data", path)
+        self.assertFalse([n for n in notes if "recorded" in n])
+
+    def test_the_recording_command_writes_the_simulated_tape(self) -> None:
+        # `npm run recording` is the bump's only other writer: its script must not name the
+        # recorded tape, and its default output directory is demo-data/simulated.
+        pkg = json.loads((ROOT / bv.RECORDING_DIR / "package.json").read_text(encoding="utf-8"))
+        script = pkg["scripts"][bv.RECORDING_CMD[-1]]
+        self.assertNotIn("recorded", script)
+        self.assertNotIn("--out", script)
+        source = script.split()[-1]
+        builder = (ROOT / bv.RECORDING_DIR / source).read_text(encoding="utf-8")
+        default_out = re.search(r"out:\s*\{[^}]*default:\s*join\(web,\s*'([^']+)'\)", builder)
+        self.assertIsNotNone(default_out, "the recording builder's --out default moved")
+        self.assertEqual(default_out.group(1), "demo-data/simulated")
+
+
+class MakeTargetTest(unittest.TestCase):
+    """make version-bump passes RELEASE_DATE as --date: the 2.0.0 bump is made on the branch the
+    release is prepared on, days before the tag, so its CHANGELOG heading carries the planned tag
+    date, not the day of the bump (D234)."""
+
+    def test_the_target_passes_the_release_date(self) -> None:
+        release_mk = (ROOT / "mk" / "release.mk").read_text(encoding="utf-8")
+        target = release_mk.split("\nversion-bump:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("scripts/bump_version.py", target)
+        self.assertIn("$(if $(RELEASE_DATE),--date $(RELEASE_DATE))", target)
+
+    def test_make_n_shows_the_date_only_when_given(self) -> None:
+        if not shutil.which("make"):
+            self.skipTest("make is not installed")
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("RELEASE_DATE", "DRY_RUN", "MAKEFLAGS", "MFLAGS")
+        }
+
+        def plan(*extra: str) -> str:
+            r = subprocess.run(  # nosec B603 B607 - fixed arguments
+                ["make", "-n", "--no-print-directory", "version-bump", "V=2.0.0", *extra],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return r.stdout
+
+        self.assertRegex(
+            plan("RELEASE_DATE=2026-11-03"), r"bump_version\.py\s+--date 2026-11-03 2\.0\.0\n"
+        )
+        self.assertNotIn("--date", plan())
+
+
 class RepositoryDryRunTest(unittest.TestCase):
+    def test_the_committed_tree_plans_the_release_bump(self) -> None:
+        # The release bump of the 2.0 line plans every mirror, the CHANGELOG heading of the
+        # consolidated section, and nothing under the recorded tape.
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        if cv.compare_semver("2.0.0", version) <= 0:
+            # After the release bump the consolidated section carries the released heading.
+            changelog = (ROOT / cv.CHANGELOG).read_text(encoding="utf-8")
+            self.assertRegex(changelog, r'(?m)^## v2\.0\.0 — \d{4}-\d{2}-\d{2} "Jev gateway"$')
+            return
+        before = digest(ROOT / "backend-go" / "internal" / "version")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = bv.main(["--dry-run", "2.0.0"], runner=Recorder())
+        self.assertEqual(code, 0, out.getvalue())
+        self.assertIn("CHANGELOG.md: heading -> ## v2.0.0 — ", out.getvalue())
+        self.assertIn('"Jev gateway"', out.getvalue())
+        self.assertNotIn("recorded", out.getvalue())
+        self.assertEqual(digest(ROOT / "backend-go" / "internal" / "version"), before)
+
     def test_the_committed_tree_plans_a_patch_bump(self) -> None:
         version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
         major, minor, patch, _ = cv.parse_semver(version)

@@ -105,6 +105,7 @@ describe('Studio on the static site', { timeout: 30_000 }, () => {
     ]);
     expect(screen.getByRole('region', { name: 'On your own stack' })).toHaveTextContent(/watch it in shadow, test it on past traffic, make it active and calibrate it for blocking/);
     expect(within(screen.getByRole('region', { name: 'On your own stack' })).getByText('make demo').tagName).toBe('CODE');
+    expect(within(screen.getByRole('region', { name: 'On your own stack' })).getByText('make up').tagName).toBe('CODE');
     expect(chat.calls).toHaveLength(0);
     expect(formatViolations(await axeViolations(container))).toEqual([]);
   });
@@ -235,6 +236,8 @@ describe('Studio on the static site', { timeout: 30_000 }, () => {
     await user.click(within(test).getByRole('button', { name: 'Load samples' }));
     await within(test).findByText(/^Added \d answers? to the samples above\.$/);
     expect(within(test).getByText('3 of 100 calls to OpenRouter (checks and AI drafts)')).toBeInTheDocument();
+    // The counter names OpenRouter once; no bare backend name sits beside it.
+    expect(within(test).queryByText('· OpenRouter')).toBeNull();
     await user.click(within(test).getByRole('button', { name: 'Run test' }));
     const results = await within(test).findByRole('region', { name: 'Test results' });
     expect(within(results).getAllByText('Fires').length).toBeGreaterThan(0);

@@ -271,6 +271,9 @@ func freeMockJudgeNote(r *store.RoiData) string {
 		return ""
 	}
 	note := "deep-audit judge calls: the mock judge is free in the demo, so this spend is simulated, not a real one"
+	if m := measuredFullAudit(); m.ok {
+		return note + "; a real judge adds about $" + strconv.FormatFloat(m.per1k/1000, 'f', -1, 64) + " per deep audit (" + m.basis() + ")"
+	}
 	if claim := staticFullAudit(); claim.per1k > 0 {
 		note += "; a real judge adds about $" + strconv.FormatFloat(claim.per1k/1000, 'f', -1, 64) +
 			" per deep audit (estimate, not measured: " + claim.basis + ")"
@@ -320,6 +323,11 @@ func fullAuditCounterfactual(r *store.RoiData, n int64) counterfactual {
 			Basis: fmt.Sprintf("deep-audit cost fitted to answer length (least squares) over %d deep audits in this window, "+
 				"chosen by risk rather than a uniform sample, and applied to the answers checked; 95%% bootstrap interval "+
 				"(%d resamples)", len(r.FitSamples), bootstrapResamples)}
+	}
+	if m := measuredFullAudit(); m.ok {
+		// The published figure is measured (D212): a bench run's full audits, per 1,000 answers.
+		return counterfactual{Kind: "llm_full_claim_audit", Method: "static_assumptions", N: 0, Label: labelMeasured,
+			Per1k: ptrF(m.per1k), USD: ptrF(roundUSD(m.per1k * float64(n) / 1000)), Basis: m.basis() + ", applied to the answers checked"}
 	}
 	claim := staticFullAudit()
 	cf := counterfactual{Kind: "llm_full_claim_audit", Method: "static_assumptions", N: 0, Label: labelEstimate,
@@ -524,6 +532,9 @@ type tokenModelCheck struct {
 	ratio     float64
 	runID     string
 	tier      string
+	// conditions is what the same checks were measured on (D229): the dataset, n, the judge's
+	// input tokens per answer and the judge model (measured.json sources.llm_same_checks_usd_per_1k).
+	conditions string
 }
 
 // basis is the validation sentence of the same-checks basis.
@@ -536,7 +547,21 @@ func (c tokenModelCheck) basis() string {
 	if c.runID != "" {
 		s += " (run " + c.runID + ")"
 	}
+	if c.conditions != "" {
+		s += ", on " + c.conditions
+	}
 	return s + "."
+}
+
+// sourceConditions is measured.json sources.<key>.conditions (D229), trimmed; "" when absent.
+func sourceConditions(sources map[string]json.RawMessage, key string) string {
+	var src struct {
+		Conditions string `json:"conditions"`
+	}
+	if raw, ok := sources[key]; !ok || json.Unmarshal(raw, &src) != nil {
+		return ""
+	}
+	return strings.TrimSpace(src.Conditions)
 }
 
 // parseTokenModelCheck reads measured.json: validated only when a real (non-mock) published run
@@ -550,6 +575,7 @@ func parseTokenModelCheck(raw []byte) tokenModelCheck {
 			Value *float64 `json:"value"`
 			RunID *string  `json:"run_id"`
 		} `json:"values"`
+		Sources map[string]json.RawMessage `json:"sources"`
 	}
 	if json.Unmarshal(raw, &doc) != nil || doc.Mock || doc.Status == "not_measured" {
 		return tokenModelCheck{}
@@ -558,7 +584,7 @@ func parseTokenModelCheck(raw []byte) tokenModelCheck {
 	if !ok || v.Value == nil || *v.Value <= 0 || math.IsInf(*v.Value, 0) || math.IsNaN(*v.Value) {
 		return tokenModelCheck{}
 	}
-	c := tokenModelCheck{validated: true, ratio: *v.Value, tier: "benchmark"}
+	c := tokenModelCheck{validated: true, ratio: *v.Value, tier: "benchmark", conditions: sourceConditions(doc.Sources, "llm_same_checks_usd_per_1k")}
 	if v.RunID != nil {
 		c.runID = *v.RunID
 	}
@@ -574,6 +600,78 @@ var measuredTokenModel = sync.OnceValue(func() tokenModelCheck {
 		return tokenModelCheck{}
 	}
 	return parseTokenModelCheck(raw)
+})
+
+// measuredFigure is a cost per 1,000 answers that a published bench run measured
+// (contracts/claims/measured.json), with where it came from.
+type measuredFigure struct {
+	ok         bool
+	per1k      float64
+	runID      string
+	tier       string
+	costSource string
+	// conditions is what the cost was measured on (D229): the dataset, n, the input tokens per
+	// answer and the judge model. A cost per answer grows with the documents' length.
+	conditions string
+}
+
+// basis names the run, what it was measured on and how the cost was taken: the vendor's reported
+// cost, or the measured tokens × the vendor's price (D204, D229).
+func (m measuredFigure) basis() string {
+	s := "measured · run " + m.runID + ": a full claim-level LLM audit cost $" + strconv.FormatFloat(m.per1k, 'f', -1, 64) +
+		" per 1,000 answers in the published " + m.tier + " run"
+	if m.conditions != "" {
+		s += ", on " + m.conditions
+	}
+	if m.costSource == "computed" {
+		s += " (measured tokens × vendor price)"
+	}
+	return s
+}
+
+// parseMeasuredFullAudit reads llm_full_audit_usd_per_1k from measured.json (D212): set only when
+// a real (non-mock) published run measured it, with the run that did.
+func parseMeasuredFullAudit(raw []byte) measuredFigure {
+	var doc struct {
+		Status string  `json:"status"`
+		Tier   *string `json:"tier"`
+		Mock   bool    `json:"mock"`
+		Values map[string]struct {
+			Value *float64 `json:"value"`
+			RunID *string  `json:"run_id"`
+		} `json:"values"`
+		Sources map[string]json.RawMessage `json:"sources"`
+	}
+	if json.Unmarshal(raw, &doc) != nil || doc.Mock || doc.Status != "measured" {
+		return measuredFigure{}
+	}
+	const key = "llm_full_audit_usd_per_1k"
+	v, ok := doc.Values[key]
+	if !ok || v.Value == nil || v.RunID == nil || *v.RunID == "" || *v.Value <= 0 || math.IsInf(*v.Value, 0) || math.IsNaN(*v.Value) {
+		return measuredFigure{}
+	}
+	m := measuredFigure{ok: true, per1k: *v.Value, runID: *v.RunID, tier: "benchmark"}
+	if doc.Tier != nil && *doc.Tier != "" {
+		m.tier = *doc.Tier
+	}
+	var src struct {
+		CostSource string `json:"cost_source"`
+	}
+	if raw, ok := doc.Sources[key]; ok && json.Unmarshal(raw, &src) == nil {
+		m.costSource = src.CostSource
+	}
+	m.conditions = sourceConditions(doc.Sources, key)
+	return m
+}
+
+// measuredFullAudit is the embedded measured.json's full-audit figure; a variable so tests can
+// replace it.
+var measuredFullAudit = sync.OnceValue(func() measuredFigure {
+	raw, err := contracts.FS.ReadFile("claims/measured.json")
+	if err != nil {
+		return measuredFigure{}
+	}
+	return parseMeasuredFullAudit(raw)
 })
 
 type staticClaim struct {

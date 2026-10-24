@@ -21,9 +21,11 @@ Conversion (design-engine section 12.1):
 Sampling is stratified by label x generating model with a fixed seed
 (sampling.py), proportional by default or label-balanced.
 
-[A9] The field names, the revision and the licence are checked at P6: pin
-`--revision` to a commit SHA for a published run. The manifest records the
-SHA-256 of both source files either way. Only metrics are ever committed;
+[A9] Checked at P6 Step 0: the field names, the licence (MIT) and the revision
+(`make` pins RAGTRUTH_REVISION to a commit SHA). The manifest records the
+SHA-256 of both source files either way, and each example's `meta.source_id`
+(about six answers share a source), so the calibration sample can be checked
+for overlap with the bench's test sample (D206). Only metrics are ever committed;
 the downloaded and prepared files stay under evals/datasets/ragtruth/
 (gitignored).
 
@@ -59,9 +61,12 @@ DEFAULT_REVISION = "main"
 RAW_URL = "https://raw.githubusercontent.com/" + REPOSITORY + "/{revision}/dataset/{file}"
 RESPONSE_FILE = "response.jsonl"
 SOURCE_FILE = "source_info.jsonl"
+# The licence was checked at P6 Step 0 (2026-10-10, GitHub licence API): MIT. The QA
+# passages come from MS MARCO (non-commercial research only), so a run keeps ids, labels and
+# scores, never text.
 LICENSE_NOTE = (
-    "RAGTruth (github.com/ParticleMedia/RAGTruth), used under its repository licence "
-    "[A9: verify before publishing]. Only metrics are published, never dataset text."
+    "RAGTruth (github.com/ParticleMedia/RAGTruth), MIT. Only metrics are published, "
+    "never dataset text."
 )
 
 DATASET_DIR = Path(__file__).parent / "ragtruth"
@@ -178,7 +183,12 @@ def convert(
             label_hallucinated=hallucinated,
             stratum=f"{int(hallucinated)}|{model}",
             context_source=DEFAULT_CONTEXT_SOURCE,
-            meta={"model": model, "spans": spans or "none", "task_type": task_type},
+            meta={
+                "model": model,
+                "spans": spans or "none",
+                "task_type": task_type,
+                "source_id": str(row.get("source_id", "")),
+            },
         )
         if example_tokens(example) > max_tokens:
             counts["over_budget"] += 1

@@ -2234,9 +2234,9 @@ docker compose version && docker run --rm hello-world            # compose ≥ 2
 # 2. OpenRouter: sign in at openrouter.ai, add $5 at /settings/credits, create key "TrustAgent dev" with a $2 limit
 #    at /settings/keys; put it ONLY in the local .env (never in chat or git).
 # 3. Baseline commit (run as a script so a failure cannot kill your shell):
-cd /home/timkushmar/projects/TrustAgent && bash -euo pipefail <<'EOF'
+cd ~/projects/TrustAgent && bash -euo pipefail <<'EOF'
 git config --local user.name  "timkush1"
-git config --local user.email "timk@mail.tau.ac.il"
+git config --local user.email "<the owner's commit email>"
 printf 'ts_sdk_python.md\nts_sdk_python_usage.md\n.trustagent/\n' >> .git/info/exclude
 git add -A
 if git diff --cached --name-only | grep -qE '(^|/)\.env$'; then echo "STOP: .env staged"; exit 1; fi
@@ -2257,7 +2257,7 @@ EOF
 ```
 
 **P0 gate:**
-- `git log -1 --format='%an <%ae>'` prints `timkush1 <timk@mail.tau.ac.il>`.
+- `git log -1 --format='%an <%ae>'` prints `timkush1 <the owner's commit email>`.
 - `git status --porcelain` is empty.
 - `make test` output is saved to the scratchpad. It is recorded in the **first feature commit** (`docs: record baseline test results; remove CI-CD.md leftovers`), not in P0.
 - Pushing later uses a fine-grained PAT (Contents, Pull requests and Workflows read/write). Push the branch, never `main`. PR bodies end with the Claude Code attribution line required for this session.
@@ -3048,8 +3048,8 @@ Grafana queries use `job=` filters. The renames are a breaking change listed in 
 | ZDR behaviour with a single provider | P1g |
 | Vercel `…/typesafe/v1/systemone` path | Doctor |
 | Anthropic structured-output parameter name; `refusal` stop reason | P2/P3 tests |
-| Haiku 4.5 price $1/$5 per MTok | Before bench-publish |
-| RAGTruth/AggreFact field names, revisions, licences | P6 |
+| Haiku 4.5 price $1/$5 per MTok | Before bench-publish. Step 0 (2026-10-10, free check): `GET openrouter.ai/api/v1/models` lists `anthropic/claude-haiku-4.5` at $1 / $5 per MTok, equal to `prices.v1.json`; `typesafe/jev-1.13` (listed only with `output_modalities=all` or `decisions`) at $0.042 input and $0 output, provider TypeSafe, snapshot `jev-1.13-20260917`, 32k max prompt |
+| RAGTruth/AggreFact field names, revisions, licences | P6. Step 0 (2026-10-10, free check): RAGTruth `main` = `c103204b9ce28d6bbad859304bf30de72b8ed8fe` (pinned as `RAGTRUTH_REVISION`), MIT; its QA passages are MS MARCO (non-commercial research only), so only ids, labels and scores are published; the loader's field names convert 4,892 QA train and 875 QA test answers. LLM-AggreFact (`lytang/LLM-AggreFact`, revision `981dfd0`): CC-BY-ND-4.0, gated; its sub-datasets keep their own licences |
 | Compose ≥2.24 in WSL | P0 |
 | GHCR multi-arch publishing permissions | P6 (owner) |
 | Pages availability for the repo plan | P6 (owner) |
@@ -3178,7 +3178,7 @@ Where a section above says otherwise, the decision cited for it here wins.
 
 ## Appendix G: P5 errata
 
-The lead decisions D99-D141 of `docs/v2/P5-PLAN.md` §1, and D142-D168 below (made at the int6
+The lead decisions D99-D141 of `docs/v2/P5-PLAN.md` §1, and D142-D172 below (made at the int6
 checkpoint merges, the integration and its fix round), settled the gaps P5 found. Where a section above (or
 Appendix F) says otherwise, the decision cited for it here wins.
 
@@ -3315,3 +3315,74 @@ headline with the mock's milliseconds in the note.
 - The phase grep covers P5 (`PHASE_REFS_RE`), with the stale allow-list entries removed (D134).
 - `copy.studio.static_soon`, `StudioStaticNote.tsx` and the unused `PhasePlaceholder` are gone; the
   words modules have no pending rewire; `src/landing/TryIt.tsx` left the network allow-list.
+
+## Appendix H: P6 errata
+
+The lead decisions D200-D239 of `docs/v2/P6-PLAN.md` §1 settle the gaps P6 found. Where a section above
+(or Appendices E-G) says otherwise, the decision cited for it here wins. P6 numbers start at D200 so that
+no number is defined twice (`scripts/check_decision_numbers.py`; P5 used up to D172).
+
+| # | SPEC section | What changes | Decisions |
+|---|---|---|---|
+| H-1 | §4.2 P6 step 6 | The terms check (TypeSafe and OpenRouter, publishing benchmarks and redistributing outputs) becomes step 0: no paid Jev run and no push until the owner's G0 answer, recorded in `docs/launch/terms-check.md`. Modes A (go), W (wait; nothing is pushed) and R (no Jev figures published) | D200 |
+| H-2 | §4.2 P6 gate | Already covered by Appendix G (§2.13 row): recordings ship from `frontend-react/demo-data/{simulated,recorded}`, which is the path the P6 gate uses | D110 |
+| H-3 | §4.2 P6 step 2 | `make calibrate WRITE=1` is replaced by the D206 sequence: `make calib-pass` (a natural RAGTruth-QA **train** sample, `CALIB_N=800`, no source shared with the bench's test sample), `make calibrate ... LABEL_SOURCE=public_dataset` (dry run, then `WRITE=1`), then `make calib-holdout`: ECE before and after is measured on the held-out test sample, never in-sample | D206 |
+| H-4 | §8.2 item 3 | The hero is recorded by `frontend-react/e2e/launch/hero.spec.ts` (the `launch` Playwright project), not `e2e/hero.spec.ts`, and it shows the recording's `featured` trace | D115, D209 |
+| H-5 | §4.2 P6 | The owner adds $10 of credit and the measurement key has a limit of $8, set once; each paid tool lowers its own cap to the key's remaining limit minus $0.10. The bench-lite cap stays $5 | D201 |
+| H-6 | §8.2 | The demo video comes from `make launch-video` (static beats from the recorded Pages build, plus stack beats recorded during `make record-demo ACCEPT=1 VIDEO=1`), captions burned in. It is the LinkedIn post's own media. Fallback: a 45-second take from the Pages build only | D210 |
+| H-7 | §8.3 | Only if the owner chooses at S1: `docs/launch/interview-talking-points.md` leaves the public repository | D216 |
+| H-8 | §4.2 P6 step 7 | The version bump to 2.0.0 happens before the recording, so the tape stamps 2.0.0, but never at Gate A: it is made on the P6b branch with the planned tag date (right before the recording; at C4 when there is none), so `feat/v2-jev-gateway` and the pull request into `main` after Gate A keep VERSION 1.0.0 and the Unreleased heading until the release PR | D216, D234 |
+| H-9 | §8.1 | Our measured RAGTruth-QA agreement is compared with the third-party accuracy at the default 0.5 threshold, not with the tuned-threshold figure; plain accuracy (`ragtruth_qa_accuracy`) is published beside the balanced accuracy as the like-for-like number, each with n per class and a 95% interval | D212; amended by H-22 (D233) |
+| H-10 | §2.13 (recording.v1) | The generated answers' host is `answer_sources.generated_host`: `answer_sources.generated` stays the count. The P6 plan's `answer_sources.generated.host` means this field | D203 |
+| H-11 | §2.13, §8.1 | "Measured" and "recorded" need vendor hosts: benchmark runs record `vendor{decision_host, judge_host}`, recordings `decision_model.host`, `judge.host` and `answer_sources.generated_host`, all bare hostnames from `common.v1` `VendorHost` (`openrouter.ai`, `api.typesafe.ai`, `api.anthropic.com`). Any other host makes the run simulated (`non_vendor_host`); bench publish, `recording.go` and `check_recording.py --require-recorded` refuse it. The schema itself requires those hosts on a `recorded` tape (the generated host when there are generated answers), so a tape that names none fails validation too | D203 |
+| H-12 | §2.13 | `make bench-lite`, `bench-smoke`, `calib-pass`, `eval-live`, `jev-capture` and `record-demo` are dry runs unless `CONFIRM=1`; `bench-publish` requires `RUN=` and refuses a run with more than 5% failed, fewer than 95% scored, several decision-model snapshots, a dirty tree at its start, a non-vendor host, dataset text in `per_example`, or `cost_source: unknown`. `measured.json` discloses `sources.attempts` | D204 |
+| H-13 | §4.2 P6 step 5 | The record preflight does not run `doctor --only decision_model,judge`: the record stack publishes no host port, so `scripts/record_demo.py` reads the same `GET /api/status` fields, plus `GET /health`, from inside the proxy container | D208 |
+| H-14 | §8.1 | OpenRouter's faithfulness figures (95.5% accuracy, 171 ms median) are withdrawn: their source page no longer shows them (read 2026-10-21 and 2026-10-23). The landing shows that block only while the claims exist. The simulated hero latency claim is removed with the hero card's time (P5C-2) | D212 |
+| H-15 | §4.2 P6, §8 | `main` has been public with P0–P5 since 2026-10-21 (merge `a582549`, the owner's decision); Claude pushes branches, `main` moves only through pull requests the owner merges; the push guard and the token sitting are dropped | D220 |
+| H-16 | §4.2 P6 | The paid runs and the release steps run from a Claude cloud session: the key is a cloud environment variable, the owner's GitHub release makes the `v2.0.0` tag, and the localhost Connect check runs on the laptop or is skipped | D221 |
+| H-17 | §4.2 P6 step 0 (H-1) | Before G0 says mode A, no measured Jev figure, recorded Jev tape or captured Jev response is committed to a pushed branch; quoted vendor and third-party figures are not measurements | D222 |
+| H-18 | §8.1 | A measured gate latency always carries how it was taken: measured.json `sources.gate_latency` (connection, requests at a time, platform and region from the run, snapshot, n), shown wherever the figure is; publish refuses a latency without it (`latency_conditions`) | D205, D225 |
+| H-19 | §8.2 | The launch post says where its example answer came from (scripted for the demo, or the model that generated it), names Jev's maker, gives the latency as the benchmark median with its conditions, and says the project was built with AI coding agents; so do the README and the release PR | D227 |
+| H-20 | §2.13 | A simulated (kind mock) tape never names a vendor host for the mock fast check or the mock judge: `recording.Build` and `check_recording.py` refuse it. The hosts a caller passes for a recorded tape are still taken on trust beyond that; storing each call's host on the trace is a P7 item | D203 |
+| H-21 | §4.2 P6 (R-3) | An attempt cannot be recorded on mocks, so the vendor rehearsal proves featured, drift, `ACCEPT` and the video's ffmpeg path through a simulated export, attempts that exist and a static ffmpeg | D226, D228 |
+| H-22 | §8.1 (amends H-9) | Our RAGTruth-QA accuracy is not like for like with any third-party figure: the bench flags an answer at each evaluator's warn_at (groundedness 0.8, which came from Arize's tuned cutoff on RAGTruth itself, or contradiction 0.7) on questions worded differently from Arize's. Every surface names those thresholds and shows Arize's figures at 0.5 and at its tuned 0.80 beside ours, neither as like for like; plain accuracy is published as the measure Arize reports | D233 |
+| H-R | §8 | Reserved for mode R (D200): which Jev-derived figures stay unpublished, and whether third-party and vendor Jev figures already public elsewhere stay with their source links. Written only if the owner's G0 answer is mode R, and approved by the owner before launch | D200 |
+
+Appendix D rows get dated results during P6: the Step 0 free checks (2026-10-10) are recorded there, and
+the paid steps add theirs.
+
+### P5 carry-overs (P6-PLAN §16)
+
+Each P5C row is fixed before Gate A, or rejected or changed here with its reason.
+
+- **P5C-1, P5C-23** (changed at Step 0): the "independent reports range from about 0.3 s to 0.9 s
+  median" caveat had no source, so it is dropped rather than cited. `jev_p50_latency_openrouter` keeps
+  its dated third-party value; its caveat now says it is OpenRouter's rolling figure over the Jev traffic
+  it routes, and its basis gives the label reason: OpenRouter measures latency on the traffic it routes
+  (third-party), while its faithfulness test is an evaluation it published of a model it distributes
+  (vendor). The headline no longer sits below its own caveat.
+- **P5C-7** (contract part fixed at Step 0): claim bases use plain words, not claim ids or file names.
+- **P5C-9** (fixed at Step 0): the own-stack sentences read "Try it on the zero-key demo: `make demo`;
+  on your own stack: `make up`", and the live Playground renders both commands as code.
+- **P5C-16** (fixed at Step 0): `validate.mjs` enforces D169 as written (a compare cell's text names no
+  vendor of its row); three texts are reworded without changing what they say.
+- **P5C-26** (fixed at Step 0): Appendix G's opening sentence names D142-D172.
+- **The sourced Sonnet price pair, D149** (done in fix round 1): Claude Sonnet 5.5, $2 / $10 per
+  million input / output tokens, from Anthropic's pricing page and OpenRouter's public model list,
+  both read 2026-10-23; `prices.v1.json` version 2026-10-23. The landing calculator offers it as one
+  judge (the same price on both providers).
+- **The live Playground text in `copy.playground_live.ui.*`, D163** (deferred to v2.0.x in fix
+  round 1): the copy contract is bundled whole into the app entry and the landing's first load, so moving
+  the live surfaces' 55 strings there would add about 1.4 kB gzip to both, when the app entry had
+  1.8 kB of its budget left, for no visible change. `liveText.ts` keeps them beside the lazy live
+  components; the move waits for a copy contract split per surface.
+- **Notes from the P6a integration review** (no change needed): the public-demo overlay sets
+  `TRUTHTABLE_RETENTION_DAYS=7` on the proxy only, because only the proxy reads that key (D218 said
+  proxy and engine); `scripts/record_demo.py` keeps its own `GET /api/v1/key` reader instead of
+  importing `evals/vendor_key.py`, because it runs on the system `python3` without the engine's
+  packages; the R-2 holdout on the R-1b run stopped at the missing calibration file, so its own
+  non-vendor-host warning is covered by the Go tests only.
+- **P5C-21** (fixed at Step 0 in the contract): `load-run.v1` records `environment.image_revision` (the
+  proxy image's revision label) and `environment.concurrent_load` (other compose projects running, the load
+  average and the memory available), and the GATEWAY.md block names both when a run has them. The quiet
+  re-run at the release commit is a P6b step (P6a never writes `docs/benchmarks/`).

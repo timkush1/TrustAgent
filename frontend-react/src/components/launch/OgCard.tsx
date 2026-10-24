@@ -3,7 +3,8 @@
  * `VITE_LAUNCH_ROUTES=1` build and captured by `npm run og` (DX-DOCS). Owned by WEB-REPLAY.
  *
  * Left: the wordmark and the landing's H1. Right: a real crop of the replay's featured answer
- * (featuredTrace(): the flagged refund answer the deep audit found contradicted): its outcome pill
+ * (featuredTrace(): the recorded tape's manifest.featured, D209; on the simulated tape its scripted
+ * choice, the flagged refund answer the deep audit found contradicted): its outcome pill
  * and headline, what it was checked against, the question, the answer with its claim marks, and
  * the evidence that contradicts it. 64 px margins; the chrome is achromatic, colour only for the
  * outcome and the verdict. A simulated recording says so on the card (a Simulated chip), so a
@@ -128,6 +129,7 @@ export default function OgCard() {
     <main
       data-og-card
       data-og-ready={ready ? '' : undefined}
+      data-trace-id={featured ?? undefined}
       data-recording-kind={kind ?? undefined}
       style={{ width: OG_WIDTH, height: OG_HEIGHT }}
       className="grid shrink-0 grid-cols-[30rem_minmax(0,1fr)] gap-16 overflow-hidden bg-bg p-16 text-fg"

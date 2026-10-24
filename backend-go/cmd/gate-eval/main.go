@@ -1,7 +1,7 @@
 // Command gate-eval runs the gateway's fast check (SPEC §3.1) over a JSONL file of examples, the
 // way the proxy gates a response: Tier-0 detectors, compile, the decision-model call, and decide()
 // (which normalizes the answers). The Python eval harness uses it as the `gate` system (SPEC §3.2
-// evals/judges.py, P6 bench-lite).
+// evals/judges.py, make bench-lite).
 //
 // Each input line is an example:
 //
@@ -24,9 +24,18 @@
 // backend requires the cap and a price above 0 to reserve with; the cap and the price must be
 // finite. The backend and model resolve as the proxy's do
 // (TRUTHTABLE_JEV_BACKEND, TRUTHTABLE_JEV_MODEL, OPENROUTER_API_KEY, TYPESAFE_API_KEY,
-// TRUTHTABLE_JEV_API_KEY, TRUTHTABLE_JEV_BASE_URL); --backend and --model override them.
+// TRUTHTABLE_JEV_API_KEY, TRUTHTABLE_JEV_BASE_URL, TRUTHTABLE_JEV_PATH,
+// TRUTHTABLE_OPENROUTER_BASE_URL); --backend and --model override them.
+//
+// Every output line names the host its decision-model calls went to (endpoint_host, a bare
+// hostname; null for the mock backend), so the harness can tell a vendor from a stand-in such as
+// mock-upstream (D203), and how the connection was made (connection): warm when --warm made the
+// free key check (OpenRouter GET /api/v1/key) on the same client before the first example, so the
+// examples' latency leaves out the TCP and TLS setup (D205); cold otherwise. --policy builtin uses
+// the built-in policy (the defaults route) and ignores TRUTHTABLE_POLICY_FILE (D204).
 //
 //	gate-eval --in ragtruth.jsonl --out gate.jsonl --route default --evaluators groundedness@1,contradiction@1 --max-cost-usd 1
+//	gate-eval --policy builtin --warm --concurrency 1 --in calib.jsonl --out gate.jsonl --max-cost-usd 0.30
 //	gate-eval --backend mock --in golden.jsonl
 package main
 
@@ -40,6 +49,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/url"
 	"os"
 	"os/signal"
 	"slices"
@@ -85,7 +95,24 @@ type options struct {
 	pricePerMTok float64
 	concurrency  int
 	timeout      time.Duration
+	warm         bool
 }
+
+// policyBuiltin is the --policy value that selects the built-in policy (the defaults route only),
+// whatever TRUTHTABLE_POLICY_FILE says.
+const policyBuiltin = "builtin"
+
+// builtinPolicyDoc is the built-in policy document (policy.LoadFile's for a missing file).
+const builtinPolicyDoc = "version: 1\n"
+
+// Connection values of an output line (D205).
+const (
+	connectionWarm = "warm"
+	connectionCold = "cold"
+)
+
+// warmTimeout bounds the --warm key check.
+const warmTimeout = 15 * time.Second
 
 // multiFlag collects a repeatable string flag.
 type multiFlag []string
@@ -100,7 +127,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	var specs multiFlag
 	fl.StringVar(&o.in, "in", "-", "examples JSONL file (- = stdin)")
 	fl.StringVar(&o.out, "out", "-", "results JSONL file (- = stdout)")
-	fl.StringVar(&o.policyFile, "policy", envOr(getenv, "TRUTHTABLE_POLICY_FILE", "config/policies.yaml"), "policy file (a missing file means the built-in defaults)")
+	fl.StringVar(&o.policyFile, "policy", envOr(getenv, "TRUTHTABLE_POLICY_FILE", "config/policies.yaml"), "policy file (a missing file means the built-in defaults); builtin = the built-in policy, whatever TRUTHTABLE_POLICY_FILE says")
 	fl.StringVar(&o.route, "route", policy.DefaultRouteName, "route whose settings gate the examples")
 	fl.StringVar(&o.evaluators, "evaluators", "", "comma-separated evaluator refs replacing the route's evaluators (active stage, spec thresholds)")
 	fl.Var(&specs, "spec", "custom evaluator spec file (evaluator/v1 JSON); repeatable")
@@ -111,6 +138,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	fl.Float64Var(&o.pricePerMTok, "price-per-mtok", envFloat(getenv, "TRUTHTABLE_JEV_PRICE_PER_MTOK", jev.DefaultPricePerMTok), "input price in USD per million tokens, for cost reservations")
 	fl.IntVar(&o.concurrency, "concurrency", 4, "examples evaluated at once")
 	fl.DurationVar(&o.timeout, "timeout", 30*time.Second, "timeout of one example's decision-model calls")
+	fl.BoolVar(&o.warm, "warm", false, "make the free key check (OpenRouter GET /api/v1/key) before the first example, so the examples find a warm connection")
 	fl.Usage = func() {
 		fmt.Fprintln(stderr, "usage: gate-eval [--in examples.jsonl] [--out results.jsonl] [--route name] [--evaluators refs] [--backend b] [--model m] --max-cost-usd USD")
 		fl.PrintDefaults()
@@ -141,6 +169,15 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			return exitUsage
 		}
 		return exitFailed
+	}
+
+	if o.warm {
+		conn, err := warmUp(ctx, ev.Client, stderr)
+		if err != nil {
+			fmt.Fprintf(stderr, "gate-eval: %v\n", err)
+			return exitFailed
+		}
+		ev.connection = conn
 	}
 
 	in, closeIn, err := openInput(o.in, stdin)
@@ -199,7 +236,7 @@ func setup(o *options, getenv func(string) string) (*evaluator, error) {
 	}
 	resolver := specResolver(specs)
 
-	pol, err := policy.LoadFile(config.RepoPath(o.policyFile), policy.DefaultSeeds(), resolver)
+	pol, err := loadPolicy(o.policyFile, resolver)
 	if err != nil {
 		return nil, err
 	}
@@ -237,6 +274,7 @@ func setup(o *options, getenv func(string) string) (*evaluator, error) {
 		Backend: o.backend, Model: o.model,
 		OpenRouterKey: getenv("OPENROUTER_API_KEY"), TypeSafeKey: getenv("TYPESAFE_API_KEY"),
 		JevAPIKey: getenv("TRUTHTABLE_JEV_API_KEY"), BaseURL: getenv("TRUTHTABLE_JEV_BASE_URL"),
+		Path: getenv("TRUTHTABLE_JEV_PATH"), OpenRouterBaseURL: getenv("TRUTHTABLE_OPENROUTER_BASE_URL"),
 		Mock: jev.MockConfig{
 			Mode: getenv("TRUTHTABLE_JEV_MOCK_MODE"), Strict: getenv("TRUTHTABLE_JEV_MOCK_STRICT") == "true",
 			FixturesPath: config.RepoPath(getenv("TRUTHTABLE_JEV_MOCK_FIXTURES")),
@@ -273,11 +311,63 @@ func setup(o *options, getenv func(string) string) (*evaluator, error) {
 	budget.MaxQuestions = envInt(getenv, "TRUTHTABLE_JEV_MAX_QUESTIONS_PER_CALL", budget.MaxQuestions)
 	budget.MaxResponseTokens = rc.Decision.MaxResponseTokens
 	budget.EvidenceMaxTokens = rc.Evidence.MaxTokens
-	return &evaluator{&studio.Runner{
+	return &evaluator{Runner: &studio.Runner{
 		Client: client, Route: &rc, Mode: mode, Model: model, Specs: specs, Budget: budget,
 		PricePerMTok: o.pricePerMTok, CallTimeout: o.timeout, Spend: studio.NewSpend(o.maxCostUSD),
 		Call: jev.CallOptions{Class: jev.ClassAsync}, Now: time.Now,
-	}}, nil
+	}, endpointHost: endpointHost(info), connection: connectionCold, policySource: pol.Source}, nil
+}
+
+// loadPolicy reads the policy file as the gateway does, or the built-in policy for --policy builtin.
+func loadPolicy(file string, resolver policy.Resolver) (*policy.Policy, error) {
+	if file == policyBuiltin {
+		p, err := policy.Parse([]byte(builtinPolicyDoc), policy.DefaultSeeds(), resolver)
+		if err != nil {
+			return nil, err
+		}
+		p.Source = policy.SourceBuiltin
+		return p, nil
+	}
+	return policy.LoadFile(config.RepoPath(file), policy.DefaultSeeds(), resolver)
+}
+
+// endpointHost is the bare hostname of the decision endpoint (D203: never a URL), nil for a
+// backend without one (mock).
+func endpointHost(info jev.Info) *string {
+	if info.Endpoint == "" {
+		return nil
+	}
+	u, err := url.Parse(info.Endpoint)
+	if err != nil || u.Hostname() == "" {
+		return nil
+	}
+	h := strings.ToLower(u.Hostname())
+	return &h
+}
+
+// warmUp makes the free key check on the decision client before the first example (D205), so the
+// examples' calls reuse its connection and their latency leaves out the TCP and TLS setup. Backends
+// without a free key endpoint (TypeSafe, compatible gateways, mock) stay cold. A key the vendor
+// refuses (auth) is an error: every example would fail; any other failure leaves the run cold.
+func warmUp(ctx context.Context, c jev.Client, stderr io.Writer) (string, error) {
+	kc, ok := c.(jev.KeyChecker)
+	if !ok {
+		return connectionCold, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, warmTimeout)
+	defer cancel()
+	if _, err := kc.CheckKey(ctx); err != nil {
+		switch kind := jev.ErrorKind(err); {
+		case errors.Is(err, jev.ErrKeyCheckUnsupported):
+			return connectionCold, nil
+		case kind == jev.KindAuth:
+			return "", fmt.Errorf("--warm: the key check was refused (%s): fix the key before any example runs (docs/JEV-ACCESS.md)", kind)
+		default:
+			fmt.Fprintf(stderr, "gate-eval: --warm: the key check failed (%s); the examples start on a cold connection\n", kind)
+			return connectionCold, nil
+		}
+	}
+	return connectionWarm, nil
 }
 
 // newJevClient builds the decision-model client; tests replace it with a fake paid backend.
@@ -327,6 +417,12 @@ func (s *stats) String(ev *evaluator) string {
 	fmt.Fprintf(&b, "; backend %s", backend)
 	if snaps := sortedKeys(s.snapshots); len(snaps) > 0 {
 		fmt.Fprintf(&b, " (%s)", strings.Join(snaps, ", "))
+	}
+	if ev.endpointHost != nil {
+		fmt.Fprintf(&b, " at %s, %s connection", *ev.endpointHost, ev.connection)
+	}
+	if ev.policySource == policy.SourceBuiltin {
+		b.WriteString("; built-in policy")
 	}
 	fmt.Fprintf(&b, "; cost $%.6f", s.costUSD)
 	if src := sortedKeys(s.costSources); len(src) > 0 {

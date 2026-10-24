@@ -7,18 +7,33 @@ and publishing refuses it; a measured run publishes schema-valid files.
 
 import json
 import shutil
+import subprocess  # nosec B404
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import pytest
 
 from evals import bench
+from evals import plan as planning
+from evals.budget import ledger_total
 from evals.examples import DatasetManifest, write_prepared
 from evals.report import schema_errors
+from truthtable.config import repo_root
 from truthtable.contracts import contract_path
 from truthtable.providers.base import CompletionRequest, LLMProvider
 
-from bench_fakes import FakeGateEval, ScriptedJudge, example, gate_line
+from bench_fakes import FakeGateEval, ScriptedJudge, example, gate_line, isolate_vendor_env
+
+
+@pytest.fixture(autouse=True)
+def clean_tree(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    The runs here start on a clean tree (the dirty flag is tested on its own),
+    with no key, base URL or dotenv from the checkout, and no network.
+    """
+    isolate_vendor_env(monkeypatch)
+    monkeypatch.setattr(planning, "tree_dirty", lambda root=None: False)
+
 
 RESPONSES = {
     "Lyon is the capital of France.": ("CONTRADICTED", True),
@@ -192,9 +207,10 @@ def test_a_mock_run_is_simulated_and_cannot_be_published(
     assert all(
         record["status"] == "ok" for records in run["per_example"].values() for record in records
     )
-    assert "SIMULATED" in capsys.readouterr().out
+    assert "SIMULATED (mock)" in capsys.readouterr().out
     assert bench.main(_publish_args(tmp_path, run_file)) == 1
-    assert "refuses mock output" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "refuses run lite-test-run" in err and "- mock:" in err
     assert not (tmp_path / "published").exists()
 
 
@@ -244,6 +260,13 @@ def test_a_measured_run_publishes(
     measured = json.loads((tmp_path / "measured.json").read_text())
     assert measured["status"] == "measured" and measured["runs"] == ["lite-test-run"]
     assert schema_errors(measured, "measured.v1.schema.json") == []
+    assert measured["snapshot"] == "typesafe/jev-1.13-20260917"
+    assert measured["values"]["llm_full_audit_usd_per_1k"]["value"] is not None
+    # Both runs in the results directory are disclosed (D204).
+    assert measured["sources"]["attempts"] == {"bench_runs": 2, "refused_run_ids": []}
+    assert document["vendor"] == {"decision_host": "openrouter.ai", "judge_host": "openrouter.ai"}
+    assert document["latency"] == {"connection": "warm", "gate_concurrency": 1}
+    assert document["inputs"]["policy_source"] == "builtin" and document["dirty"] is False
 
 
 def re_git_sha(value: str) -> bool:
@@ -362,8 +385,11 @@ def test_concurrency_must_be_positive(tmp_path: Path) -> None:
     assert exc_info.value.code == 2
 
 
-def test_publish_without_a_run_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert bench.main(["publish", "--out-dir", str(tmp_path / "empty")]) == 2
+def test_publish_needs_a_named_run(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # D204: never "the latest by time".
+    assert bench.main(["publish"]) == 2
+    assert "usage: bench publish --run" in capsys.readouterr().err
+    assert bench.main(["publish", "--run", str(tmp_path / "missing.json")]) == 2
     assert "no run file" in capsys.readouterr().err
 
 
@@ -382,3 +408,447 @@ def test_run_ids_are_schema_safe() -> None:
     assert bench.make_run_id("full", manifest, "2026-09-28T12:00:00Z") == (
         "full-llm-aggrefact-test-20260928t120000z"
     )
+
+
+# ---------------------------------------------------------------------------
+# P6 (D201, D203-D205): the dry run, the stop rule, pinned inputs, hosts, the key's limit
+# ---------------------------------------------------------------------------
+
+FAKE_KEY = "sk-or-v1-e2e-p6benchkey0000"
+
+
+def _result(out: str) -> Dict[str, Any]:
+    lines = [line for line in out.splitlines() if line.startswith("TRUSTAGENT_P6_RESULT ")]
+    assert len(lines) == 1, out
+    parsed: Dict[str, Any] = json.loads(lines[0].split(" ", 1)[1])
+    return parsed
+
+
+def _answer_all(fake: FakeGateEval, **overrides: Any) -> None:
+    for i, (response, (_, hallucinated)) in enumerate(list(RESPONSES.items()) * 3):
+        fake.answer(
+            f"ex{i}",
+            **{
+                **gate_line(
+                    groundedness=0.92 if hallucinated else 0.08,
+                    verdict="unsupported" if hallucinated else "supported",
+                ),
+                **overrides,
+            },
+        )
+
+
+def _fake_fetch(
+    calls: List[str],
+    *,
+    usage: float = 0.5,
+    limit: Optional[float] = 8.0,
+    remaining: Optional[float] = 7.5,
+) -> Any:
+    def fetch(url: str, headers: Mapping[str, str], timeout: float) -> Tuple[int, bytes]:
+        calls.append(url)
+        if url.endswith("/api/v1/key"):
+            assert headers["Authorization"] == f"Bearer {FAKE_KEY}"
+            data = {
+                "label": "sk-or-v1-e2e…0000",
+                "usage": usage,
+                "limit": limit,
+                "limit_remaining": remaining,
+                "is_free_tier": False,
+            }
+            return 200, json.dumps({"data": data}).encode()
+        if "/api/v1/models" in url:
+            models = [{"id": "typesafe/jev-1.13", "canonical_slug": "typesafe/jev-1.13-20260917"}]
+            return 200, json.dumps({"data": models}).encode()
+        return 404, b""
+
+    return fetch
+
+
+def test_a_dry_run_spends_nothing_and_prints_the_plan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+
+    code = bench.main(_run_args(tmp_path, dataset, fake, "--dry-run", "--step", "bench-lite"))
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "make bench-lite CONFIRM=1" in out and "nothing is spent" in out
+    assert "6 RAGTruth qa test answers (prepared" in out
+    assert "[estimate: price table x example tokens]" in out
+    assert "key         no key: plan only" in out and "snapshot    unknown" in out
+    assert "resume key  lite-set: $0.0000 spent" in out and "gate-eval   sha256 " in out
+    assert fake.argv() == [] and not (tmp_path / "cache").exists()
+
+    # Not prepared yet: the plan still shows n and the estimate.
+    missing = tmp_path / "data" / "not-yet.jsonl"
+    args = _run_args(tmp_path, missing, fake, "--dry-run", "--plan-n", "200", "--systems", "gate")
+    assert bench.main(args) == 0
+    assert "200 answers, not prepared yet" in capsys.readouterr().out
+
+
+def test_the_default_region_is_named_before_anything_is_spent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # D225: a published latency names where the run ran; "region local" says nothing.
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--dry-run")) == 0
+    out = capsys.readouterr().out
+    assert 'note        region local: a published gate latency would say "region local"' in out
+    assert "Set BENCH_REGION" in out
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--dry-run", "--region", "israel")) == 0
+    assert "Set BENCH_REGION" not in capsys.readouterr().out
+    # Without the gate there is no latency to place.
+    args = _run_args(tmp_path, dataset, fake, "--dry-run", "--systems", "llm_same_checks")
+    assert bench.main(args) == 0
+    assert "Set BENCH_REGION" not in capsys.readouterr().out
+
+    # A run says it on stderr when it starts, and still runs.
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate")) == 0
+    assert "bench: note: region local" in capsys.readouterr().err
+
+
+def test_the_dry_run_reads_the_key_and_the_snapshot_for_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    calls: List[str] = []
+    monkeypatch.setenv("OPENROUTER_API_KEY", FAKE_KEY)
+    monkeypatch.setattr(bench, "_key_fetch", lambda: _fake_fetch(calls, remaining=0.6))
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--dry-run", "--systems", "gate")) == 0
+
+    out = capsys.readouterr().out
+    assert "openrouter.ai: used $0.5000 of the $8.00 limit; $0.6000 left" in out
+    assert "snapshot    typesafe/jev-1.13-20260917" in out
+    assert "cap $0.50 (lowered from $1.00" in out
+    assert FAKE_KEY not in out and "e2e…0000" not in out  # neither the key nor its label
+    assert sorted(calls) == [
+        "https://openrouter.ai/api/v1/key",
+        "https://openrouter.ai/api/v1/models?output_modalities=all",
+    ]
+    assert fake.argv() == []
+
+
+def test_the_cap_is_lowered_to_the_keys_remaining_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    calls: List[str] = []
+    monkeypatch.setenv("OPENROUTER_API_KEY", FAKE_KEY)
+    monkeypatch.setattr(bench, "_key_fetch", lambda: _fake_fetch(calls, remaining=0.4))
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate")) == 0
+
+    out = capsys.readouterr().out
+    assert "cap $0.30 (lowered from $1.00: the key's remaining limit minus $0.10)" in out
+    result = _result(out)
+    assert result["cap_usd"] == 0.3 and result["key_limit_remaining_usd"] == 0.4
+    assert result["exit"] == 0 and result["label"] == "measured"
+    assert result["hosts"] == {"decision": "openrouter.ai", "judge": None, "upstream": None}
+    assert result["counts"] == {"n": 6, "scored": 6, "failed": 0}
+    assert FAKE_KEY not in out
+
+
+def test_a_key_with_too_little_left_is_refused_before_anything_is_spent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    monkeypatch.setenv("OPENROUTER_API_KEY", FAKE_KEY)
+    monkeypatch.setattr(bench, "_key_fetch", lambda: _fake_fetch([], remaining=0.12))
+
+    code = bench.main(
+        _run_args(tmp_path, dataset, fake, "--systems", "gate", "--min-cost-usd", "0.05")
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2 and "below this step's minimum $0.05" in captured.err
+    assert fake.argv() == [] and _result(captured.out)["exit"] == 2
+
+
+def test_the_stop_rule_then_a_resume_with_retry_failed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    no_credits = gate_line(
+        groundedness=None,
+        contradiction=None,
+        verdict=None,
+        status="error",
+        error_reason="error:credits",
+    )
+    for i in range(6):
+        fake.answer(f"ex{i}", **no_credits)
+    args = _run_args(tmp_path, dataset, fake, "--systems", "gate")
+
+    assert bench.main(args) == 3
+
+    captured = capsys.readouterr()
+    assert "stopped: 5 consecutive gate failures" in captured.err
+    assert "gate_error:credits" in captured.err and "402" in captured.err
+    assert 'BENCH_ARGS="--retry-failed"' in captured.err
+    assert len(fake.inputs()) == 5  # the sixth was never started
+    assert not (tmp_path / "results").exists()
+    result = _result(captured.out)
+    assert result["exit"] == 3 and result["counts"] == {"n": 5, "scored": 0, "failed": 5}
+    ledger = tmp_path / "cache" / "lite-set.ledger.jsonl"
+    assert len(ledger.read_text().splitlines()) == 5
+
+    # Fixed: the same command with --retry-failed continues under the same ledger.
+    _answer_all(fake)
+    assert bench.main(args + ["--retry-failed"]) == 0
+    assert len(fake.inputs()) == 5 + 6
+    assert len(ledger.read_text().splitlines()) == 11  # both sessions
+    assert ledger_total(ledger) == pytest.approx(11 * 0.00004)
+    run = json.loads((tmp_path / "results" / "lite-test-run" / "run.json").read_text())
+    assert run["benchmark_run"]["quality"]["failed"] == 0
+
+
+def test_cached_failures_do_not_trip_the_stop_rule(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    broken = gate_line(groundedness=None, contradiction=None, verdict=None, status="error")
+    for i in range(4):
+        fake.answer(f"ex{i}", **broken)
+    args = _run_args(tmp_path, dataset, fake, "--systems", "gate", "--stop-after-failures", "5")
+    assert bench.main(args) == 0  # four in a row, then two that work
+
+    # Resumed without --retry-failed, the cached failures cost nothing again and stop nothing.
+    assert bench.main(args + ["--stop-after-failures", "2"]) == 0
+    assert len(fake.inputs()) == 6
+
+
+def test_policy_builtin_removes_the_policy_file_from_gate_eval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    monkeypatch.setenv("TRUTHTABLE_POLICY_FILE", "/somewhere/policies.yaml")
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate")) == 0
+
+    assert all(argv[:3] == ["--max-cost-usd", argv[1], "--evaluators"] for argv in fake.argv())
+    assert all(
+        "--policy" in argv and "builtin" in argv and "--warm" in argv for argv in fake.argv()
+    )
+    assert {env["TRUTHTABLE_POLICY_FILE"] for env in fake.envs()} == {None}
+    run = json.loads((tmp_path / "results" / "lite-test-run" / "run.json").read_text())
+    assert run["benchmark_run"]["inputs"]["policy_source"] == "builtin"
+
+    # --policy file keeps the operator's policy (and says so).
+    args = _run_args(tmp_path, dataset, fake, "--systems", "gate", "--policy", "file")
+    assert bench.main(args + ["--resume-key", "policy-file", "--run-id", "with-file"]) == 0
+    assert fake.envs()[-1]["TRUTHTABLE_POLICY_FILE"] == "/somewhere/policies.yaml"
+    assert "--policy" not in fake.argv()[-1]
+
+
+def test_a_resume_with_another_gate_eval_binary_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    args = _run_args(tmp_path, dataset, fake, "--systems", "gate")
+    assert bench.main(args) == 0
+    capsys.readouterr()
+    run = json.loads((tmp_path / "results" / "lite-test-run" / "run.json").read_text())
+    sha = run["benchmark_run"]["inputs"]["gate_eval_sha256"]
+    assert sha == planning.sha256_file(fake.binary)
+
+    fake.binary.write_text(fake.binary.read_text() + "\n# rebuilt\n")
+    calls = len(fake.argv())
+
+    assert bench.main(args) == 2
+    assert "would pay twice" in capsys.readouterr().err
+    assert len(fake.argv()) == calls  # not even the dry start ran
+
+
+@pytest.mark.parametrize(
+    "extra, connection, concurrency",
+    [
+        ((), "warm", 1),
+        (("--gate-concurrency", "2"), "warm", 2),
+        (("--no-warm",), "cold", 1),
+    ],
+)
+def test_warm_or_cold_and_the_gate_concurrency_are_recorded(
+    tmp_path: Path, extra: Tuple[str, ...], connection: str, concurrency: int
+) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    if connection == "cold":
+        _answer_all(fake, connection="cold")
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate", *extra)) == 0
+
+    document = json.loads((tmp_path / "results" / "lite-test-run" / "run.json").read_text())[
+        "benchmark_run"
+    ]
+    assert document["latency"] == {"connection": connection, "gate_concurrency": concurrency}
+    assert all(("--warm" in argv) == (connection == "warm") for argv in fake.argv())
+    host_env = document["inputs"]["host_env"]
+    assert len(host_env["loadavg"]) == 3 and host_env["region"] == "local"
+
+
+def test_a_run_through_a_stand_in_host_is_simulated_and_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # D203: mock-upstream posing as OpenRouter (TRUTHTABLE_OPENROUTER_BASE_URL=http://127.0.0.1:...).
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    _answer_all(fake, endpoint_host="127.0.0.1")
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate")) == 0
+
+    out = capsys.readouterr().out
+    assert "SIMULATED (non_vendor_host)" in out and _result(out)["label"] == "simulated"
+    run_file = tmp_path / "results" / "lite-test-run" / "run.json"
+    run = json.loads(run_file.read_text())
+    assert run["simulated_reasons"] == ["non_vendor_host"]
+    assert run["benchmark_run"]["vendor"]["decision_host"] == "127.0.0.1"
+    assert bench.main(_publish_args(tmp_path, run_file)) == 1
+    assert "non_vendor_host" in capsys.readouterr().err
+
+
+def test_a_run_started_on_a_dirty_tree_cannot_be_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(planning, "tree_dirty", lambda root=None: True)
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate")) == 0
+    assert "uncommitted changes" in capsys.readouterr().out
+
+    run_file = tmp_path / "results" / "lite-test-run" / "run.json"
+    assert bench.main(_publish_args(tmp_path, run_file)) == 1
+    assert "- dirty:" in capsys.readouterr().err
+
+
+def test_publish_check_only_lists_the_refusals_into_scratch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(planning, "tree_dirty", lambda root=None: True)
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate")) == 0
+    run_file = tmp_path / "results" / "lite-test-run" / "run.json"
+    scratch = tmp_path / "scratch"
+    capsys.readouterr()
+
+    args = _publish_args(tmp_path, run_file) + ["--check-only", "--scratch-dir", str(scratch)]
+    assert bench.main(args) == 1
+
+    out = capsys.readouterr().out
+    assert "refused: dirty:" in out and "1 refusal(s)" in out
+    assert json.loads((scratch / "problems.json").read_text())["problems"][0]["code"] == "dirty"
+    assert not (tmp_path / "published").exists() and not (tmp_path / "index.json").exists()
+
+
+def test_export_labels_for_the_held_out_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate")) == 0
+    run_file = tmp_path / "results" / "lite-test-run" / "run.json"
+    out = tmp_path / "labels.jsonl"
+
+    assert bench.main(["export-labels", "--run", str(run_file), "--out", str(out)]) == 0
+
+    lines = [json.loads(line) for line in out.read_text().splitlines()]
+    # The synthetic examples carry no span kinds, so only groundedness@1 is labelled.
+    assert {line["target"] for line in lines} == {"groundedness@1"} and len(lines) == 6
+    assert lines[0] == {
+        "id": lines[0]["id"],
+        "target": "groundedness@1",
+        "risk_raw": lines[0]["risk_raw"],
+        "label": lines[0]["label"],
+        "label_source": "public_dataset",
+        "dataset": "ragtruth:qa-test@main",
+        "snapshot": "typesafe/jev-1.13-20260917",
+        "backend": "openrouter-decisions",
+        "endpoint_host": "openrouter.ai",
+    }
+    assert sum(line["label"] for line in lines) == 3
+
+
+def _make(*args: str) -> "subprocess.CompletedProcess[str]":
+    root = repo_root()
+    make = shutil.which("make")
+    assert root is not None and make is not None, "the make tests need GNU make and the repository"
+    # GNU make on the repository's own Makefile, with fixed arguments and no shell.
+    return subprocess.run(  # nosec B603
+        [make, "-s", "-C", str(root), *args],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+def test_bench_args_come_last_in_the_make_recipes() -> None:
+    lite = _make("-n", "bench-lite", "CONFIRM=1", "BENCH_ARGS=--retry-failed --systems gate")
+    assert lite.returncode == 0, lite.stderr
+    run_line = [line for line in lite.stdout.splitlines() if "evals.bench run" in line][-1]
+    assert run_line.rstrip().endswith("--retry-failed --systems gate")
+    assert "--resume-key lite-p6" in run_line and "--max-cost-usd 5" in run_line
+    assert "--revision c103204b9ce28d6bbad859304bf30de72b8ed8fe" in lite.stdout
+
+    smoke = _make("-n", "bench-smoke", "CONFIRM=1")
+    assert smoke.returncode == 0, smoke.stderr
+    run_line = [line for line in smoke.stdout.splitlines() if "evals.bench run" in line][-1]
+    for part in (
+        "--max-cost-usd 0.30",
+        "--full-audit-n 3",
+        "--resume-key smoke-p6",
+        "--out-dir evals/results/smoke",
+    ):
+        assert part in run_line, part
+    assert "--n 20 " in smoke.stdout
+
+    dry = _make("-n", "bench-lite")
+    assert dry.returncode == 0 and "--dry-run" in dry.stdout
+
+
+def test_make_bench_publish_needs_run() -> None:
+    refused = _make("bench-publish")
+    assert refused.returncode == 2
+    assert "RUN=" in refused.stdout + refused.stderr
+
+    named = _make("-n", "bench-publish", "RUN=/abs/run.json", "CHECK_ONLY=1")
+    assert named.returncode == 0, named.stderr
+    assert '--run "/abs/run.json"' in named.stdout and "--check-only" in named.stdout
+
+
+@pytest.mark.parametrize("status, code", [(401, 2), (402, 0), (500, 0)])
+def test_a_refused_key_stops_the_run_and_an_unreadable_limit_warns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    status: int,
+    code: int,
+) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    monkeypatch.setenv("OPENROUTER_API_KEY", FAKE_KEY)
+
+    def fetch(url: str, headers: Mapping[str, str], timeout: float) -> Tuple[int, bytes]:
+        return status, b"{}"
+
+    monkeypatch.setattr(bench, "_key_fetch", lambda: fetch)
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate")) == code
+
+    err = capsys.readouterr().err
+    if code == 2:
+        assert "the key was refused" in err and fake.argv() == []
+    else:
+        # The hard cap holds, and the stop rule ends a run the key's own limit stops.
+        assert "the key's limit could not be read" in err and len(fake.argv()) == 7
+
+
+def test_a_rebuilt_binary_is_fine_before_anything_was_spent(tmp_path: Path) -> None:
+    dataset, fake = _dataset(tmp_path), _gate(tmp_path)
+    meta = tmp_path / "cache" / "lite-set.meta.json"
+    meta.parent.mkdir(parents=True)
+    meta.write_text(json.dumps({"gate_eval_sha256": "0" * 64}))
+
+    assert bench.main(_run_args(tmp_path, dataset, fake, "--systems", "gate")) == 0
+
+    assert json.loads(meta.read_text())["gate_eval_sha256"] == planning.sha256_file(fake.binary)

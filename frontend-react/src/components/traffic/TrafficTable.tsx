@@ -6,13 +6,16 @@
  *
  * Columns drop out as the table narrows (container queries): outcome, time and reason always
  * show; route and deep audit from 42rem; checked against and latency from 56rem; model from 64rem.
+ * Below 640 px (a phone) each row is a card instead (P5C-6): the outcome and the time, then the
+ * reason and what it was checked against, each across the whole width, so a phone reads the
+ * reason whole rather than "States fac…".
  *
  * On the static site the replay's featured answer (the one the tour starts from, D117) is marked
  * `data-featured`, with a neutral bar and its words for screen readers.
  */
 import { Link } from '@tanstack/react-router';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AuditState } from '@/components/outcome/AuditState';
 import { OutcomePill } from '@/components/outcome/OutcomePill';
 import { useNow } from '@/components/common/useNow';
@@ -24,6 +27,26 @@ import type { GateDecisionView, TraceId, TraceSummary } from '@/types/api';
 import { rowCheckedAgainst, rowReason } from './trafficRows';
 
 export const ROW_HEIGHT = 48;
+/** A row as a card on a phone: the outcome and time, the reason, what it was checked against. */
+export const CARD_ROW_HEIGHT = 84;
+/** Below this width (640 px) the rows are cards. */
+export const CARD_QUERY = '(max-width: 639.98px)';
+
+function subscribeCards(onChange: () => void): () => void {
+  if (typeof window.matchMedia !== 'function') return () => {};
+  const query = window.matchMedia(CARD_QUERY);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+}
+
+/** Whether the viewport is a phone's (the rows are cards), following a rotation or a resize. */
+function useCards(): boolean {
+  return useSyncExternalStore(
+    subscribeCards,
+    () => typeof window.matchMedia === 'function' && window.matchMedia(CARD_QUERY).matches,
+    () => false,
+  );
+}
 /** Start loading the next page this many rows before the end. */
 const PREFETCH_ROWS = 10;
 
@@ -34,6 +57,22 @@ const GRID = cn(
   '@4xl:grid-cols-[7.5rem_4.5rem_minmax(6rem,1fr)_minmax(10rem,2fr)_minmax(7rem,1.2fr)_4.5rem_9.5rem]',
   '@5xl:grid-cols-[7.5rem_4.5rem_minmax(6rem,1fr)_minmax(6rem,1fr)_minmax(10rem,2fr)_minmax(7rem,1.2fr)_4.5rem_9.5rem]',
 );
+
+/**
+ * The card layout: outcome and time on the first line, then reason and checked against across
+ * both columns. The cells keep their table roles and DOM order.
+ */
+const CARD_GRID = 'grid grid-cols-[minmax(0,1fr)_auto] content-center items-center gap-x-3 gap-y-1 px-3 py-2';
+const CARD_CELL: Partial<Record<string, string>> = {
+  outcome: 'flex',
+  time: 'flex justify-end',
+  route: 'hidden',
+  model: 'hidden',
+  reason: 'flex col-span-2',
+  checked: 'flex col-span-2 text-xs',
+  latency: 'hidden',
+  audit: 'hidden',
+};
 
 /** Cell visibility per column, in DOM order (must match GRID at every width). */
 const COLUMNS = [
@@ -48,7 +87,8 @@ const COLUMNS = [
 ] as const;
 
 type ColumnId = (typeof COLUMNS)[number]['id'];
-const col = (id: ColumnId) => COLUMNS.find((c) => c.id === id)?.className ?? '';
+const tableCol = (id: ColumnId) => COLUMNS.find((c) => c.id === id)?.className ?? '';
+const cardCol = (id: ColumnId) => CARD_CELL[id] ?? 'hidden';
 
 const EM_DASH = '—';
 
@@ -67,6 +107,8 @@ export interface TrafficTableProps {
 
 export function TrafficTable({ rows, decisions, hasNextPage, isFetchingNextPage, onLoadMore, layoutKey }: TrafficTableProps) {
   const now = useNow();
+  const cards = useCards();
+  const rowHeight = cards ? CARD_ROW_HEIGHT : ROW_HEIGHT;
   // The replay's featured answer (null outside the static site).
   const featured = useReplayStore((s) => s.featuredTraceId);
   // Distance from the top of the document, measured when the table mounts and when what is above
@@ -84,11 +126,15 @@ export function TrafficTable({ rows, decisions, hasNextPage, isFetchingNextPage,
 
   const virtualizer = useWindowVirtualizer({
     count: rows.length,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 10,
     scrollMargin,
     getItemKey: (i) => rows[i].trace_id,
   });
+  // A rotation across 640 px changes every row's height: measure them again.
+  useEffect(() => {
+    virtualizer.measure();
+  }, [rowHeight, virtualizer]);
   const items = virtualizer.getVirtualItems();
   const lastIndex = items.length > 0 ? items[items.length - 1].index : -1;
 
@@ -105,9 +151,14 @@ export function TrafficTable({ rows, decisions, hasNextPage, isFetchingNextPage,
         className="rounded-lg border border-border bg-surface"
       >
         <div role="rowgroup">
-          <div role="row" aria-rowindex={1} className={cn(GRID, 'h-9 border-b border-border text-xs font-medium text-fg-muted')}>
+          {/* As cards the rows carry no columns to head: the header stays for screen readers. */}
+          <div
+            role="row"
+            aria-rowindex={1}
+            className={cn(cards ? 'sr-only' : cn(GRID, 'h-9 border-b border-border text-xs font-medium text-fg-muted'))}
+          >
             {COLUMNS.map((c) => (
-              <div key={c.id} role="columnheader" className={cn(c.className, 'min-w-0 items-center')}>
+              <div key={c.id} role="columnheader" className={cn(cards ? undefined : c.className, 'min-w-0 items-center')}>
                 {c.label}
               </div>
             ))}
@@ -125,6 +176,7 @@ export function TrafficTable({ rows, decisions, hasNextPage, isFetchingNextPage,
                 top={item.start - scrollMargin}
                 now={now}
                 featured={t.trace_id === featured}
+                card={cards}
               />
             );
           })}
@@ -146,6 +198,7 @@ function TrafficRow({
   top,
   now,
   featured = false,
+  card = false,
 }: {
   trace: TraceSummary;
   decision: GateDecisionView | undefined;
@@ -154,7 +207,10 @@ function TrafficRow({
   now: number;
   /** The replay's featured answer: where the tour starts. */
   featured?: boolean;
+  /** A phone's card layout (below 640 px). */
+  card?: boolean;
 }) {
+  const col = card ? cardCol : tableCol;
   const outcome = traceOutcome({ ...t, degraded: decision?.degraded ?? null });
   // `now` ticks every 15 s: a request newer than the last tick (or a server clock ahead of this
   // one) reads "just now", never "in 8 sec.".
@@ -169,9 +225,10 @@ function TrafficRow({
       data-trace-id={t.trace_id}
       data-outcome={outcome.id}
       data-featured={featured || undefined}
-      style={{ height: ROW_HEIGHT, transform: `translateY(${top}px)` }}
+      data-layout={card ? 'card' : 'table'}
+      style={{ height: card ? CARD_ROW_HEIGHT : ROW_HEIGHT, transform: `translateY(${top}px)` }}
       className={cn(
-        GRID,
+        card ? CARD_GRID : GRID,
         'absolute inset-x-0 top-0 border-b border-border text-sm last:border-b-0 hover:bg-surface-hover',
         'has-[a:focus-visible]:outline-2 has-[a:focus-visible]:-outline-offset-2 has-[a:focus-visible]:outline-fg',
         featured && 'bg-surface-sunken before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-fg',

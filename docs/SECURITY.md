@@ -286,5 +286,12 @@ Accepted findings:
 
 ## Reporting
 
-This is a portfolio project; if you find something, open a GitHub issue (without the details for
-anything exploitable: ask for a private channel first).
+Report a vulnerability privately, through GitHub's private vulnerability reporting:
+[Security → Report a vulnerability](https://github.com/timkush1/TrustAgent/security/advisories/new).
+Only the maintainers can read the report, and the fix and the advisory are prepared there before
+anything is public. Please do not open a public issue for anything exploitable, and never include
+a working key: describe where it would leak instead.
+
+TrustAgent is maintained by one person, so there is no service-level promise; a report is
+acknowledged as soon as it is read, and the fixed release names the reporter unless they ask
+otherwise. Conduct problems use the same private form (see [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)).

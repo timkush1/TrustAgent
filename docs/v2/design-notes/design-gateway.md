@@ -1010,7 +1010,7 @@ Invalid values now **fail startup** with a message naming the variable, instead 
 
 ## 15. Ordered task list (S ≤ ½ day, M 1–2 days, L 3–5 days)
 
-0. (Owner) Baseline commit as `timkush1 <timk@mail.tau.ac.il>`, then branch `feat/jev-gateway`. Root untracked files `ts_sdk_python*.md` look like research notes; the owner should decide whether they belong in the baseline. **S**
+0. (Owner) Baseline commit as `timkush1 <the owner's commit email>`, then branch `feat/jev-gateway`. Root untracked files `ts_sdk_python*.md` look like research notes; the owner should decide whether they belong in the baseline. **S**
 1. Proto additions (§7) + `make proto` + stub Python servicers returning `UNIMPLEMENTED`. **S**
 2. Config restructure: new keys, fail-fast validation, `name=key` API keys, key ids, masking helpers. **M**
 3. `internal/trace` + upstream plumbing: URL join, header filter, auth modes, transport and timeouts, deadline middleware, 413, ReverseProxy `Rewrite` (B1, B2, M1, M2, M3, M12). **L**

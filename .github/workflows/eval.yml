@@ -3,10 +3,13 @@ name: Eval (benchmark)
 # Tier-2 evaluation: runs the detector against HaluEval QA with a live model
 # (Ollama in a service container). Slow and model-dependent by design — the
 # fast deterministic gate lives in ci-python.yml. See docs/EVALUATION.md.
+#
+# Manual runs only (the Run workflow button): no schedule. Its figures come from a
+# small local judge on a HaluEval sample, so the job summary labels them as this
+# run's own measurement, never as a published TrustAgent figure (those come only
+# from contracts/claims/measured.json). The job id `benchmark` is its check name.
 
 on:
-  schedule:
-    - cron: '0 5 * * 1' # weekly, Monday 05:00 UTC
   workflow_dispatch:
     inputs:
       samples:
@@ -77,6 +80,10 @@ jobs:
         run: |
           {
             echo "## HaluEval benchmark (${MODEL}, ${SAMPLES} samples)"
+            echo ""
+            echo "Label: measured in this run only, with the local judge ${MODEL} on ${SAMPLES} HaluEval QA examples."
+            echo "It is not a published TrustAgent figure: those are in contracts/claims/measured.json, each with its label."
+            echo ""
             echo '```'
             cat eval-summary.txt
             echo '```'

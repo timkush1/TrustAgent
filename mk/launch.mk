@@ -39,9 +39,47 @@ hero-gif: ## Record the README hero (npm run hero), then make the GIF (1200 px, 
 screenshots: ## Capture the dashboard pages in both themes into docs/images/v2/{page}-{light,dark}.png (the simulated tape is allowed and shows its Simulated label)
 	cd "$(LAUNCH_WEB)" && npm run screenshots
 
-test-launch-tools: ## Unit tests of the capture tooling (make_hero_gif.py) and the list of launch specs (no browser, no build)
-	cd "$(LAUNCH_ROOT)" && $(PYTHON) -m unittest scripts/tests/test_make_hero_gif.py
+test-launch-tools: ## Unit tests of the capture tooling (make_hero_gif.py, launch_video.py) and the list of launch specs (no browser, no build)
+	cd "$(LAUNCH_ROOT)" && $(PYTHON) -m unittest scripts/tests/test_make_hero_gif.py scripts/tests/test_launch_video.py
 	cd "$(LAUNCH_WEB)" && npx playwright test --list --project=launch
+
+# ---------- Launch post and video (D210, D213; seams the SHIP and VEND streams fill in) ----------
+# scripts/linkedin_post.py fills the template in docs/launch/linkedin-post.md and exits 1 on any
+# missing value; scripts/clip.py pipes through iconv -f UTF-8 -t UTF-16LE into clip.exe (plain
+# clip.exe garbles × and dashes) and prints to stdout where there is no clip.exe.
+CLIP ?=
+FILE ?=
+ROLES ?=
+RESTRICTED ?=
+PAGES_ONLY ?=
+
+linkedin-post: ## Print the LinkedIn post as plain text from measured.json, the recorded featured trace and the claims (CLIP=1 copies it, ROLES=1 adds the roles line, RESTRICTED=1 the mode-R post)
+	@$(PYTHON) "$(LAUNCH_ROOT)/scripts/linkedin_post.py" $(if $(CLIP),--clip) $(if $(ROLES),--roles) $(if $(RESTRICTED),--restricted)
+
+clip: ## Copy a file (FILE=...) or a pipe (... | make clip) to the Windows clipboard as UTF-16LE (stdout where there is no clip.exe)
+	@if [ -n "$(FILE)" ]; then $(PYTHON) "$(LAUNCH_ROOT)/scripts/clip.py" "$(FILE)"; \
+	elif [ -t 0 ]; then echo "clip: set FILE (make clip FILE=tmp/release-notes.md) or pipe the text in (make release-notes TAG=v2.0.0 | make clip)" >&2; exit 2; \
+	else $(PYTHON) "$(LAUNCH_ROOT)/scripts/clip.py" -; fi
+
+test-linkedin-post: ## Unit tests of make linkedin-post and make clip (no clipboard, no network)
+	cd "$(LAUNCH_ROOT)" && $(PYTHON) -m unittest scripts/tests/test_linkedin_post.py
+
+# The owner's comparison review (G5) and the reverify claims (D113, D212): every source page is
+# read again with a plain GET (no key) and each cell is printed with the sentence that supports it.
+# The fetch log and the proposed contract edits go to tmp/compare-review/ (FETCH=0 re-prints them
+# from the pages saved there); contracts/ is never edited by it.
+FETCH ?= 1
+
+compare-review: ## Re-read every comparison source and reverify claim; print the G5 table with each source's own words (FETCH=0: from the saved pages)
+	@$(PYTHON) "$(LAUNCH_ROOT)/scripts/compare_review.py" $(if $(filter 0,$(FETCH)),,--fetch)
+
+launch-video: ## The 60-second launch video (D210): the static beats from the recorded Pages build, then ffmpeg joins them with the stack beats and burned-in captions into tmp/launch/video-{16x9,4x5}.mp4 (PAGES_ONLY=1: the H-6 45 s take; VIDEO_ALLOW_MOCK=1: a rehearsal in tmp/launch/rehearsal/)
+	$(PYTHON) "$(LAUNCH_ROOT)/scripts/launch_video.py" static
+	$(PYTHON) "$(LAUNCH_ROOT)/scripts/launch_video.py" assemble $(if $(filter 1,$(PAGES_ONLY)),--pages-only)
+
+launch-video-stack: ## The launch video's stack beats on a reviewed attempt's record stack, about USD 0.05 inside the record ledger: make launch-video-stack ATTEMPT=<id> (make record-demo ACCEPT=1 VIDEO=1 runs it)
+	@if [ -z "$(ATTEMPT)" ]; then echo "launch-video-stack: set ATTEMPT=<id> (make record-demo CONFIRM=1 printed it)"; exit 2; fi
+	$(PYTHON) "$(LAUNCH_ROOT)/scripts/launch_video.py" stack --attempt "$(ATTEMPT)"
 
 # ---------- Aggregate hook (see the root Makefile; P5 I-2) ----------
 check: check-claims

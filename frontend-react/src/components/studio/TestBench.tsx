@@ -187,6 +187,7 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
   });
 
   const backend = live ? STATIC_BACKEND : (decisionModel?.backend ?? null);
+  const callsUsed = live && (live.connected || live.used > 0) ? studioCallsUsedText(live.used, live.maxCalls) : null;
   const modelName = live ? live.jevModel : (decisionModel?.snapshot ?? decisionModel?.model_requested ?? null);
   const estimate = testEstimate(spec, samples, { backend: backend ?? 'openrouter-decisions', name: modelName });
 
@@ -247,10 +248,19 @@ export function TestBench({ spec, samples, onSamplesChange, run, onRun, onSpecCh
           <span className="flex flex-wrap items-center gap-1.5 text-sm text-fg-muted">
             {formatCount(samples.length)} {samples.length === 1 ? 'sample' : 'samples'} ·
             <CostFigure usd={estimate.usd} label={estimate.label} basis={estimate.basis} subject="Cost of this test" />
-            {backend ? <span>· {decisionBackendLabel(backend)}</span> : null}
+            {/* In the browser the counter already names OpenRouter, so it takes the backend's place. */}
+            {callsUsed ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{callsUsed}</span>
+              </>
+            ) : backend ? (
+              <span>· {decisionBackendLabel(backend)}</span>
+            ) : null}
           </span>
+        ) : callsUsed ? (
+          <span className="text-sm text-fg-muted">{callsUsed}</span>
         ) : null}
-        {live && (live.connected || live.used > 0) ? <span className="text-sm text-fg-muted">{studioCallsUsedText(live.used, live.maxCalls)}</span> : null}
       </div>
 
       {failure ? (

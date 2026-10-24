@@ -1,6 +1,6 @@
 /** Section 1 (SPEC §8.1): the promise, the refund example in motion, and the three ways in. */
 import { ArrowRight } from 'lucide-react';
-import { claim, splitClaims } from './claims';
+import { claim, splitClaims, type ClaimView } from './claims';
 import { command, copy, DEMO_HREF, REPO_URL } from './content';
 import { HeroCard } from './HeroCard';
 import { ClaimCaveat, ClaimValue, Command, GitHubMark } from './ui';
@@ -10,9 +10,8 @@ import { buttonClass, container } from './styles';
 const WHO_FOR =
   'teams shipping RAG, support or agent bots who need a per-answer safety signal without paying LLM-judge prices on every answer.';
 
-export function Hero() {
+export function Hero({ ours = claim('gate_latency_p50_measured') }: { ours?: ClaimView } = {}) {
   const thirdParty = claim('jev_p50_latency_openrouter');
-  const ours = claim('gate_latency_p50_measured');
   return (
     <section aria-labelledby="hero-title" className="pt-16 pb-20 max-sm:pt-10 max-sm:pb-14">
       <div className={container}>
@@ -72,12 +71,20 @@ export function Hero() {
               <ClaimCaveat claim={thirdParty} className="max-w-md" />
             </dd>
           </div>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <dt className="text-fg-muted">Measured by us:</dt>
-            <dd>
-              <ClaimValue claim={ours} />
-            </dd>
-          </div>
+          {/* Our own figure joins it once a benchmark run publishes one; until then the Cost
+              section says what is not measured yet, so the first screen never opens on a gap. */}
+          {ours.hasValue ? (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1" data-hero-measured data-caveat-scope>
+              <dt className="text-fg-muted">Measured by us:</dt>
+              <dd>
+                <ClaimValue claim={ours} />
+              </dd>
+              {/* D205: how it was taken (connection, one at a time, where it ran, n) sits beside it. */}
+              <dd className="basis-full">
+                <ClaimCaveat claim={ours} className="max-w-md" />
+              </dd>
+            </div>
+          ) : null}
         </dl>
       </div>
     </section>

@@ -48,11 +48,12 @@ test.describe('landing', () => {
     await expect(page.locator('mark.hero-mark[data-on]')).toHaveText('60 days', { timeout: 10_000 });
     await expect(page.locator('[data-checked-against]')).toHaveText('Checked against: refund-policy.md');
 
-    // Every number chip names its kind; ours are "not yet measured" until a benchmark run.
+    // Every number chip names its kind; ours are listed as not published until a benchmark run
+    // (one sentence, without the [measured] chip; the footer's sources say "not yet measured").
     const chips = page.locator('[data-value-label]');
     expect(await chips.count()).toBeGreaterThan(10);
     await expect(page.locator('[data-value-label="measured"]')).toHaveCount(0);
-    await expect(page.getByRole('main').getByText('not yet measured')).toHaveCount(1);
+    await expect(page.getByRole('main').getByText(/^Not published yet: our measured fast-check cost/)).toHaveCount(1);
 
     // The replay card is built with the page from the shipped tape: no manifest request.
     await expect(page.locator('[data-recording-label]')).toHaveText(MOCK_LABEL);

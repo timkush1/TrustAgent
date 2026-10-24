@@ -66,6 +66,8 @@ jobs:
       - name: make bench-lite
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # bench-lite is a dry run unless CONFIRM=1 (D204); dispatching this workflow is the go.
+          CONFIRM: "1"
         run: make bench-lite
 
       - name: Upload the run
