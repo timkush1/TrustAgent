@@ -132,12 +132,15 @@ gitleaks-history: gitleaks-install ## gitleaks over the whole git history with t
 	$(GITLEAKS) git --config .gitleaks.toml --redact --no-banner --exit-code 1 .
 
 # The public-repo hygiene grep (D216): no home-directory paths, orchestration paths or personal
-# email addresses in tracked files outside docs/archive. Each pattern ends in a one-letter class,
-# so this file does not match itself.
-HYGIENE_PATTERN := /home/timkushma[r]|\.cache/trustagent-or[c]h|timandga[l]|mail\.tau\.ac\.i[l]
+# email addresses in tracked files outside docs/archive. The patterns are generic, so they name
+# nobody; none of them matches its own text here. A clone may add private patterns (one extended
+# regex per line) in the untracked .git/info/hygiene-patterns, which this target also reads.
+HYGIENE_PATTERN := /home/[A-Za-z0-9._-]{2,}/|/Users/[A-Za-z0-9._-]{2,}/|[Cc]:\\Users\\[A-Za-z0-9._-]{2,}\\|\.cache/trustagent-or[c]h|[A-Za-z0-9._%+-]+@gmail\.com|@[A-Za-z0-9.-]+\.ac\.[a-z]{2}
+HYGIENE_LOCAL := $(wildcard $(shell git rev-parse --git-common-dir 2>/dev/null)/info/hygiene-patterns)
 
 hygiene-check: ## No local paths or personal emails in tracked files (docs/archive aside; D216)
 	@hits="$$(git grep -n -E '$(HYGIENE_PATTERN)' -- ':!docs/archive' || true)"; \
+	if [ -n "$(HYGIENE_LOCAL)" ]; then hits="$$hits$$(git grep -n -E -f '$(HYGIENE_LOCAL)' -- ':!docs/archive' || true)"; fi; \
 	if [ -n "$$hits" ]; then printf '%s\n' "$$hits" | head -20; \
 		echo "hygiene-check: local paths or personal emails in tracked files (D216)" >&2; exit 1; fi; \
 	echo "✅ hygiene: no local paths or personal emails in tracked files"
