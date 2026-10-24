@@ -37,8 +37,9 @@ paid runs and the release steps run from a Claude cloud session (D221).
       third-party scripts (they would share an origin with the demo and could read a visitor's key
       from `sessionStorage`); otherwise the demo moves to its own domain first.
 - [ ] **Choices recorded:** the "open to roles" line (`make linkedin-post ROLES=1`), the interview
-      talking points public or private, the "built with AI coding agents" wording (D227), the
-      launch day, the audience.
+      talking points public or private (private takes the file out of the tree before the pull
+      request into `main` after Gate A, so story 11 never reaches `main`), the "built with AI
+      coding agents" wording (D227), the launch day, the audience.
 - [ ] **OpenRouter account** ready, no credit yet; the privacy settings let Jev's provider
       (TypeSafe) be reached (plan §10, G1 step 4).
 - [ ] **The cloud environment** (D221): network access keeps the default trusted list and adds
@@ -49,8 +50,10 @@ paid runs and the release steps run from a Claude cloud session (D221).
 ## Gate A: ready to spend (the lead, before S2)
 
 - [ ] Every P6a stream merged and its gate green; `make check` passes on the integration branch.
-- [ ] **Version bump before the recording**: `make version-bump V=2.0.0`, committed as
-      `chore(release): 2.0.0`, so the tape is stamped 2.0.0.
+- [ ] **No version bump at Gate A** (D234): `make check-version` passes with VERSION 1.0.0 and
+      the CHANGELOG still opens with `Unreleased — 2.0.0 "Jev gateway" (in progress)`. The bump
+      is made on the P6b branch with the planned tag date (right before B8, or at C4), so the
+      pull request below does not publish a release that has not happened.
 - [ ] **Rehearsals on mocks**: a bench run through mock-upstream comes out simulated and publish
       refuses it; `make bench-lite` without a key prints its plan and spends nothing;
       `make release-notes TAG=v0.0.0-rehearsal RELEASE_NOTES_INSPECT=scripts/tests/fixtures/inspect.json`
@@ -60,11 +63,15 @@ paid runs and the release steps run from a Claude cloud session (D221).
       environment's variables only.
 - [ ] **Handoff**: `docs/v2/STATUS.md` rewritten for the cloud session; int7 merged into
       `feat/v2-jev-gateway` and both pushed.
+- [ ] **The talking-points choice applied** (H-7) before that pull request opens: if private
+      (the default while S1 has not answered), `interview-talking-points.md` has left the tree.
 - [ ] **The pull request into `main`** (A-8, D220), opened by the lead right after Gate A from
       `feat/v2-jev-gateway`, and merged by the owner with **Create a merge commit**. Public `main`
       then says how TrustAgent was built (the README "How it was built" section, the landing's
-      build line, talking-points story 11), passes the hygiene grep, points its demo links at
-      `make demo` until Pages is on, and no longer calls our accuracy like for like.
+      build line, and talking-points story 11 if the talking points stay public), passes the
+      hygiene grep, points its demo links at `make demo` until Pages is on, and no longer calls
+      our accuracy like for like. It carries no version bump: `main` keeps VERSION 1.0.0 and the
+      Unreleased heading until the release pull request (D234).
 
 ## S2: the measured run and the recording (owner in the loop)
 
@@ -77,8 +84,10 @@ paid runs and the release steps run from a Claude cloud session (D221).
       (except `make jev-check`, whose single probe reports its snapshot and limit lines instead,
       D232): `make jev-check`, `make jev-capture`, `make bench-smoke`, `make
       calib-pass` and the free `make calibrate` fits, `make bench-lite` with `BENCH_REGION` set
-      (then `make calib-holdout` and the check-only publish with `HOLDOUT=`), `make record-demo`
-      (drift reviewed, the featured trace accepted).
+      (then `make calib-holdout` and the check-only publish with `HOLDOUT=`), then, right before
+      the recording, `make version-bump V=2.0.0 RELEASE_DATE=<the planned tag date>` committed as
+      `chore(release): 2.0.0` on the P6b branch (D234: the tape stamps the version), and
+      `make record-demo` (drift reviewed, the featured trace accepted).
 - [ ] **G5 comparison review**, while the bench runs: every cell of
       `contracts/claims/compare.v1.json` read with its quoted source sentence, then accepted,
       changed or dropped; `"reviewed": true` on each accepted cell.
@@ -93,8 +102,8 @@ paid runs and the release steps run from a Claude cloud session (D221).
 - [ ] **C1 publish**: `make bench-publish RUN=<abs run.json> HOLDOUT=<abs path to the
       holdout-groundedness.json that make calib-holdout wrote beside it>` (it refuses mock output,
       non-vendor hosts, and a usable held-out check left out, so the ECE before and after is
-      published); the run, `measured.json`, the calibration file, the captured fixtures and the recorded tape
-      are committed (mode R: the subset in terms-check.md only).
+      published); the run, `measured.json`, the calibration file, the captured fixtures and the
+      recorded tape are committed (mode R: the subset in terms-check.md only).
       `python3 scripts/check_recording.py frontend-react/demo-data/recorded --require-recorded`
       passes.
 - [ ] **C2 fill and look**: `make claims-write`; `make og`; `make hero-gif`; `make screenshots`,
@@ -111,9 +120,11 @@ paid runs and the release steps run from a Claude cloud session (D221).
 - [ ] **C3 records**: the dated SPEC Appendix D rows (PKCE, vendor shapes, prices, licences,
       market signals), Appendix H, the JEV-ACCESS PKCE status, [terms-check.md](terms-check.md),
       the licence name.
-- [ ] **C4 checks**, each green on a clean tree: the CHANGELOG heading dated with the planned tag
-      day; `make check-version RELEASE_TAG=v2.0.0`; the phase grep; `make check`;
-      `make check-claims-launch`; `make pages-build PAGES_DATASET=recorded`;
+- [ ] **C4 checks**, each green on a clean tree: the version bump made (if B8 did not make it,
+      as in mode R: `make version-bump V=2.0.0 RELEASE_DATE=<the planned tag date>`, D234) and the
+      CHANGELOG heading dated with the planned tag day; `make check-version RELEASE_TAG=v2.0.0`;
+      the phase grep; `make check`; `make check-claims-launch`;
+      `make pages-build PAGES_DATASET=recorded`;
       `make gitleaks-history`; `make hygiene-check`;
       `npm audit --omit=dev --audit-level=high` in `frontend-react`. Optional, on the laptop: the
       `v1.0.0` tag on `d709df3`, pushed with the owner's OK (the cloud session cannot push tags).
@@ -132,7 +143,9 @@ paid runs and the release steps run from a Claude cloud session (D221).
       environment allows `main` and the tag rule `v*`; the minimal `main` ruleset (no deletion,
       no force push, a pull request required, the admin bypass for pull requests only) from
       [ruleset.md](ruleset.md). These can be set any time before.
-- [ ] **The branch is pushed** by Claude (D220): the P6b work merged into `feat/v2-jev-gateway`.
+- [ ] **The branch is pushed** by Claude (D220): the P6b work merged into `feat/v2-jev-gateway`,
+      once the pull request after Gate A is merged or closed (a pull request follows its branch,
+      so that push would add P6b and 2.0.0 to it, D234).
 - [ ] **The PR** `feat/v2-jev-gateway` → `main`, with the body of
       [release-pr.md](release-pr.md); the owner merges it, Claude never does.
 - [ ] **CI loop**: every required check green, `pages.yml` and `release-images.yml` green as
@@ -186,8 +199,8 @@ paid runs and the release steps run from a Claude cloud session (D221).
       through: every figure has its label, the cost and the latency say what they were measured
       on, the example says where its answer came from, Jev is credited to TypeSafe AI, the ratio
       names the judge, the agreement names the thresholds the bench flags at and stands beside
-      Arize's two figures, said not to be like for like (D233), or is left out, and the "built with AI coding agents" line is the owner's. Posted with the 4:5
-      video as its media.
+      Arize's two figures, said not to be like for like (D233), or is left out, and the "built
+      with AI coding agents" line is the owner's. Posted with the 4:5 video as its media.
 - [ ] **Mode A: the first comment**, right after posting: the Haqq link the post promises,
       https://www.haqq.ai/blog/jev-legal-ai-hallucination-detection ([linkedin-post.md](linkedin-post.md)).
 - [ ] **Afterwards**: every measurement key deleted or limited to its usage plus a little, and gone
