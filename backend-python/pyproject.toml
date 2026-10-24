@@ -2,7 +2,7 @@
 name = "truthtable"
 version = "1.0.0"
 description = "TrustAgent deep-audit engine: claim-level hallucination checks for the TrustAgent gateway"
-authors = ["{{OWNER_LEGAL_NAME}}"]
+authors = ["Tim Kushmaro"]
 license = "MIT"
 readme = "README.md"
 packages = [{include = "truthtable", from = "src"}]

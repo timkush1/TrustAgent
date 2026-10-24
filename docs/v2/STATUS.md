@@ -68,10 +68,8 @@ push tags or merge into `main`; those stay on GitHub's web pages, which work fro
 
 ### Before you merge the pull request (5 minutes)
 
-1. **Your legal name for the licence.** `LICENSE`, `frontend-react/package.json` and
-   `backend-python/pyproject.toml` hold the placeholder `{{OWNER_LEGAL_NAME}}` (today's `main`
-   says "Tim Kushnir" in one file and "Tim Kushmaro" in another). Tell Claude the exact name; it
-   fills all three in one commit. Merging before that would publish a licence with no holder.
+1. **Your legal name for the licence: done** (24 October 2026). `LICENSE`,
+   `frontend-react/package.json` and `backend-python/pyproject.toml` name **Tim Kushmaro**.
 2. **Turn on private vulnerability reporting:** repository **Settings → Code security → Private
    vulnerability reporting → Enable**. The new `SECURITY.md`, `CONTRIBUTING.md` and issue forms
    send security reports there, and it is off today.
@@ -95,7 +93,7 @@ everything above onto `main` (PR #45 then shows as merged too).
     request. This is **mode W** (D231). In mode W the paid Jev steps wait (D222). If there is no
     answer in 7 days, choose to keep waiting or **mode R** (no Jev figures published; the site
     shows the simulated replay).
-- **G1, answers** (skip what you already answered before the merge): your legal name; any other
+- **G1, answers** (skip what you already answered before the merge; the legal name is answered): any other
   `timkush1.github.io` sites; an "open to roles" line in the post, yes or no; the interview talking
   points public or private; launch day; audience (Israel, or US and EU); and the build line used in
   the post, README and release notes (D227, D230): *"Designed and directed by me, built with AI
