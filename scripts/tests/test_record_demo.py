@@ -503,6 +503,9 @@ class RecordDemoTest(unittest.TestCase):
         self.assertEqual(self.main(), 2)
         self.assertIn("VERSION is 1.0.0, not 2.0.0", self.output())
         self.assertIn("make version-bump V=2.0.0", self.output())
+        # D234: the bump is made on the P6b branch with the planned tag date, never at Gate A.
+        self.assertIn("on the P6b branch", self.output())
+        self.assertIn("RELEASE_DATE=<the planned tag date>", self.output())
         self.assertEqual(self.runner.calls, [])
         self.assertEqual(self.ledger(), [])
 

@@ -26,10 +26,10 @@ spent (the key's usage is read when a key is set; that call is free). With CONFI
 
 1. refuses before anything starts (exit 2) without a decision-model key and a judge key, with the
    mock or ``off`` in .env, without OPENROUTER_API_KEY (the ledger reads its usage; the generated
-   answers come from OpenRouter), when VERSION is not the release (D216, H-8: the bump comes
-   first), when an attempt is still open, when no calibration file exists for a real snapshot and
-   ALLOW_UNCALIBRATED is not set (D207), when R is below $0.50, or in the last hour before
-   00:00 UTC (the daily caps reset then);
+   answers come from OpenRouter), when VERSION is not the release (D216, D234, H-8: the bump
+   comes first, on the P6b branch), when an attempt is still open, when no calibration file
+   exists for a real snapshot and ALLOW_UNCALIBRATED is not set (D207), when R is below $0.50,
+   or in the last hour before 00:00 UTC (the daily caps reset then);
 2. writes tmp/record-demo/<attempt>/stack.yml (this attempt's caps; with ALLOW_UNCALIBRATED the
    payments-faq route's require_calibration: false, D208) and checks the composed stack
    (docker-compose.yml + docker-compose.record.yml + stack.yml, project truthtable-record): the
@@ -102,7 +102,8 @@ WORK = ROOT / "tmp" / "record-demo"
 CALIBRATION_DIR = ROOT / "config" / "calibration"
 VERSION_FILE = ROOT / "VERSION"
 
-# The release the tape ships with (D216; H-8: VERSION is bumped before the recording).
+# The release the tape ships with (D216, D234; H-8: VERSION is bumped on the P6b branch before
+# the recording, never at Gate A).
 RELEASE_VERSION = "2.0.0"
 # The record stack's image tag: built from this checkout, never pushed (D208).
 IMAGE_TAG = "p6rec"
@@ -1004,8 +1005,9 @@ class Recorder:
         version = self.repo_version()
         if version != self.release_version:
             blocked.append(
-                f"VERSION is {version or 'missing'}, not {self.release_version}: bump first "
-                f"(make version-bump V={self.release_version}; D216, H-8)"
+                f"VERSION is {version or 'missing'}, not {self.release_version}: bump first, on "
+                f"the P6b branch (make version-bump V={self.release_version} "
+                "RELEASE_DATE=<the planned tag date>; D234, H-8)"
             )
         lines.append(
             f"  Version   VERSION {version or 'missing'}; the tape ships with "
@@ -1476,9 +1478,10 @@ class Recorder:
         version = self.repo_version()
         if version != self.release_version:
             raise Refused(
-                f"VERSION is {version or 'missing'}, not {self.release_version}: bump it first "
-                f"(make version-bump V={self.release_version}; D216, H-8), so the tape names the "
-                "release it ships with"
+                f"VERSION is {version or 'missing'}, not {self.release_version}: bump it first, on "
+                f"the P6b branch (make version-bump V={self.release_version} "
+                "RELEASE_DATE=<the planned tag date>; D234, H-8), so the tape names the release it "
+                "ships with"
             )
         ledger = self.ledger
         open_attempt = ledger.open_attempt()

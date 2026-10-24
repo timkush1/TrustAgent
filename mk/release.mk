@@ -10,13 +10,16 @@
 # VERSION is the one place the version is decided; scripts/bump_version.py rewrites its mirrors
 # (pyproject.toml, __init__.py, package.json, package-lock.json, version.go and the compose default
 # image tag), renames the CHANGELOG "Unreleased — X.Y.Z" heading and regenerates the recording.
+# RELEASE_DATE (YYYY-MM-DD, default today) dates that heading: the 2.0.0 bump passes the planned
+# tag date, since it is made on the P6b branch before the tag, never at Gate A (P6 D234).
 V       ?=
 DRY_RUN ?=
 RELEASE_TAG ?=
+RELEASE_DATE ?=
 
-version-bump: ## Set a new version everywhere: make version-bump V=2.0.0 (DRY_RUN=1 prints the plan only)
+version-bump: ## Set a new version everywhere: make version-bump V=2.0.0 [RELEASE_DATE=YYYY-MM-DD] (DRY_RUN=1 prints the plan only)
 	@if [ -z "$(V)" ]; then echo "version-bump: set V, e.g. make version-bump V=2.0.0 (DRY_RUN=1 to preview)"; exit 2; fi
-	$(PYTHON) scripts/bump_version.py $(if $(filter 1,$(DRY_RUN)),--dry-run) $(V)
+	$(PYTHON) scripts/bump_version.py $(if $(filter 1,$(DRY_RUN)),--dry-run) $(if $(RELEASE_DATE),--date $(RELEASE_DATE)) $(V)
 
 check-version: ## Check that every version mirror agrees with VERSION (RELEASE_TAG=v2.0.0 also checks a release tag)
 	$(PYTHON) scripts/check_version.py $(if $(RELEASE_TAG),--tag $(RELEASE_TAG))

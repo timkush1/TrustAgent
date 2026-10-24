@@ -230,12 +230,14 @@ A release is a version bump, a tag and two workflows. Nothing is published from 
 
 **Each release:**
 
-1. On a clean `main`, set the version everywhere and rename the CHANGELOG heading
-   (`## Unreleased — X.Y.Z ...` becomes `## vX.Y.Z — <date> ...`):
+1. On a clean release branch, set the version everywhere and rename the CHANGELOG heading
+   (`## Unreleased — X.Y.Z ...` becomes `## vX.Y.Z — <date> ...`; the date is today unless
+   `RELEASE_DATE=YYYY-MM-DD` names the planned tag day). The bump goes into the release pull
+   request, never earlier, so `main` does not show a release before its tag:
 
    ```bash
    make version-bump V=2.0.0 DRY_RUN=1    # print the plan
-   make version-bump V=2.0.0              # VERSION, pyproject.toml, package.json + lock, version.go, __init__.py, compose default
+   make version-bump V=2.0.0 RELEASE_DATE=YYYY-MM-DD   # VERSION, pyproject.toml, package.json + lock, version.go, __init__.py, compose default
    make check-version RELEASE_TAG=v2.0.0  # every mirror agrees, and the CHANGELOG has the heading
    make check && make check-claims-launch # the local gate, and the launch gate for public figures
    ```

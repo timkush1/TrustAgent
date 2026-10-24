@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import stat
+import subprocess  # nosec B404 - runs make -n with fixed arguments
 import sys
 import unittest
 from pathlib import Path
@@ -294,6 +295,45 @@ class RecordedTapeTest(unittest.TestCase):
         default_out = re.search(r"out:\s*\{[^}]*default:\s*join\(web,\s*'([^']+)'\)", builder)
         self.assertIsNotNone(default_out, "the recording builder's --out default moved")
         self.assertEqual(default_out.group(1), "demo-data/simulated")
+
+
+class MakeTargetTest(unittest.TestCase):
+    """make version-bump passes RELEASE_DATE as --date: the 2.0.0 bump is made on the P6b branch
+    before the tag, so its CHANGELOG heading carries the planned tag date, not the day of the
+    bump (P6 D234)."""
+
+    def test_the_target_passes_the_release_date(self) -> None:
+        release_mk = (ROOT / "mk" / "release.mk").read_text(encoding="utf-8")
+        target = release_mk.split("\nversion-bump:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("scripts/bump_version.py", target)
+        self.assertIn("$(if $(RELEASE_DATE),--date $(RELEASE_DATE))", target)
+
+    def test_make_n_shows_the_date_only_when_given(self) -> None:
+        if not shutil.which("make"):
+            self.skipTest("make is not installed")
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("RELEASE_DATE", "DRY_RUN", "MAKEFLAGS", "MFLAGS")
+        }
+
+        def plan(*extra: str) -> str:
+            r = subprocess.run(  # nosec B603 B607 - fixed arguments
+                ["make", "-n", "--no-print-directory", "version-bump", "V=2.0.0", *extra],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return r.stdout
+
+        self.assertRegex(
+            plan("RELEASE_DATE=2026-11-03"), r"bump_version\.py\s+--date 2026-11-03 2\.0\.0\n"
+        )
+        self.assertNotIn("--date", plan())
 
 
 class RepositoryDryRunTest(unittest.TestCase):
