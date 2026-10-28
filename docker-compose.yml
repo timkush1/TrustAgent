@@ -500,7 +500,7 @@ services:
   # ========== Profile: local-llm ==========
 
   ollama:
-    image: ollama/ollama:0.5.13
+    image: ollama/ollama:0.40.7
     profiles: [local-llm]
     ports:
       - "${BIND_ADDR:-127.0.0.1}:11434:11434"
@@ -528,7 +528,7 @@ services:
 
   # One-shot: pulls the local judge model once (a no-op when it is present).
   ollama-init:
-    image: ollama/ollama:0.5.13
+    image: ollama/ollama:0.40.7
     profiles: [local-llm]
     entrypoint: ["ollama", "pull", "${OLLAMA_FALLBACK_MODEL:-llama3.2:1b}"]
     environment:
