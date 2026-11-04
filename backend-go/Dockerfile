@@ -29,7 +29,7 @@
 # Dependabot digest refresh may move the patch release behind the same tag).
 
 # --- Stage 1: gRPC stubs ------------------------------------------------------
-FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine@sha256:9ce231b28998b32e116927c61aa5c406183061d4f3f2d61b292c88e7f6bdf7ca AS proto
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS proto
 
 # protobuf-dev ships the well-known .proto includes. Alpine packages are not
 # version-pinned: the base image tag fixes the release branch.
@@ -53,7 +53,7 @@ RUN mkdir -p /out \
       proto/evaluator.proto
 
 # --- Stage 2: build -----------------------------------------------------------
-FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine@sha256:9ce231b28998b32e116927c61aa5c406183061d4f3f2d61b292c88e7f6bdf7ca AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS build
 
 WORKDIR /src/backend-go
 
